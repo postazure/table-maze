@@ -983,7 +983,7 @@ test('the stone ring shrugs off knockback', () => {
 // Monster balance: patrols slow you down, guards doze, lurkers give up
 // ---------------------------------------------------------------------------
 
-test('the hero shoves past a patrol instead of fighting it', () => {
+test('a patrol is solid: the hero cannot route through it and fights it instead', () => {
   const patrol = mkMonster({
     id: 'p1',
     kind: 'patrol',
@@ -1003,21 +1003,128 @@ test('the hero shoves past a patrol instead of fighting it', () => {
   hero.maxHp = 20;
 
   g.pointerAt({ x: 4, y: 1 });
-  assert.equal(g.state.path.length, 3, 'a drag routes straight through a patrol');
+  assert.equal(g.state.path.length, 0, 'a drag never routes through a patrol');
+
+  g.pointerAt({ x: 2, y: 1 });
+  assert.equal(g.state.path.length, 1, 'but the patrol itself is a legal target');
   g.state.pointer = null; // no hold-to-attack for this assertion
 
   g.tick(150);
-  assert.deepEqual(hero.pos, { x: 2, y: 1 }, 'the hero takes the tile');
-  assert.deepEqual(patrol.pos, { x: 1, y: 1 }, 'and the patrol is pushed behind');
-  assert.equal(patrol.hp, 20, 'no swing');
-  assert.equal(hero.hp, 20, 'and no damage either way');
-  assert.equal(hero.stun, 350, 'shoving costs a moment');
-  assert.equal(g.state.path.length, 2, 'the rest of the path is still queued');
+  assert.deepEqual(hero.pos, { x: 1, y: 1 }, 'the hero stays put');
+  assert.deepEqual(patrol.pos, { x: 2, y: 1 }, 'and so does the patrol');
+  assert.ok(patrol.hp < 20, 'walking into it is a swing');
+  assert.equal(hero.stun, 0, 'no stagger');
+  assert.equal(g.state.path.length, 0, 'the swing clears the queue');
 
+  const hp = patrol.hp;
+  g.tick(320);
+  assert.ok(patrol.hp < hp, 'and the hero stays on it');
+});
+
+test('a patrol that walks into the queued path is fought, not passed', () => {
+  const patrol = mkMonster({
+    id: 'p1',
+    kind: 'patrol',
+    pos: { x: 5, y: 1 },
+    hp: 20,
+    maxHp: 20,
+    attackInterval: 99999,
+    attackCooldown: 99999,
+  });
+  const g = corridorGame({ monsters: [patrol] });
+  g.pointerAt({ x: 4, y: 1 });
+  g.state.pointer = null;
+  assert.equal(g.state.path.length, 3);
+  g.tick(150); // step to 2,1
+  patrol.pos = { x: 3, y: 1 }; // it wandered onto the next queued tile
   g.tick(150);
-  assert.deepEqual(hero.pos, { x: 2, y: 1 }, 'the stagger holds the hero still');
-  g.tick(300);
-  assert.deepEqual(hero.pos, { x: 4, y: 1 }, 'then the walk carries on');
+  assert.deepEqual(g.state.hero.pos, { x: 2, y: 1 }, 'the hero does not swap through');
+  assert.deepEqual(patrol.pos, { x: 3, y: 1 });
+  assert.ok(patrol.hp < 20, 'the hero swings at what blocks the way');
+  assert.equal(g.state.path.length, 0);
+});
+
+test('stopping next to a monster starts a fight that carries on by itself', () => {
+  // The monster never swings back, so knockback cannot muddy the positions.
+  const m = mkMonster({ pos: { x: 3, y: 1 }, kind: 'guard', hp: 40, maxHp: 40, attackCooldown: 99999 });
+  const g = corridorGame({ monsters: [m] });
+  g.pointerAt({ x: 2, y: 1 }); // walk up next to it, never onto it
+  g.pointerEnd();
+  g.tick(150);
+  assert.deepEqual(g.state.hero.pos, { x: 2, y: 1 });
+  assert.equal(g.state.path.length, 0);
+  assert.ok(m.hp < 40, 'arriving in melee range is enough to swing');
+  const afterFirst = m.hp;
+  g.tick(320);
+  g.tick(320);
+  assert.ok(m.hp < afterFirst - 1, 'and the hero keeps swinging with no input');
+  assert.deepEqual(g.state.hero.pos, { x: 2, y: 1 }, 'without moving');
+});
+
+test('a monster that walks up to an idle hero is fought too', () => {
+  const m = mkMonster({ pos: { x: 2, y: 1 }, kind: 'lurker', hp: 40, maxHp: 40, attackCooldown: 99999, state: 'chasing' });
+  const g = corridorGame({ monsters: [m] });
+  g.tick(50);
+  assert.ok(m.hp < 40, 'the hero fights back without a drag');
+  const hp = m.hp;
+  for (let i = 0; i < 3; i++) g.tick(320);
+  assert.ok(m.hp < hp, 'and keeps at it');
+});
+
+test('the long sword picks a fight from two tiles away', () => {
+  const m = mkMonster({ pos: { x: 3, y: 1 }, kind: 'guard', hp: 40, maxHp: 40, attackCooldown: 99999 });
+  const g = corridorGame({ monsters: [m] });
+  equip(g.state.hero, { kind: 'longSword', level: 3 });
+  g.tick(50);
+  assert.ok(m.hp < 40, 'in weapon range counts as in range');
+  assert.ok(g.state.fx.some((f) => f.kind === 'slash'));
+  assert.deepEqual(g.state.hero.pos, { x: 1, y: 1 });
+});
+
+test('the hero prefers the adjacent monster over one at sword reach', () => {
+  const near = mkMonster({ id: 'near', pos: { x: 2, y: 1 }, kind: 'guard', hp: 40, maxHp: 40, attackCooldown: 99999 });
+  const far = mkMonster({ id: 'far', pos: { x: 3, y: 1 }, kind: 'guard', hp: 40, maxHp: 40, attackCooldown: 99999 });
+  const g = corridorGame({ monsters: [far, near] });
+  equip(g.state.hero, { kind: 'longSword', level: 3 });
+  g.tick(50);
+  assert.ok(near.hp < 40, 'the adjacent one takes the hit');
+  assert.equal(far.hp, 40, 'the far one is left alone');
+});
+
+test('dragging the hero out of reach ends an automatic fight', () => {
+  const m = mkMonster({ pos: { x: 3, y: 1 }, kind: 'guard', hp: 40, maxHp: 40, attackCooldown: 99999 });
+  const g = corridorGame({ monsters: [m] });
+  g.pointerAt({ x: 2, y: 1 });
+  g.pointerEnd();
+  g.tick(150);
+  assert.ok(m.hp < 40, 'engaged');
+  const hp = m.hp;
+  g.pointerAt({ x: 1, y: 1 }); // walk away
+  g.pointerEnd();
+  g.tick(150);
+  assert.deepEqual(g.state.hero.pos, { x: 1, y: 1 });
+  for (let i = 0; i < 3; i++) g.tick(320);
+  assert.equal(m.hp, hp, 'out of reach, no more swings');
+  assert.deepEqual(g.state.hero.pos, { x: 1, y: 1 }, 'and the hero does not chase');
+});
+
+test('a knocked-down hero stops fighting', () => {
+  const g = Game.forTest(1234);
+  install(g, mkLevel(LONG_CORRIDOR), { x: 10, y: 1 });
+  const st = g.state;
+  st.trail = trailTo(10);
+  st.hero.hp = 1;
+  st.hero.maxHp = 20;
+  const m = mkMonster({ pos: { x: 11, y: 1 }, hp: 200, maxHp: 200, atk: 50, sightRange: 4 });
+  st.level.monsters.push(m);
+
+  g.tick(50); // the hero swings first, then the monster's blow lands
+  assert.ok(m.hp < 200, 'the fight started on its own');
+  assert.equal(st.hero.sleeping, true, 'and ended with a knockdown');
+  const hp = m.hp;
+  for (let i = 0; i < 4; i++) g.tick(320);
+  assert.equal(m.hp, hp, 'a sleeping hero swings at nothing');
+  assert.equal(st.hero.sleeping, true);
 });
 
 test('holding the finger on a patrol still swings at it', () => {

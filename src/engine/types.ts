@@ -85,9 +85,8 @@ export interface Chest {
  *  - patrol: walks back and forth along `patrolPath` (list of tiles, walked
  *            forward then backward) and never chases. It attacks whoever is
  *            adjacent when its cooldown allows, but its hits never knock the
- *            hero back. Patrols do not block: the hero shoves past one (the
- *            two swap tiles) at the cost of a short stagger, so a wandering
- *            monster can never seal a corridor.
+ *            hero back. Like every monster it is solid: a hero who walks into
+ *            one fights it instead of passing through.
  *  - lurker: sits on `home` and blocks it. When the hero comes within
  *            `sightRange` (BFS tile distance through open floor) it switches
  *            to `chasing` and follows the hero. Once the hero is further than

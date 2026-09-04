@@ -208,7 +208,7 @@ function chooseStep(state: GameState, m: Monster, stats: ItemStats): Vec | null 
 
 /**
  * Patrols never chase: they walk their beat and hit whatever is next to them
- * when they get there. The hero shoves past them instead of fighting through.
+ * when they get there. They are solid, so the hero fights through or waits.
  */
 function patrolStep(state: GameState, m: Monster, stats: ItemStats): Vec | null {
   const path = m.patrolPath;
