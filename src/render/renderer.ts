@@ -1,6 +1,8 @@
 import {
   Tile,
   parseKey,
+  ITEM_KINDS,
+  ITEM_SLOT,
   type GameState,
   type LevelData,
   type Vec,
@@ -11,7 +13,11 @@ import {
   type Door,
   type Chest,
   type KeyItem,
+  type ItemKind,
+  type ItemSlot,
+  type ShopOffer,
 } from '../engine/types';
+import { ITEM_ART, SLOT_ART, PEDESTAL_ART } from './itemArt';
 
 // ---------------------------------------------------------------------------
 // Palette / constants
@@ -42,6 +48,21 @@ const RING_RETURNING = '#f5d451';
 const LUNGE_MS = 120;
 const SUB = 8; // pixel-art sub-resolution per tile (both for the level canvas and sprites)
 const VIEW_TILES = 11; // ~ tiles visible across the short axis of the viewport
+
+// Status-effect / gear visuals.
+const POISON_TINT = '#3aa15a';
+const POISON_BUBBLE = '#7be3a0';
+const SLOW_TINT = '#5aa9ff';
+const ICE_PIXEL = '#bfe3ff';
+const SHIELD_BUBBLE_COLOR = '#5aa9ff';
+const BERSERK_RING_COLOR = '#e53b3b';
+const COMPASS_COLOR = '#f5c451';
+
+// Shop pedestal / price tag.
+const PEDESTAL_DIM_ALPHA = 0.35;
+const PRICE_BG = 'rgba(5,5,9,0.85)';
+const PRICE_COIN = '#f5c451';
+const PRICE_TEXT = '#f0ecff';
 
 // ---------------------------------------------------------------------------
 // Tiny pixel-icon builder: a string grid ('.' = transparent) + a palette
@@ -372,6 +393,24 @@ const DOOR_CLOSED_PALETTE: Record<string, string> = { P: '#8b5a2b', M: '#5a3a1c'
 
 const SHIELD_BADGE_ROWS = ['.SSSS.', 'SSSSSS', 'SSSSSS', '.SSSS.', '..SS..', '..SS..'];
 
+/**
+ * keyCompass: an 5x5 gold arrow per compass direction, hovering over the
+ * hero's head. `ARROW_ORDER` matches increasing atan2(dy,dx) angle in
+ * y-down screen space (0 = E, PI/2 = S, PI = W, -PI/2 = N), so
+ * `ARROW_ORDER[(round(angle/(PI/4))+8)%8]` picks the closest of 8.
+ */
+const ARROW_ORDER = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'] as const;
+const ARROW_ROWS: Record<(typeof ARROW_ORDER)[number], string[]> = {
+  N: ['..A..', '.A.A.', 'A...A', '.....', '.....'],
+  S: ['.....', '.....', 'A...A', '.A.A.', '..A..'],
+  E: ['..A..', '...A.', '....A', '...A.', '..A..'],
+  W: ['..A..', '.A...', 'A....', '.A...', '..A..'],
+  NE: ['....A', '...AA', '..A..', '.A...', 'A....'],
+  SE: ['A....', '.A...', '..A..', '...AA', '....A'],
+  SW: ['....A', '...A.', '..A..', '.AA..', 'A....'],
+  NW: ['AA...', 'A....', '..A..', '...A.', '....A'],
+};
+
 function hash2(x: number, y: number): number {
   let h = x * 374761393 + y * 668265263;
   h = (h ^ (h >>> 13)) * 1274126177;
@@ -404,9 +443,13 @@ export class Renderer implements TileMapper {
   private doorClosedSprite: HTMLCanvasElement;
   private exitSprite: HTMLCanvasElement;
   private shieldBadgeSprite: HTMLCanvasElement;
+  private pedestalSprite: HTMLCanvasElement;
   /** Hero level captured at the start of each draw, used to color monster level badges. */
   private heroLevel = 1;
   private monsterSprites: Map<string, HTMLCanvasElement> = new Map();
+  private itemSprites: Map<ItemKind, HTMLCanvasElement> = new Map();
+  private slotSprites: Map<ItemSlot, HTMLCanvasElement> = new Map();
+  private arrowSprites: Map<(typeof ARROW_ORDER)[number], HTMLCanvasElement> = new Map();
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -422,10 +465,23 @@ export class Renderer implements TileMapper {
     this.doorClosedSprite = buildIcon(DOOR_CLOSED_ROWS, DOOR_CLOSED_PALETTE);
     this.exitSprite = buildIcon(EXIT_ROWS, EXIT_PALETTE);
     this.shieldBadgeSprite = buildIcon(SHIELD_BADGE_ROWS, { S: '#9a97ad' });
+    this.pedestalSprite = buildIcon(PEDESTAL_ART.rows, PEDESTAL_ART.palette);
 
     for (const [kind, cfg] of Object.entries(MONSTER_CFGS)) {
       const { rows, palette } = creatureRows(cfg);
       this.monsterSprites.set(kind, buildIcon(rows, palette));
+    }
+
+    for (const kind of ITEM_KINDS) {
+      const art = ITEM_ART[kind];
+      this.itemSprites.set(kind, buildIcon(art.rows, art.palette));
+    }
+    for (const slot of ['offense', 'defense', 'spirit'] as ItemSlot[]) {
+      const art = SLOT_ART[slot];
+      this.slotSprites.set(slot, buildIcon(art.rows, art.palette));
+    }
+    for (const dir of ARROW_ORDER) {
+      this.arrowSprites.set(dir, buildIcon(ARROW_ROWS[dir], { A: COMPASS_COLOR }));
     }
   }
 
@@ -658,6 +714,14 @@ export class Renderer implements TileMapper {
       this.drawTileSprite(ctx, this.exitSprite, state.level.exit, t, 0.86);
     }
 
+    // Shop pedestals.
+    if (state.level.kind === 'shop' && state.level.shop) {
+      const dimmed = state.level.shop.bought;
+      for (const offer of state.level.shop.offers) {
+        if (this.inRange(offer.pos, startX, endX, startY, endY)) this.drawShopOffer(ctx, offer, dimmed, t);
+      }
+    }
+
     // Monsters.
     for (const m of state.level.monsters) {
       if (m.alive && this.inRange(m.pos, startX, endX, startY, endY)) this.drawMonster(ctx, m, t);
@@ -665,6 +729,9 @@ export class Renderer implements TileMapper {
 
     // Hero (always near the viewport center).
     this.drawHero(ctx, state.hero, t);
+
+    // keyCompass: arrow hovering over the hero, pointing at the tracked tile.
+    if (state.compass) this.drawCompass(ctx, state.hero, state.compass, t);
 
     // Effects on top.
     for (const fx of state.fx) this.drawEffect(ctx, fx, t);
@@ -737,6 +804,58 @@ export class Renderer implements TileMapper {
     this.drawTileSprite(ctx, c.opened ? this.chestOpenSprite : this.chestClosedSprite, c.pos, t, 0.8);
   }
 
+  /** A shop pedestal: stone column, item icon hovering above, slot glyph top-left, price tag below-right. */
+  private drawShopOffer(ctx: CanvasRenderingContext2D, offer: ShopOffer, dimmed: boolean, t: number): void {
+    ctx.save();
+    if (dimmed) ctx.globalAlpha = PEDESTAL_DIM_ALPHA;
+
+    // Pedestal.
+    this.drawTileSprite(ctx, this.pedestalSprite, offer.pos, t, 0.72);
+
+    // Item icon, hovering above the pedestal.
+    const itemSprite = this.itemSprites.get(offer.item.kind);
+    if (itemSprite) {
+      const size = Math.round(t * 0.5);
+      const cx = offer.pos.x * t + t / 2;
+      const cy = offer.pos.y * t + t / 2 - t * 0.35;
+      const x = Math.round(cx - size / 2);
+      const y = Math.round(cy - size / 2);
+      ctx.drawImage(itemSprite, x, y, size, size);
+    }
+
+    // Slot glyph, small, top-left of the pedestal tile.
+    const slotSprite = this.slotSprites.get(ITEM_SLOT[offer.item.kind]);
+    if (slotSprite) {
+      const size = Math.round(t * 0.24);
+      const x = Math.round(offer.pos.x * t + t * 0.04);
+      const y = Math.round(offer.pos.y * t + t * 0.04);
+      ctx.drawImage(slotSprite, x, y, size, size);
+    }
+    ctx.restore();
+
+    // Price tag: dark box + tiny coin + number, below-right of the pedestal.
+    ctx.save();
+    if (dimmed) ctx.globalAlpha = PEDESTAL_DIM_ALPHA;
+    const fontPx = Math.max(6, Math.round(t * 0.24));
+    const label = `${offer.price}`;
+    ctx.font = `${fontPx}px "Press Start 2P", monospace`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const coinSize = Math.max(3, Math.round(t * 0.14));
+    const textW = Math.round(fontPx * 0.72 * label.length);
+    const boxW = coinSize + 3 + textW + 6;
+    const boxH = Math.max(coinSize, fontPx) + 4;
+    const bx = Math.round(offer.pos.x * t + t - boxW * 0.55);
+    const by = Math.round(offer.pos.y * t + t - boxH * 0.35);
+    ctx.fillStyle = PRICE_BG;
+    ctx.fillRect(bx, by, boxW, boxH);
+    ctx.fillStyle = PRICE_COIN;
+    ctx.fillRect(bx + 2, by + Math.round((boxH - coinSize) / 2), coinSize, coinSize);
+    ctx.fillStyle = PRICE_TEXT;
+    ctx.fillText(label, bx + coinSize + 5, by + boxH / 2 + 1);
+    ctx.restore();
+  }
+
   private ringColorFor(m: Monster): { color: string; pulse: boolean } {
     if (m.state === 'chasing') return { color: RING_CHASING, pulse: true };
     if (m.state === 'returning') return { color: RING_RETURNING, pulse: false };
@@ -779,6 +898,41 @@ export class Renderer implements TileMapper {
       if (spriteKey === 'wraith') ctx.globalAlpha = 0.72;
       ctx.drawImage(sprite, dx, dy, size, size);
       ctx.restore();
+    }
+
+    // poisonDagger: green tint + one or two bubbles rising on a time cycle.
+    if (m.poisonMs > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = POISON_TINT;
+      ctx.fillRect(dx, dy, size, size);
+      ctx.restore();
+
+      const now = performance.now();
+      const bubbleSize = Math.max(1, Math.round(sub));
+      for (let i = 0; i < 2; i++) {
+        const phase = (((now / 900 + i / 2) % 1) + 1) % 1;
+        const bx = Math.round((dx + size * (0.3 + i * 0.4)) / sub) * sub;
+        const by = Math.round((dy + size - phase * size) / sub) * sub;
+        ctx.save();
+        ctx.globalAlpha = 0.55 * (1 - phase);
+        ctx.fillStyle = POISON_BUBBLE;
+        ctx.fillRect(bx, by, bubbleSize, bubbleSize);
+        ctx.restore();
+      }
+    }
+
+    // frostBlade: light-blue tint + a small ice pixel at a corner.
+    if (m.slowMs > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = SLOW_TINT;
+      ctx.fillRect(dx, dy, size, size);
+      ctx.restore();
+
+      const iceSize = Math.max(2, Math.round(t * 0.14));
+      ctx.fillStyle = ICE_PIXEL;
+      ctx.fillRect(dx + size - iceSize, dy, iceSize, iceSize);
     }
 
     if (m.kind === 'guard') {
@@ -846,6 +1000,32 @@ export class Renderer implements TileMapper {
     ctx.lineWidth = 1;
     ctx.strokeRect(ox2 + 0.5, oy2 + 0.5, outlineSize - 1, outlineSize - 1);
 
+    // shieldAmulet: a pulsing blue bubble ring just outside the gold ring.
+    if (hero.shieldReady) {
+      const bubbleSize = outlineSize + 4;
+      const bx2 = Math.round(cx - bubbleSize / 2);
+      const by2 = Math.round(cy - bubbleSize / 2);
+      ctx.save();
+      ctx.globalAlpha = 0.5 + 0.35 * (0.5 + 0.5 * Math.sin(performance.now() / 160));
+      ctx.strokeStyle = SHIELD_BUBBLE_COLOR;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx2 + 0.5, by2 + 0.5, bubbleSize - 1, bubbleSize - 1);
+      ctx.restore();
+    }
+
+    // berserkerAxe: a pulsing red ring while at or below half hearts.
+    if (hero.gear.offense?.kind === 'berserkerAxe' && hero.hp * 2 <= hero.maxHp) {
+      const ringSize = outlineSize + (hero.shieldReady ? 8 : 4);
+      const rx = Math.round(cx - ringSize / 2);
+      const ry = Math.round(cy - ringSize / 2);
+      ctx.save();
+      ctx.globalAlpha = 0.5 + 0.4 * (0.5 + 0.5 * Math.sin(performance.now() / 110));
+      ctx.strokeStyle = BERSERK_RING_COLOR;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(rx + 0.5, ry + 0.5, ringSize - 1, ringSize - 1);
+      ctx.restore();
+    }
+
     ctx.save();
     if (hero.facing === 'W') {
       ctx.translate(cx, cy);
@@ -894,7 +1074,32 @@ export class Renderer implements TileMapper {
     ctx.restore();
   }
 
+  /** keyCompass: a small gold arrow bobbing above the hero's head, pointing at `target`. */
+  private drawCompass(ctx: CanvasRenderingContext2D, hero: Hero, target: Vec, t: number): void {
+    const dx = target.x - hero.rpos.x;
+    const dy = target.y - hero.rpos.y;
+    if (dx === 0 && dy === 0) return;
+    const angle = Math.atan2(dy, dx);
+    const idx = (Math.round(angle / (Math.PI / 4)) + 8) % 8;
+    const sprite = this.arrowSprites.get(ARROW_ORDER[idx]);
+    if (!sprite) return;
+
+    const sub = Math.max(1, t / SUB);
+    const cx = hero.rpos.x * t + t / 2;
+    const topY = hero.rpos.y * t + t / 2 - t * 0.7;
+    const bob = Math.sin(performance.now() / 260) * sub;
+    const size = Math.round(t * 0.32);
+    const x = Math.round((cx - size / 2) / sub) * sub;
+    const y = Math.round((topY - size + bob) / sub) * sub;
+    ctx.drawImage(sprite, x, y, size, size);
+  }
+
   private drawEffect(ctx: CanvasRenderingContext2D, fx: Effect, t: number): void {
+    // The game may delay an effect by pushing it with a negative `t`; the
+    // renderer ages it (draw() already advanced fx.t by dt) but draws
+    // nothing until it crosses 0.
+    if (fx.t < 0) return;
+
     if (fx.kind === 'text') {
       const progress = Math.max(0, Math.min(1, fx.t / fx.ttl));
       const cx = fx.pos.x * t + t / 2;
@@ -916,6 +1121,85 @@ export class Renderer implements TileMapper {
       ctx.globalAlpha = alpha;
       ctx.fillStyle = fx.color;
       ctx.fillRect(Math.round(fx.pos.x * t), Math.round(fx.pos.y * t), t, t);
+      ctx.restore();
+    } else if (fx.kind === 'bolt') {
+      // lightningWand: a jagged line through `points`, jittering a little each frame.
+      const progress = Math.max(0, Math.min(1, fx.t / fx.ttl));
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - progress);
+      ctx.strokeStyle = fx.color;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      const jitter = t * 0.06;
+      for (let i = 0; i < fx.points.length; i++) {
+        const p = fx.points[i];
+        const jx = i === 0 || i === fx.points.length - 1 ? 0 : (Math.random() * 2 - 1) * jitter;
+        const jy = i === 0 || i === fx.points.length - 1 ? 0 : (Math.random() * 2 - 1) * jitter;
+        const px = Math.round(p.x * t + t / 2 + jx);
+        const py = Math.round(p.y * t + t / 2 + jy);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      ctx.restore();
+    } else if (fx.kind === 'projectile') {
+      // fireStaff: a small square flying from `from` to `to`, with a short fading trail.
+      const progress = Math.max(0, Math.min(1, fx.t / fx.ttl));
+      const size = Math.max(2, Math.round(t * 0.2));
+      const at = (p: number) => {
+        const lx = fx.from.x + (fx.to.x - fx.from.x) * p;
+        const ly = fx.from.y + (fx.to.y - fx.from.y) * p;
+        return { x: Math.round(lx * t + t / 2 - size / 2), y: Math.round(ly * t + t / 2 - size / 2) };
+      };
+      ctx.save();
+      ctx.fillStyle = fx.color;
+      for (let i = 2; i >= 1; i--) {
+        const tp = Math.max(0, progress - i * 0.07);
+        const pos = at(tp);
+        ctx.globalAlpha = 0.22 * (1 - i / 3);
+        ctx.fillRect(pos.x, pos.y, size, size);
+      }
+      const head = at(progress);
+      ctx.globalAlpha = 1;
+      ctx.fillRect(head.x, head.y, size, size);
+      ctx.restore();
+    } else if (fx.kind === 'ring') {
+      // shieldAmulet / bubble pop: a square outline expanding from 0 to `radius` tiles.
+      const progress = Math.max(0, Math.min(1, fx.t / fx.ttl));
+      const cx = fx.pos.x * t + t / 2;
+      const cy = fx.pos.y * t + t / 2;
+      const size = Math.max(1, Math.round(fx.radius * progress * t * 2));
+      const x = Math.round(cx - size / 2);
+      const y = Math.round(cy - size / 2);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - progress);
+      ctx.strokeStyle = fx.color;
+      ctx.lineWidth = Math.max(1, Math.round(t * 0.05));
+      ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+      ctx.restore();
+    } else if (fx.kind === 'slash') {
+      // longSword: a straight, fading line from `from` to `to` with a dark outline.
+      const progress = Math.max(0, Math.min(1, fx.t / fx.ttl));
+      const x1 = Math.round(fx.from.x * t + t / 2);
+      const y1 = Math.round(fx.from.y * t + t / 2);
+      const x2 = Math.round(fx.to.x * t + t / 2);
+      const y2 = Math.round(fx.to.y * t + t / 2);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - progress);
+      ctx.lineCap = 'square';
+      ctx.strokeStyle = '#050509';
+      ctx.lineWidth = Math.max(3, Math.round(t * 0.16));
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      ctx.strokeStyle = fx.color;
+      ctx.lineWidth = Math.max(1, Math.round(t * 0.08));
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
       ctx.restore();
     }
     // 'shake' has no direct visual draw — it's folded into the camera translate.

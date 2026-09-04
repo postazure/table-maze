@@ -1,4 +1,4 @@
-import type { GameState, Modal } from '../engine/types';
+import type { GameState, ItemSlot, MagicItem, Modal } from '../engine/types';
 
 export interface HudModel {
   depth: number;
@@ -15,6 +15,10 @@ export interface HudModel {
   kills: number;
   stunned: boolean;
   log: string[]; // last 3 messages, oldest first
+  /** One magic item per slot, or null if empty. */
+  gear: Record<ItemSlot, MagicItem | null>;
+  /** True when the hero is standing on a shop level. */
+  shop: boolean;
   /** Current popup, compared by reference. */
   modal: Modal | null;
 }
@@ -35,12 +39,20 @@ export function deriveHudModel(state: GameState): HudModel {
     chestKeys: hero.keys.chest ?? 0,
     kills: state.stats.kills,
     stunned: hero.sleeping || hero.stun > 0,
+    gear: hero.gear,
+    shop: state.level.kind === 'shop',
     modal: state.modal,
     log: state.log.slice(-3).map((m) => m.text),
   };
 }
 
-/** Shallow compare, including log array contents. */
+function gearSlotEquals(a: MagicItem | null, b: MagicItem | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.kind === b.kind && a.level === b.level;
+}
+
+/** Shallow compare, including log array contents and per-slot gear. */
 export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
   if (!a) return false;
   if (
@@ -57,8 +69,12 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     a.chestKeys !== b.chestKeys ||
     a.kills !== b.kills ||
     a.stunned !== b.stunned ||
+    a.shop !== b.shop ||
     a.modal !== b.modal ||
-    a.log.length !== b.log.length
+    a.log.length !== b.log.length ||
+    !gearSlotEquals(a.gear.offense, b.gear.offense) ||
+    !gearSlotEquals(a.gear.defense, b.gear.defense) ||
+    !gearSlotEquals(a.gear.spirit, b.gear.spirit)
   ) {
     return false;
   }
