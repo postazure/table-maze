@@ -23,7 +23,11 @@ export function MazeCanvas({ game }: MazeCanvasProps) {
     (window as unknown as { __renderer?: Renderer }).__renderer = renderer;
 
     let level = game.state.level;
-    const resize = () => renderer.resize(game.state.level);
+    // A resize that re-creates the canvas bitmap leaves it blank until the
+    // next frame. Redraw right away so no blank frame ever reaches the screen.
+    const resize = () => {
+      if (renderer.resize(game.state.level)) renderer.draw(game.state, 0);
+    };
     resize();
     window.addEventListener('resize', resize);
     window.addEventListener('orientationchange', resize);

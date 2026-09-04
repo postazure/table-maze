@@ -374,18 +374,33 @@ export class Renderer implements TileMapper {
     }
   }
 
-  resize(level: LevelData): void {
+  /**
+   * Fit the canvas to its parent. Returns true when the backing bitmap was
+   * re-created (it comes back blank, so the caller should redraw at once
+   * rather than wait for the next animation frame: a blank frame on screen
+   * reads as a flicker). Assigning `canvas.width` wipes the bitmap even when
+   * the value is unchanged, so it is only touched when the size really moved.
+   */
+  resize(level: LevelData): boolean {
     const parent = this.canvas.parentElement;
     const boxW = Math.max(1, parent ? parent.clientWidth : window.innerWidth);
     const boxH = Math.max(1, parent ? parent.clientHeight : window.innerHeight);
 
     const tile = Math.max(24, Math.min(48, Math.round(boxW / VIEW_TILES)));
     const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const pxW = Math.round(boxW * dpr);
+    const pxH = Math.round(boxH * dpr);
 
-    this.canvas.style.width = `${boxW}px`;
-    this.canvas.style.height = `${boxH}px`;
-    this.canvas.width = Math.round(boxW * dpr);
-    this.canvas.height = Math.round(boxH * dpr);
+    let wiped = false;
+    if (this.canvas.width !== pxW || this.canvas.height !== pxH) {
+      this.canvas.width = pxW;
+      this.canvas.height = pxH;
+      wiped = true;
+    }
+    if (this.viewW !== boxW || this.viewH !== boxH) {
+      this.canvas.style.width = `${boxW}px`;
+      this.canvas.style.height = `${boxH}px`;
+    }
 
     this.tile = tile;
     this.dpr = dpr;
@@ -401,6 +416,7 @@ export class Renderer implements TileMapper {
     }
 
     this.ctx.imageSmoothingEnabled = false;
+    return wiped;
   }
 
   tileAt(clientX: number, clientY: number): Vec | null {
