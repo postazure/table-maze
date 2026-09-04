@@ -828,6 +828,45 @@ test('thorn mail bites the monster that hit the hero', () => {
   assert.equal(m.hp, 17, 'and the mail bites back');
 });
 
+test('a knockdown heals every monster still standing back to full', () => {
+  const g = Game.forTest(1234);
+  install(g, mkLevel(LONG_CORRIDOR), { x: 10, y: 1 });
+  const st = g.state;
+  st.trail = trailTo(10);
+  st.hero.hp = 1;
+  st.hero.maxHp = 20;
+  const bruiser = mkMonster({ id: 'b', pos: { x: 11, y: 1 }, atk: 50, hp: 3, maxHp: 30, sightRange: 4 });
+  const poisoned = mkMonster({ id: 'p', pos: { x: 13, y: 1 }, hp: 10, maxHp: 25, poisonMs: 3000, poisonDmg: 2, slowMs: 1500 });
+  const corpse = mkMonster({ id: 'c', pos: { x: 12, y: 1 }, hp: 0, maxHp: 20, alive: false });
+  st.level.monsters.push(bruiser, poisoned, corpse);
+
+  monsterAttack(st, bruiser, makeRng(3));
+  assert.equal(st.hero.sleeping, true);
+  assert.equal(bruiser.hp, 30, 'the one that hit you is back to full');
+  assert.equal(poisoned.hp, 25, 'so is everything else on the floor');
+  assert.equal(poisoned.poisonMs, 0, 'poison is cured');
+  assert.equal(poisoned.poisonDmg, 0);
+  assert.equal(poisoned.slowMs, 0, 'frost thaws');
+  assert.equal(corpse.alive, false, 'the dead stay dead');
+  assert.equal(corpse.hp, 0);
+  assert.equal(st.fx.filter((f) => f.kind === 'flash').length, 2, 'a green cue on each healed monster');
+});
+
+test('the phoenix feather burst is not a knockdown: monsters stay hurt', () => {
+  const g = corridorGame();
+  const st = g.state;
+  const hero = st.hero;
+  hero.maxHp = 20;
+  hero.hp = 1;
+  hero.pos = { x: 4, y: 1 };
+  equip(hero, { kind: 'phoenixFeather', level: 3 });
+  const m = mkMonster({ pos: { x: 3, y: 1 }, atk: 50, hp: 5, maxHp: 30 });
+  st.level.monsters.push(m);
+  monsterAttack(st, m, makeRng(5));
+  assert.equal(hero.sleeping, false, 'the feather kept the hero up');
+  assert.equal(m.hp, 5, 'nothing healed');
+});
+
 test('the phoenix feather skips one knockdown, then needs its cooldown', () => {
   const g = corridorGame();
   const st = g.state;
@@ -1119,11 +1158,11 @@ test('a knocked-down hero stops fighting', () => {
   st.level.monsters.push(m);
 
   g.tick(50); // the hero swings first, then the monster's blow lands
-  assert.ok(m.hp < 200, 'the fight started on its own');
+  assert.ok(m.hitFlash > 0, 'the fight started on its own');
   assert.equal(st.hero.sleeping, true, 'and ended with a knockdown');
-  const hp = m.hp;
+  assert.equal(m.hp, 200, 'which healed the monster back to full');
   for (let i = 0; i < 4; i++) g.tick(320);
-  assert.equal(m.hp, hp, 'a sleeping hero swings at nothing');
+  assert.equal(m.hp, 200, 'a sleeping hero swings at nothing');
   assert.equal(st.hero.sleeping, true);
 });
 

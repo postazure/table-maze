@@ -325,6 +325,26 @@ function knockDown(state: GameState): void {
   state.trail.add(key(hero.pos));
   pushShake(state, 12, 450);
   pushLog(state, 'Knocked down!');
+  healAllMonsters(state);
+}
+
+/**
+ * A knockdown resets the board: every monster still standing is back to full
+ * health, poison and frost included. Chipping a lurker down over several
+ * naps is not a strategy; you beat it in one go or you go around it.
+ */
+function healAllMonsters(state: GameState): void {
+  for (const m of state.level.monsters) {
+    if (!m.alive) continue;
+    const hurt = m.hp < m.maxHp || m.poisonMs > 0 || m.slowMs > 0;
+    m.hp = m.maxHp;
+    m.poisonMs = 0;
+    m.poisonDmg = 0;
+    m.slowMs = 0;
+    if (hurt) {
+      state.fx.push({ kind: 'flash', pos: { x: m.pos.x, y: m.pos.y }, color: GREEN, t: 0, ttl: 320 });
+    }
+  }
 }
 
 /** A resting spot must be at least this far from every monster... */

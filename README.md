@@ -28,7 +28,8 @@ Play it at **https://postazure.github.io/table-maze/**
   through, away from monsters, and fall asleep ("zzz"). Monsters ignore a
   sleeping hero. You get control back once every heart has refilled. Out of
   combat, hearts also refill slowly on their own. Monsters heal too, so finish
-  a fight or walk away and expect them at full strength.
+  a fight or walk away and expect them at full strength. Getting knocked down
+  heals every monster on the floor back to full at once.
 - Every monster wears a level tag. Red means it's above your level, green below.
 - Monster types, from weakest to deadliest:
   - **Patrols** walk a fixed route. They're trash: a speed bump you cut down in
