@@ -404,6 +404,8 @@ export class Renderer implements TileMapper {
   private doorClosedSprite: HTMLCanvasElement;
   private exitSprite: HTMLCanvasElement;
   private shieldBadgeSprite: HTMLCanvasElement;
+  /** Hero level captured at the start of each draw, used to color monster level badges. */
+  private heroLevel = 1;
   private monsterSprites: Map<string, HTMLCanvasElement> = new Map();
 
   constructor(canvas: HTMLCanvasElement) {
@@ -520,6 +522,7 @@ export class Renderer implements TileMapper {
   }
 
   draw(state: GameState, dt: number): void {
+    this.heroLevel = state.hero.level;
     // 1. Age & prune effects.
     for (const fx of state.fx) fx.t += dt;
     state.fx = state.fx.filter((fx) => fx.t < fx.ttl);
@@ -783,6 +786,28 @@ export class Renderer implements TileMapper {
       const bx = Math.round(cx + size / 2 - bsize * 0.6);
       const by = Math.round(cy - size / 2 - bsize * 0.4);
       ctx.drawImage(this.shieldBadgeSprite, bx, by, bsize, bsize);
+    }
+
+    // Level badge: small dark tag at the bottom-right corner of the sprite.
+    {
+      const fontPx = Math.max(6, Math.round(t * 0.26));
+      const label = `${m.level}`;
+      ctx.save();
+      ctx.font = `${fontPx}px "Press Start 2P", monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const w = Math.round(fontPx * 0.9 * label.length + 4);
+      const h = fontPx + 3;
+      const bx = Math.round(cx + size / 2 - w * 0.7);
+      const by = Math.round(cy + size / 2 - h * 0.55);
+      ctx.fillStyle = 'rgba(5,5,9,0.9)';
+      ctx.fillRect(bx, by, w, h);
+      ctx.strokeStyle = m.level > this.heroLevel ? '#e53b3b' : m.level < this.heroLevel ? '#43d17c' : '#8f8ca8';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx + 0.5, by + 0.5, w - 1, h - 1);
+      ctx.fillStyle = '#f0ecff';
+      ctx.fillText(label, bx + w / 2, by + h / 2 + 1);
+      ctx.restore();
     }
 
     if (m.hitFlash > 0) {

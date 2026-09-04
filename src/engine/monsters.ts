@@ -25,6 +25,7 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
     if (m.attackCooldown > 0) m.attackCooldown = Math.max(0, m.attackCooldown - dt);
     if (m.moveCooldown > 0) m.moveCooldown = Math.max(0, m.moveCooldown - dt);
     lerpRpos(m, dt);
+    regen(m, dt);
 
     if (state.descending > 0) continue;
 
@@ -228,4 +229,17 @@ function lurkerStep(state: GameState, m: Monster): Vec | null {
   }
 
   return null;
+}
+
+const MONSTER_REGEN_DELAY = 4000;
+const MONSTER_REGEN_MS = 1500;
+
+/** Monsters slowly heal once they have been out of combat for a while. */
+function regen(m: Monster, dt: number): void {
+  const before = m.sinceCombat;
+  m.sinceCombat = Math.min(1e9, before + dt);
+  if (m.hp >= m.maxHp || m.sinceCombat < MONSTER_REGEN_DELAY) return;
+  const ticksBefore = Math.floor(Math.max(0, before - MONSTER_REGEN_DELAY) / MONSTER_REGEN_MS);
+  const ticksAfter = Math.floor((m.sinceCombat - MONSTER_REGEN_DELAY) / MONSTER_REGEN_MS);
+  if (ticksAfter > ticksBefore) m.hp = Math.min(m.maxHp, m.hp + (ticksAfter - ticksBefore));
 }

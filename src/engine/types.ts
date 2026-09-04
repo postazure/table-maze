@@ -105,6 +105,7 @@ export interface Monster {
   maxHp: number;
   atk: number;
   def: number;
+  level: number; // shown on the sprite; drives the stat scaling
   xp: number; // xp granted on death
   gold: number; // gold dropped on death
   /** Milliseconds between moves. Lower = faster. */
@@ -119,6 +120,8 @@ export interface Monster {
   sightRange: number; // lurker/patrol: BFS tiles
   leash: number; // lurker: BFS tiles from home before giving up
   alive: boolean;
+  /** ms since this monster last dealt or took damage; drives its self-heal. */
+  sinceCombat: number;
   hitFlash: number; // ms remaining of "just got hit" flash (renderer reads, game decrements)
   lunge?: Vec; // unit vector of a short attack lunge animation, set by game when it attacks
   lungeT: number; // ms remaining of lunge
@@ -195,7 +198,6 @@ export interface GameState {
   log: Message[]; // recent messages, newest last; game trims to ~5
   stats: {
     kills: number;
-    chests: number;
     deepest: number;
     playMs: number;
   };
@@ -228,4 +230,4 @@ export interface Rng {
   chance(p: number): boolean;
 }
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;

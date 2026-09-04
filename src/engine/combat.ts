@@ -107,6 +107,7 @@ export function heroAttack(state: GameState, m: Monster, rng: Rng): void {
   const dmg = damage(hero.atk, m.def, rng);
   m.hp -= dmg;
   m.hitFlash = 150;
+  m.sinceCombat = 0;
   hero.sinceCombat = 0;
   pushText(state, m.pos, `-${dmg}`, WHITE);
   if (m.hp <= 0) {
@@ -131,6 +132,7 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
   hero.hp -= dmg;
   hero.hitFlash = 150;
   hero.sinceCombat = 0;
+  m.sinceCombat = 0;
 
   const away = unitToward(m.pos, hero.pos);
   m.lunge = { x: away.x, y: away.y };

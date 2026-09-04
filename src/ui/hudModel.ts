@@ -13,7 +13,6 @@ export interface HudModel {
   doorKeys: number;
   chestKeys: number;
   kills: number;
-  chests: number;
   stunned: boolean;
   log: string[]; // last 3 messages, oldest first
 }
@@ -33,7 +32,6 @@ export function deriveHudModel(state: GameState): HudModel {
     doorKeys: hero.keys.door ?? 0,
     chestKeys: hero.keys.chest ?? 0,
     kills: state.stats.kills,
-    chests: state.stats.chests,
     stunned: hero.stun > 0,
     log: state.log.slice(-3).map((m) => m.text),
   };
@@ -55,7 +53,6 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     a.doorKeys !== b.doorKeys ||
     a.chestKeys !== b.chestKeys ||
     a.kills !== b.kills ||
-    a.chests !== b.chests ||
     a.stunned !== b.stunned ||
     a.log.length !== b.log.length
   ) {

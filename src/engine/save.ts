@@ -92,7 +92,7 @@ export function loadGame(): GameState | null {
       pointer: null,
       fx: [],
       log: [],
-      stats: d.stats ?? { kills: 0, chests: 0, deepest: d.depth, playMs: 0 },
+      stats: d.stats ?? { kills: 0, deepest: d.depth, playMs: 0 },
       descending: 0,
     };
     return state;

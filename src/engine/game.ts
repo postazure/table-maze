@@ -216,7 +216,7 @@ export class Game {
       pointer: null,
       fx: [],
       log: [],
-      stats: { kills: 0, chests: 0, deepest: depth, playMs: 0 },
+      stats: { kills: 0, deepest: depth, playMs: 0 },
       descending: 0,
     };
     this.rng = makeRng(hashSeed(seed, depth, RNG_SALT));
@@ -376,7 +376,6 @@ export class Game {
           }
           hero.items.push(item);
         }
-        st.stats.chests += 1;
         pushText(st, tile, `+${c.loot.gold}g`, GOLD, 1100);
         pushLog(st, item ? `Found ${item.name}!` : `Found ${c.loot.gold} gold`);
         this.dirty = true;
@@ -457,7 +456,7 @@ function reviveState(saved: GameState): GameState {
   s.pointer = null;
   s.log = Array.isArray(s.log) ? s.log : [];
   s.descending = 0;
-  if (!s.stats) s.stats = { kills: 0, chests: 0, deepest: s.depth || 1, playMs: 0 };
+  if (!s.stats) s.stats = { kills: 0, deepest: s.depth || 1, playMs: 0 };
   const hero = s.hero as Hero;
   if (!hero.keys) hero.keys = { door: 0, chest: 0 };
   if (!Array.isArray(hero.items)) hero.items = [];

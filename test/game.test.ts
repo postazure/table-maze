@@ -65,6 +65,8 @@ function mkMonster(over: Partial<Monster> & { pos: Vec }): Monster {
     sightRange: 4,
     leash: 8,
     alive: true,
+    level: 1,
+    sinceCombat: 99999,
     hitFlash: 0,
     lungeT: 0,
   };
@@ -166,7 +168,6 @@ test('a chest opens only with a chest key and applies its loot', () => {
   assert.equal(g.state.hero.keys.chest, 0);
   assert.equal(g.state.hero.gold, 12);
   assert.equal(g.state.hero.atk, atk0 + 2);
-  assert.equal(g.state.stats.chests, 1);
 });
 
 test('a closed door blocks without a key and opens with one', () => {
@@ -469,4 +470,25 @@ test('onChange fires when the hero actually moves', () => {
   g.pointerAt({ x: 2, y: 1 });
   g.tick(150);
   assert.equal(calls, 1);
+});
+
+test('monsters heal on their own once out of combat', () => {
+  const m = mkMonster({ pos: { x: 7, y: 1 }, kind: 'guard', hp: 2, maxHp: 10, sinceCombat: 0 });
+  const g = corridorGame({ monsters: [m] });
+  const rng = makeRng(5);
+  // Hero is far away (6 tiles); the guard never moves, so it just waits.
+  updateMonsters(g.state, 3000, rng);
+  assert.equal(m.hp, 2, 'no healing before the regen delay');
+  updateMonsters(g.state, 1000 + 1500, rng);
+  assert.equal(m.hp, 3, 'one hp after the delay plus one regen tick');
+  updateMonsters(g.state, 1500 * 20, rng);
+  assert.equal(m.hp, 10, 'never heals past maxHp');
+});
+
+test('monsters carry a level and combat resets their regen clock', () => {
+  const m = mkMonster({ pos: { x: 2, y: 1 }, kind: 'guard', hp: 5, maxHp: 10, sinceCombat: 9000, level: 3 });
+  const g = corridorGame({ monsters: [m] });
+  assert.equal(m.level, 3);
+  heroAttack(g.state, m, makeRng(1));
+  assert.equal(m.sinceCombat, 0);
 });

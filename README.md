@@ -11,12 +11,15 @@ Play it at **https://postazure.github.io/table-maze/**
 - **Drag** your finger on the maze. The hero follows the trail your finger draws.
   Lift your finger and the hero keeps walking the queued path.
 - The light highlight shows every tile you've stepped on this level.
-- 🗝️ **Door keys** open 🚪 doors. 🔑 **Chest keys** open 📦 chests. They are not
-  interchangeable. Keys don't carry over to the next level.
+- **Door keys** (gold) open doors. **Chest keys** (blue) open any chest and are used
+  up when you do. The two kinds are not interchangeable, and keys don't carry over
+  to the next level.
 - Drag into a monster to attack it. Hold your finger on it to keep swinging.
 - Monsters hit back and shove you away. If your HP hits zero you don't die: you're
   knocked down, pushed back along your trail, and get up with some HP.
-  HP slowly regenerates when you're out of combat.
+  HP slowly regenerates when you're out of combat. Monsters heal too, so finish
+  a fight or walk away and expect them at full strength.
+- Every monster wears a level tag. Red means it's above your level, green below.
 - Monster types:
   - **Guards** never move. They block a tile until you beat them.
   - **Patrols** walk a fixed route. Time your run, or fight.

@@ -95,7 +95,7 @@ Out of combat (sinceCombat > 3000ms) hero regains 1 hp every ~600ms.
 export function updateMonsters(state: GameState, dt: number, rng: Rng): void;
 ```
 Monsters never walk onto: walls, closed doors, other monsters, the hero, keys,
-chests, the exit. They attack when 4-adjacent to the hero and attackCooldown <= 0.
+chests, the exit. Monsters heal 1 hp every ~1.5s once out of combat for 4s. They attack when 4-adjacent to the hero and attackCooldown <= 0.
 Lerp each monster's `rpos` toward `pos` (fast, ~14 tiles/s), decrement hitFlash/lungeT.
 
 ## input.ts

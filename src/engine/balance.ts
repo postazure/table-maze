@@ -160,8 +160,12 @@ export function makeMonster(
   pos: Vec,
   id: string,
 ): Monster {
-  const d = Math.max(1, Math.floor(depth));
-  const look = rng.pick(BESTIARY[kind][tierOf(d)]);
+  const depthN = Math.max(1, Math.floor(depth));
+  const look = rng.pick(BESTIARY[kind][tierOf(depthN)]);
+  // Guards and lurkers are a level above the dungeon depth; patrols match it.
+  // Every level, a few monsters roll one level higher to stand out.
+  const level = depthN + (kind === 'patrol' ? 0 : 1) + (rng.chance(0.2) ? 1 : 0);
+  const d = level;
 
   let hp: number;
   let atk: number;
@@ -224,6 +228,7 @@ export function makeMonster(
     maxHp: hp,
     atk,
     def,
+    level,
     xp,
     gold,
     moveInterval,
@@ -234,6 +239,7 @@ export function makeMonster(
     sightRange,
     leash,
     alive: true,
+    sinceCombat: 99999,
     hitFlash: 0,
     lungeT: 0,
   };

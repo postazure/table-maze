@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import type { HudModel } from './hudModel';
+import { PixelIcon, type IconName } from './icons';
 
 export interface HudProps {
   model: HudModel;
@@ -11,6 +12,15 @@ function steppedPct(value: number, max: number): number {
   if (max <= 0) return 0;
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
   return Math.floor(pct / 4) * 4;
+}
+
+function Stat({ icon, title, value }: { icon: IconName; title: string; value: number }) {
+  return (
+    <div className="hud-stat" title={title}>
+      <PixelIcon name={icon} size={14} title={title} />
+      <span className="hud-stat-value">{value}</span>
+    </div>
+  );
 }
 
 function HudInner({ model, onNewGame }: HudProps) {
@@ -61,34 +71,12 @@ function HudInner({ model, onNewGame }: HudProps) {
       </div>
 
       <div className="hud-stats">
-        <div className="hud-stat">
-          <span className="hud-lbl">ATK</span>
-          {model.atk}
-        </div>
-        <div className="hud-stat">
-          <span className="hud-lbl">DEF</span>
-          {model.def}
-        </div>
-        <div className="hud-stat">
-          <span className="hud-lbl">GOLD</span>
-          {model.gold}
-        </div>
-        <div className="hud-stat">
-          <span className="hud-lbl">DKEY</span>
-          {model.doorKeys}
-        </div>
-        <div className="hud-stat">
-          <span className="hud-lbl">CKEY</span>
-          {model.chestKeys}
-        </div>
-        <div className="hud-stat">
-          <span className="hud-lbl">KILLS</span>
-          {model.kills}
-        </div>
-        <div className="hud-stat">
-          <span className="hud-lbl">CHEST</span>
-          {model.chests}
-        </div>
+        <Stat icon="sword" title="Attack" value={model.atk} />
+        <Stat icon="shield" title="Defense" value={model.def} />
+        <Stat icon="coin" title="Gold" value={model.gold} />
+        <Stat icon="doorKey" title="Door keys" value={model.doorKeys} />
+        <Stat icon="chestKey" title="Chest keys" value={model.chestKeys} />
+        <Stat icon="skull" title="Kills" value={model.kills} />
       </div>
 
       <div className="hud-log">
