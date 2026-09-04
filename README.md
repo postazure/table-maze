@@ -18,8 +18,10 @@ Play it at **https://postazure.github.io/table-maze/**
 - Chests are solid. Walk into one with a chest key and the game pauses while the
   chest opens and your prize floats out: a sword, a shield, a heart, or coins.
   Tap to keep playing. Without a key the chest just blinks red.
-- Drag into a monster to attack it. Once engaged, the hero keeps swinging on their
-  own while the monster stays in reach. Walk away to break off.
+- Monsters are solid: you can't walk through one. Drag into a monster to attack
+  it. Stop next to a monster (or within reach of your weapon) and the hero
+  fights it too. Once engaged, the hero keeps swinging on their own until the
+  monster dies, you drag the hero away, or the hero is knocked down.
 - Health is hearts. A weak monster takes a quarter heart per hit, and you gain a
   heart every level. Monsters hit back and shove you away. If you run out of
   hearts you don't die: you're carried back to a nearby spot you already walked

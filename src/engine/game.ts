@@ -15,7 +15,6 @@ import { updateMonsters } from './monsters';
 import {
   GOLD,
   GREEN,
-  GREY,
   ORANGE,
   RED,
   chestAt,
@@ -75,8 +74,6 @@ const BANE_PULSE_MS = 2000;
 const COMPASS_MS = 500;
 /** A shop appears after every third maze floor. */
 const SHOP_EVERY = 3;
-/** ms the hero loses shoving past a patrol. */
-const SHOVE_STUN = 350;
 
 export class Game {
   state!: GameState;
@@ -342,10 +339,9 @@ export class Game {
   private isWalkable(p: Vec): boolean {
     const st = this.state;
     if (!isFloor(st.level, p)) return false;
-    // Patrols are shoved aside rather than fought, so a drag routes right
-    // through them; guards and lurkers are walls you have to deal with.
-    const m = liveMonsterAt(st.level, p);
-    if (m && m.kind !== 'patrol') return false;
+    // Monsters are solid: a drag never routes through one. Walking into a
+    // monster is how you start a fight (see stepOnce).
+    if (liveMonsterAt(st.level, p)) return false;
     if (chestAt(st.level, p)) return false;
     if (offerAt(st.level, p)) return false; // pedestals are solid
     if (closedDoorAt(st.level, p) && st.hero.keys.door <= 0) return false;
@@ -377,40 +373,33 @@ export class Game {
       return;
     }
 
+    // Nobody walks through a monster. Trying to is how a fight starts: the
+    // hero swings at whatever is in the way and stays engaged with it.
     const m = liveMonsterAt(st.level, next);
-    if (m && m.kind !== 'patrol') {
+    if (m) {
       this.swingAt(m);
       return;
     }
 
-    if (m) {
-      // A patrol in the way is shoved past: the two swap tiles and the hero
-      // loses a moment doing it. No swing (hold the finger on it for that).
-      m.pos = { x: hero.pos.x, y: hero.pos.y };
-      hero.stun = SHOVE_STUN;
-      st.fx.push({ kind: 'flash', pos: { x: next.x, y: next.y }, color: GREY, t: 0, ttl: 240 });
-      st.fx.push({ kind: 'flash', pos: { x: hero.pos.x, y: hero.pos.y }, color: GREY, t: 0, ttl: 240 });
-    } else {
-      const offer = offerAt(st.level, next);
-      if (offer) {
-        this.bumpOffer(offer);
-        return;
-      }
+    const offer = offerAt(st.level, next);
+    if (offer) {
+      this.bumpOffer(offer);
+      return;
+    }
 
-      const chest = chestAt(st.level, next);
-      if (chest) {
-        this.bumpChest(chest);
-        return;
-      }
+    const chest = chestAt(st.level, next);
+    if (chest) {
+      this.bumpChest(chest);
+      return;
+    }
 
-      // Long sword: the blade reaches over the empty tile in front of the hero.
-      if (stats.reach >= 2 && !closedDoorAt(st.level, next)) {
-        const far = { x: next.x + (next.x - hero.pos.x), y: next.y + (next.y - hero.pos.y) };
-        const beyond = isFloor(st.level, far) ? liveMonsterAt(st.level, far) : null;
-        if (beyond) {
-          this.reachSwing(beyond);
-          return;
-        }
+    // Long sword: the blade reaches over the empty tile in front of the hero.
+    if (stats.reach >= 2 && !closedDoorAt(st.level, next)) {
+      const far = { x: next.x + (next.x - hero.pos.x), y: next.y + (next.y - hero.pos.y) };
+      const beyond = isFloor(st.level, far) ? liveMonsterAt(st.level, far) : null;
+      if (beyond) {
+        this.reachSwing(beyond);
+        return;
       }
     }
 
@@ -594,9 +583,11 @@ export class Game {
 
   /**
    * Keep fighting without further input. The target is the monster under the
-   * finger if it is in reach, otherwise the monster the hero last swung at.
-   * Engagement ends when the target dies, wanders more than a few tiles off,
-   * or the player drags somewhere else.
+   * finger if it is in reach, otherwise the monster the hero last swung at,
+   * otherwise any monster the hero is standing within reach of (adjacent, or
+   * two tiles down a line with the long sword). Engagement ends when the
+   * target dies, wanders more than a few tiles off, the player drags the hero
+   * away, or the hero is knocked out.
    */
   private autoAttack(dt: number, stats: ItemStats = heroStats(this.state.hero)): void {
     const st = this.state;
@@ -610,6 +601,15 @@ export class Game {
     const pointed = st.pointer ? liveMonsterAt(st.level, st.pointer) : null;
     let target = pointed && this.inReach(pointed, stats) ? pointed : null;
     if (!target && engaged && engaged.alive && this.engagedId) target = engaged;
+    if (!target) {
+      // Standing still within reach of a monster means fighting it: the hero
+      // walked up to it, or it walked up to the hero. Either way, swing.
+      target = this.nearestInReach(stats);
+      if (target) {
+        this.engagedId = target.id;
+        this.holdTimer = Math.min(this.holdTimer, HOLD_ATTACK_MS);
+      }
+    }
     if (!target) {
       this.holdTimer = 0;
       return;
@@ -638,6 +638,22 @@ export class Game {
     });
     if (!route || route.length < 2) return; // adjacent already, or no way through
     st.path.push({ x: route[0].x, y: route[0].y });
+  }
+
+  /**
+   * The live monster the hero can hit from where they stand: an adjacent one
+   * first, else one at long-sword reach. Ties go to level order, which keeps
+   * the choice deterministic.
+   */
+  private nearestInReach(stats: ItemStats): Monster | null {
+    let far: Monster | null = null;
+    for (const m of this.state.level.monsters) {
+      if (!m.alive) continue;
+      const r = this.inReach(m, stats);
+      if (r === 1) return m;
+      if (r === 2 && !far) far = m;
+    }
+    return far;
   }
 
   private onEnter(tile: Vec): void {
