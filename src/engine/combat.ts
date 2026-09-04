@@ -16,9 +16,11 @@ import type {
   Rng,
   Vec,
 } from './types';
-import { eq, key, manhattan, parseKey } from './types';
+import { HEART, eq, key, manhattan, parseKey } from './types';
 import { damage } from './balance';
 import { bfsDistances, floorNeighbors, isFloor } from './pathfind';
+import type { ItemStats } from './items';
+import { berserkActive, heroStats } from './items';
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -28,6 +30,10 @@ export const WHITE = '#f4f1e8';
 export const RED = '#ff5c5c';
 export const GOLD = '#ffd166';
 export const GREEN = '#8fd694';
+export const BLUE = '#5aa9ff';
+export const ORANGE = '#ff8c3a';
+export const GREY = '#c9c6d6';
+export const SPARK = '#bfe3ff';
 
 /** Push a floating text effect at `pos`. */
 export function pushText(
@@ -102,25 +108,122 @@ export function unitToward(a: Vec, b: Vec): Vec {
 // Combat
 // ---------------------------------------------------------------------------
 
+/** Where a hit came from. Only the hero's own swing procs on-hit magic items. */
+export type DamageSource = 'hero' | 'fire' | 'chain' | 'poison' | 'thorn';
+
+export interface DamageOpts {
+  source?: DamageSource;
+  /** Floating text colour (default white). */
+  color?: string;
+  /** Floating text override (default "-dmg"). */
+  text?: string;
+}
+
+/**
+ * The single door every point of monster damage goes through: hero swings,
+ * fireballs, chain lightning, poison ticks and thorn mail. Applies the damage,
+ * the hit flash and the combat clocks, then the death rewards (with the
+ * hero's gold/xp multipliers and the vampire fang's kill heal).
+ */
+export function damageMonster(
+  state: GameState,
+  m: Monster,
+  dmg: number,
+  rng: Rng,
+  opts: DamageOpts = {},
+): void {
+  if (!m.alive) return;
+  const amount = Math.max(0, Math.round(dmg));
+  if (amount <= 0) return;
+  const hero = state.hero;
+  const source = opts.source ?? 'hero';
+  const stats = heroStats(hero);
+
+  m.hp -= amount;
+  m.hitFlash = 150;
+  m.sinceCombat = 0;
+  // Poison keeps ticking after the hero has walked away: it must not hold the
+  // hero's out-of-combat regen hostage.
+  if (source !== 'poison') hero.sinceCombat = 0;
+  pushText(state, m.pos, opts.text ?? `-${amount}`, opts.color ?? WHITE);
+
+  const killed = m.hp <= 0;
+  if (killed) {
+    m.hp = 0;
+    m.alive = false;
+    const xp = Math.round(m.xp * stats.xpMult);
+    const gold = Math.round(m.gold * stats.goldMult);
+    hero.xp += xp;
+    hero.gold += gold;
+    state.stats.kills += 1;
+    pushText(state, m.pos, `+${xp} xp`, GOLD, 1100);
+    pushLog(state, `Slew the ${m.name}`);
+    if (stats.vampKillHeal > 0) healHero(state, stats.vampKillHeal);
+  }
+
+  if (source === 'hero') onHeroHit(state, m, rng, stats, killed);
+}
+
+/** Heal the hero, clamped to maxHp. Pushes a small green cue. */
+function healHero(state: GameState, amount: number): void {
+  const hero = state.hero;
+  if (amount <= 0 || hero.hp >= hero.maxHp) return;
+  hero.hp = Math.min(hero.maxHp, hero.hp + amount);
+  state.fx.push({ kind: 'flash', pos: { x: hero.pos.x, y: hero.pos.y }, color: GREEN, t: 0, ttl: 240 });
+}
+
+/** Poison / frost / lightning / vampire procs that ride on the hero's swing. */
+function onHeroHit(
+  state: GameState,
+  m: Monster,
+  rng: Rng,
+  stats: ItemStats,
+  killed: boolean,
+): void {
+  if (!killed) {
+    if (stats.poisonMs > 0) {
+      m.poisonMs = Math.max(m.poisonMs, stats.poisonMs);
+      m.poisonDmg = stats.poisonDmg;
+    }
+    if (stats.slowMs > 0) m.slowMs = Math.max(m.slowMs, stats.slowMs);
+  }
+  if (stats.vampHitChance > 0 && rng.chance(stats.vampHitChance)) healHero(state, 1);
+  if (stats.chainChance > 0 && rng.chance(stats.chainChance)) chainFrom(state, m, rng, stats);
+}
+
+/** Lightning wand: hop from the struck monster to its nearest live neighbours. */
+function chainFrom(state: GameState, m: Monster, rng: Rng, stats: ItemStats): void {
+  const targets = state.level.monsters
+    .filter((o) => o.alive && o !== m && manhattan(o.pos, m.pos) <= CHAIN_RADIUS)
+    .sort((a, b) => manhattan(a.pos, m.pos) - manhattan(b.pos, m.pos))
+    .slice(0, Math.max(0, stats.chainTargets));
+  if (targets.length === 0) return;
+  const points: Vec[] = [
+    { x: state.hero.pos.x, y: state.hero.pos.y },
+    { x: m.pos.x, y: m.pos.y },
+  ];
+  for (const t of targets) points.push({ x: t.pos.x, y: t.pos.y });
+  state.fx.push({ kind: 'bolt', points, color: SPARK, t: 0, ttl: 220 });
+  for (const t of targets) {
+    damageMonster(state, t, stats.chainDmg, rng, { source: 'chain', color: SPARK });
+  }
+}
+
+/** How far chain lightning hops (manhattan tiles). */
+const CHAIN_RADIUS = 3;
+
+/** The hero's attack right now: base plus the berserker axe while wounded. */
+export function heroAttackValue(state: GameState): number {
+  const hero = state.hero;
+  const stats = heroStats(hero);
+  return hero.atk + (berserkActive(hero, stats) ? stats.berserkAtk : 0);
+}
+
 /** Hero attacks monster. Applies damage, pushes fx/log, handles death. */
 export function heroAttack(state: GameState, m: Monster, rng: Rng): void {
   if (!m.alive) return;
-  const hero = state.hero;
-  const dmg = damage(hero.atk, m.def, rng);
-  m.hp -= dmg;
-  m.hitFlash = 150;
-  m.sinceCombat = 0;
-  hero.sinceCombat = 0;
-  pushText(state, m.pos, `-${dmg}`, WHITE);
-  if (m.hp <= 0) {
-    m.hp = 0;
-    m.alive = false;
-    hero.xp += m.xp;
-    hero.gold += m.gold;
-    state.stats.kills += 1;
-    pushText(state, m.pos, `+${m.xp} xp`, GOLD, 1100);
-    pushLog(state, `Slew the ${m.name}`);
-  }
+  const dmg = damage(heroAttackValue(state), m.def, rng);
+  damageMonster(state, m, dmg, rng, { source: 'hero' });
 }
 
 /**
@@ -130,27 +233,51 @@ export function heroAttack(state: GameState, m: Monster, rng: Rng): void {
 export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
   const hero = state.hero;
   const level = state.level;
-  const dmg = damage(m.atk, hero.def, rng);
-  hero.hp -= dmg;
-  hero.hitFlash = 150;
-  hero.sinceCombat = 0;
-  m.sinceCombat = 0;
+  const stats = heroStats(hero);
 
   const away = unitToward(m.pos, hero.pos);
   m.lunge = { x: away.x, y: away.y };
   m.lungeT = 120;
+  m.sinceCombat = 0;
+  hero.sinceCombat = 0;
+
+  // Shield amulet: the bubble eats the whole hit (no damage, no knockback)
+  // and starts recharging. Wordless: just the bubble popping.
+  if (hero.shieldReady) {
+    hero.shieldReady = false;
+    hero.timers.shield = 0;
+    state.fx.push({
+      kind: 'ring',
+      pos: { x: hero.pos.x, y: hero.pos.y },
+      radius: 1,
+      color: BLUE,
+      t: 0,
+      ttl: 300,
+    });
+    return;
+  }
+
+  const dmg = damage(m.atk, hero.def, rng);
+  hero.hp -= dmg;
+  hero.hitFlash = 150;
 
   pushText(state, hero.pos, `-${dmg}`, RED);
   pushShake(state, 4, 180);
 
   // Knockback: shove the hero one tile directly away from the monster.
-  if (away.x !== 0 || away.y !== 0) {
+  // Patrols are the "slow you down" mob: their hits never shove.
+  if (!stats.knockbackImmune && m.kind !== 'patrol' && (away.x !== 0 || away.y !== 0)) {
     const back = { x: hero.pos.x + away.x, y: hero.pos.y + away.y };
     if (heroCanStand(level, back)) {
       hero.pos = back;
       state.path.length = 0;
       state.trail.add(key(back));
     }
+  }
+
+  // Thorn mail bites back.
+  if (stats.thornDmg > 0 && m.alive) {
+    damageMonster(state, m, stats.thornDmg, rng, { source: 'thorn', color: GREY });
   }
 
   if (hero.hp <= 0) knockDown(state);
@@ -163,6 +290,32 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
  */
 function knockDown(state: GameState): void {
   const hero = state.hero;
+  const stats = heroStats(hero);
+
+  // Phoenix feather: burst back up instead of sleeping (once per cooldown).
+  if (stats.phoenixCooldownMs > 0 && hero.timers.phoenix <= 0) {
+    const half = Math.ceil(hero.maxHp / 2);
+    hero.hp = Math.min(hero.maxHp, Math.ceil(half / HEART) * HEART);
+    hero.timers.phoenix = stats.phoenixCooldownMs;
+    hero.stun = 0;
+    hero.sleeping = false;
+    state.path.length = 0;
+    state.fx.push({
+      kind: 'ring',
+      pos: { x: hero.pos.x, y: hero.pos.y },
+      radius: 1.5,
+      color: ORANGE,
+      t: 0,
+      ttl: 500,
+    });
+    pushShake(state, 10, 420);
+    const spot = retreatTile(state);
+    if (spot) hero.pos = spot;
+    state.trail.add(key(hero.pos));
+    pushLog(state, 'The feather burns!');
+    return;
+  }
+
   hero.hp = 1;
   hero.stun = 0;
   hero.sleeping = true;
@@ -174,15 +327,24 @@ function knockDown(state: GameState): void {
   pushLog(state, 'Knocked down!');
 }
 
-/** How far a monster must be for a tile to count as a safe resting spot. */
-const SAFE_MONSTER_DIST = 3;
+/** A resting spot must be at least this far from every monster... */
+const SAFE_MONSTER_DIST = 4;
+/** ...and outside its sight by this margin. */
+const SAFE_SIGHT_MARGIN = 2;
 /** Don't carry the hero further than this (BFS tiles) from where they fell. */
-const RETREAT_MAX_DIST = 10;
+const RETREAT_MAX_DIST = 16;
 
+/**
+ * Somewhere the hero can nap: out of reach and out of sight of every live
+ * monster, and off every patrol route (a beat walker would trip over them).
+ */
 function isSafeSpot(state: GameState, p: Vec): boolean {
   if (!heroCanStand(state.level, p)) return false;
   for (const m of state.level.monsters) {
-    if (m.alive && manhattan(m.pos, p) < SAFE_MONSTER_DIST) return false;
+    if (!m.alive) continue;
+    const need = Math.max(SAFE_MONSTER_DIST, m.sightRange + SAFE_SIGHT_MARGIN);
+    if (manhattan(m.pos, p) < need) return false;
+    if (m.kind === 'patrol' && m.patrolPath?.some((t) => eq(t, p))) return false;
   }
   return true;
 }

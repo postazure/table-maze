@@ -78,15 +78,21 @@ export interface Chest {
 
 /**
  * Monster behaviours:
- *  - guard:  never leaves its tile. Attacks the hero when adjacent.
+ *  - guard:  never leaves its tile and blocks it. Dozes until provoked: it
+ *            only attacks an adjacent hero while it has been in combat
+ *            recently (a few seconds), so the hero can slip past an untouched
+ *            guard.
  *  - patrol: walks back and forth along `patrolPath` (list of tiles, walked
- *            forward then backward). Attacks the hero when adjacent, and will
- *            step toward the hero if the hero is on its path and in sight,
- *            then resume the patrol.
- *  - lurker: sits on `home`. When the hero comes within `sightRange` (BFS
- *            tile distance through open floor) it switches to `chasing` and
- *            follows the hero. When the hero gets further than `leash` tiles
- *            from the lurker it gives up and walks back `home` (`returning`).
+ *            forward then backward) and never chases. It attacks whoever is
+ *            adjacent when its cooldown allows, but its hits never knock the
+ *            hero back. Patrols do not block: the hero shoves past one (the
+ *            two swap tiles) at the cost of a short stagger, so a wandering
+ *            monster can never seal a corridor.
+ *  - lurker: sits on `home` and blocks it. When the hero comes within
+ *            `sightRange` (BFS tile distance through open floor) it switches
+ *            to `chasing` and follows the hero. Once the hero is further than
+ *            `sightRange + 1`, or further than `leash` tiles from the
+ *            lurker's home, it gives up and walks back `home` (`returning`).
  *            This is the monster you bait: pull it away from the corridor it
  *            guards, then loop around it (levels contain a few loops).
  */

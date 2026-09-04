@@ -4,6 +4,7 @@
  */
 import type { GameState, Hero, LevelData, SaveData } from './types';
 import { SAVE_VERSION, key } from './types';
+import { reviveGear } from './items';
 
 const STORAGE_KEY = 'table-maze:save';
 
@@ -78,6 +79,12 @@ export function loadGame(): GameState | null {
     hero.hitFlash = 0;
     hero.lungeT = 0;
     hero.lunge = undefined;
+    reviveGear(hero);
+    for (const m of level.monsters) {
+      if (typeof m.poisonMs !== 'number') m.poisonMs = 0;
+      if (typeof m.poisonDmg !== 'number') m.poisonDmg = 0;
+      if (typeof m.slowMs !== 'number') m.slowMs = 0;
+    }
 
     const trail = new Set<string>(Array.isArray(d.trail) ? d.trail : []);
     trail.add(key(hero.pos));
