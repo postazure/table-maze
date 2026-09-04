@@ -78,16 +78,18 @@ export function keyAt(level: LevelData, p: Vec): KeyItem | null {
 }
 
 /** An unopened chest on `p`. */
+/** Any chest on this tile, opened or not. Chests are solid: nobody walks on them. */
 export function chestAt(level: LevelData, p: Vec): Chest | null {
-  for (const c of level.chests) if (!c.opened && c.pos.x === p.x && c.pos.y === p.y) return c;
+  for (const c of level.chests) if (c.pos.x === p.x && c.pos.y === p.y) return c;
   return null;
 }
 
-/** Can the hero stand on this tile right now? Keys/chests are fine to stand on. */
+/** Can the hero stand on this tile right now? Keys are fine to stand on; chests are not. */
 export function heroCanStand(level: LevelData, p: Vec): boolean {
   if (!isFloor(level, p)) return false;
   if (closedDoorAt(level, p)) return false;
   if (liveMonsterAt(level, p)) return false;
+  if (chestAt(level, p)) return false;
   return true;
 }
 

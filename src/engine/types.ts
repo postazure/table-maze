@@ -182,6 +182,9 @@ export interface Message {
   t: number; // ms since shown
 }
 
+/** A blocking popup the UI shows while the simulation is frozen. */
+export type Modal = { kind: 'chest'; loot: Loot };
+
 export interface GameState {
   version: number; // save format version
   depth: number;
@@ -203,10 +206,12 @@ export interface GameState {
   };
   /** true once the hero steps on the exit; game handles the transition. */
   descending: number; // ms remaining of the descend animation, 0 when not descending
+  /** While set, `Game.tick` does nothing; the UI must call `Game.dismissModal()`. */
+  modal: Modal | null;
 }
 
 /** JSON-serialisable form of GameState (Set -> array). */
-export interface SaveData extends Omit<GameState, 'trail' | 'fx' | 'pointer' | 'path' | 'log'> {
+export interface SaveData extends Omit<GameState, 'trail' | 'fx' | 'pointer' | 'path' | 'log' | 'modal'> {
   trail: string[];
 }
 

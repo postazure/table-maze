@@ -62,5 +62,7 @@ export function useGame() {
     (window as unknown as { __game?: Game }).__game = game;
   }, [game]);
 
-  return { game, hud, newGame };
+  const dismissModal = useCallback(() => game.dismissModal(), [game]);
+
+  return { game, hud, newGame, dismissModal };
 }

@@ -94,6 +94,7 @@ export function loadGame(): GameState | null {
       log: [],
       stats: d.stats ?? { kills: 0, deepest: d.depth, playMs: 0 },
       descending: 0,
+      modal: null,
     };
     return state;
   } catch {

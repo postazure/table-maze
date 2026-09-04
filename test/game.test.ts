@@ -142,7 +142,7 @@ test('walking onto a key picks it up', () => {
   assert.equal(g.state.level.keys[0].taken, true);
 });
 
-test('a chest opens only with a chest key and applies its loot', () => {
+test('chests are solid: the hero bumps them, opens with a key, and the game freezes', () => {
   const g = corridorGame({
     chests: [
       {
@@ -155,19 +155,47 @@ test('a chest opens only with a chest key and applies its loot', () => {
   });
   const atk0 = g.state.hero.atk;
 
+  // No key: bump, red blink, stay put, nothing opens.
   g.pointerAt({ x: 2, y: 1 });
+  assert.equal(g.state.path.length, 1, 'a chest is a legal drag target');
   g.tick(150);
+  assert.deepEqual(g.state.hero.pos, { x: 1, y: 1 }, 'never stands on a chest');
   assert.equal(g.state.level.chests[0].opened, false, 'locked without a key');
   assert.equal(g.state.hero.atk, atk0);
+  assert.ok(g.state.fx.some((f) => f.kind === 'flash'), 'locked cue is a flash, not words');
+  assert.equal(g.state.modal, null);
 
+  // With a key: opens, loot applies at once, modal freezes the world.
   g.state.hero.keys.chest = 1;
-  g.state.hero.pos = { x: 1, y: 1 };
   g.pointerAt({ x: 2, y: 1 });
   g.tick(150);
+  assert.deepEqual(g.state.hero.pos, { x: 1, y: 1 });
   assert.equal(g.state.level.chests[0].opened, true);
   assert.equal(g.state.hero.keys.chest, 0);
   assert.equal(g.state.hero.gold, 12);
   assert.equal(g.state.hero.atk, atk0 + 2);
+  const modal = g.state.modal as { kind: string; loot: { item?: { name: string } } } | null;
+  assert.ok(modal, 'a modal is up');
+  assert.equal(modal.kind, 'chest');
+  assert.equal(modal.loot.item?.name, 'Iron Sword');
+
+  const playMs = g.state.stats.playMs;
+  g.pointerAt({ x: 1, y: 2 });
+  g.tick(500);
+  assert.equal(g.state.stats.playMs, playMs, 'time stands still under the modal');
+  assert.equal(g.state.path.length, 0, 'input is ignored under the modal');
+
+  g.dismissModal();
+  assert.equal(g.state.modal, null);
+  g.tick(16);
+  assert.ok(g.state.stats.playMs > playMs, 'the world runs again');
+
+  // An opened chest is still solid and no longer a drag target.
+  g.pointerAt({ x: 2, y: 1 });
+  assert.equal(g.state.path.length, 0);
+  // Path-finding routes around chests: the corridor is blocked past it.
+  g.pointerAt({ x: 4, y: 1 });
+  assert.equal(g.state.path.length, 0, 'cannot path through a chest');
 });
 
 test('a closed door blocks without a key and opens with one', () => {
