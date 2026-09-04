@@ -5,11 +5,20 @@
  */
 
 import type { ReactElement } from 'react';
+import type { ItemKind, ItemSlot } from '../engine/types';
+import { ITEM_KINDS } from '../engine/types';
+import { ITEM_ART, SLOT_ART } from '../render/itemArt';
 
 type Rows = readonly string[];
 type Palette = Readonly<Record<string, string>>;
 
-const ICONS: Record<IconName, { rows: Rows; palette: Palette }> = {
+type BaseIconName = 'sword' | 'shield' | 'coin' | 'doorKey' | 'chestKey' | 'skull' | 'heart';
+/** Every magic item kind and every gear slot are also valid icon names, drawn from itemArt.ts. */
+export type IconName = BaseIconName | ItemKind | ItemSlot;
+
+const ITEM_SLOTS: readonly ItemSlot[] = ['offense', 'defense', 'spirit'];
+
+const BASE_ICONS: Record<BaseIconName, { rows: Rows; palette: Palette }> = {
   sword: {
     rows: ['......SS', '.....SSS', '....SSS.', '...SSS..', 'B.SSS...', '.BBS....', '.HBB....', 'HH.B....'],
     palette: { S: '#d8d8e8', B: '#8a6a2a', H: '#f5c451' },
@@ -40,7 +49,10 @@ const ICONS: Record<IconName, { rows: Rows; palette: Palette }> = {
   },
 };
 
-export type IconName = 'sword' | 'shield' | 'coin' | 'doorKey' | 'chestKey' | 'skull' | 'heart';
+/** BASE_ICONS plus every ItemKind (from ITEM_ART) and ItemSlot (from SLOT_ART). */
+const ICONS = { ...BASE_ICONS } as Record<IconName, { rows: Rows; palette: Palette }>;
+for (const kind of ITEM_KINDS) ICONS[kind] = ITEM_ART[kind];
+for (const slot of ITEM_SLOTS) ICONS[slot] = SLOT_ART[slot];
 
 export interface PixelIconProps {
   name: IconName;

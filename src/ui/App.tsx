@@ -1,5 +1,6 @@
 import { ChestModal } from './ChestModal';
 import { Hud } from './Hud';
+import { ItemModal } from './ItemModal';
 import { MazeCanvas } from './MazeCanvas';
 import { useGame } from './useGame';
 
@@ -12,6 +13,7 @@ export function App() {
         <Hud model={hud} onNewGame={newGame} />
       </div>
       {hud.modal?.kind === 'chest' && <ChestModal loot={hud.modal.loot} onClose={dismissModal} />}
+      {hud.modal?.kind === 'item' && <ItemModal item={hud.modal.item} replaced={hud.modal.replaced} onClose={dismissModal} />}
     </div>
   );
 }

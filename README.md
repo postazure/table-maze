@@ -31,6 +31,15 @@ Play it at **https://postazure.github.io/table-maze/**
   - **Patrols** walk a fixed route. Time your run, or fight.
   - **Lurkers** sit off the main path and chase you when you get close. Lure one
     away from the corridor it watches, then loop around it through another passage.
+- After every third floor you visit a **shop**: a small room with three pedestals,
+  one magic item per slot (offense, defense, spirit). Walk into a pedestal to buy it
+  with your gold. You can buy one item per shop, and a new item replaces whatever
+  was in that slot. Items scale with the floor you bought them on.
+- Magic items are all passive, so the controls never change. Some fire on a timer
+  (a fireball staff, a shield bubble that recharges), some on a hit (poison, frost,
+  chain lightning, thorns), some on a condition (berserker rage at low hearts, a
+  phoenix feather when you'd be knocked down), and some all the time (speed boots,
+  a compass that points at the nearest key, gold and XP charms).
 - Step on the 🪜 stairs to descend. Levels get bigger and monsters get stronger
   the deeper you go. Your hero levels up from XP and keeps every stat and item.
 - Progress is saved in your browser's local storage automatically.

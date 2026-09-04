@@ -51,6 +51,9 @@ export function newHero(): Hero {
     hitFlash: 0,
     stun: 0,
     sleeping: false,
+    gear: { offense: null, defense: null, spirit: null },
+    shieldReady: false,
+    timers: { shield: 0, fire: 0, life: 0, phoenix: 0, bane: 0 },
     lungeT: 0,
     sinceCombat: 99999,
   };
@@ -242,6 +245,9 @@ export function makeMonster(
     leash,
     alive: true,
     sinceCombat: 99999,
+    poisonMs: 0,
+    poisonDmg: 0,
+    slowMs: 0,
     hitFlash: 0,
     lungeT: 0,
   };

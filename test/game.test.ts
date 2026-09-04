@@ -1,13 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Tile, key } from '../src/engine/types';
-import type { GameState, LevelData, Monster, Vec } from '../src/engine/types';
+import { ITEM_SLOT, Tile, key } from '../src/engine/types';
+import type { GameState, LevelData, MagicItem, Monster, Vec } from '../src/engine/types';
 import { makeRng } from '../src/engine/rng';
 import { Game } from '../src/engine/game';
 import { heroAttack, monsterAttack } from '../src/engine/combat';
 import { updateMonsters } from '../src/engine/monsters';
 import { clearSave, loadGame, saveGame } from '../src/engine/save';
+import { equip, heroMoveMs } from '../src/engine/items';
+import { generateShopLevel } from '../src/engine/shop';
 
 // ---------------------------------------------------------------------------
 // Test fixtures: hand-drawn levels so nothing depends on the generator.
@@ -29,6 +31,7 @@ function mkLevel(rows: string[], over: Partial<LevelData> = {}): LevelData {
   return {
     depth: 1,
     seed: 1,
+    kind: 'maze',
     width,
     height,
     tiles,
@@ -67,6 +70,9 @@ function mkMonster(over: Partial<Monster> & { pos: Vec }): Monster {
     alive: true,
     level: 1,
     sinceCombat: 99999,
+    poisonMs: 0,
+    poisonDmg: 0,
+    slowMs: 0,
     hitFlash: 0,
     lungeT: 0,
   };
@@ -92,6 +98,15 @@ function install(g: Game, level: LevelData, at: Vec): void {
 
 /** A 9x3 straight corridor along y = 1. */
 const CORRIDOR = ['#########', '#.......#', '#########'];
+/** A 15x3 corridor for tests that need room to run away. */
+const LONG_CORRIDOR = ['#'.repeat(15), `#${'.'.repeat(13)}#`, '#'.repeat(15)];
+
+/** Trail keys "1,1" .. "n,1". */
+function trailTo(n: number): Set<string> {
+  const out = new Set<string>();
+  for (let x = 1; x <= n; x++) out.add(`${x},1`);
+  return out;
+}
 
 function corridorGame(over: Partial<LevelData> = {}): Game {
   const g = Game.forTest(1234);
@@ -271,14 +286,15 @@ test('walking into a monster attacks it and clears the queued path', () => {
 });
 
 test('monsterAttack knocks the hero down without ever killing them', () => {
-  const g = corridorGame();
+  const g = Game.forTest(1234);
+  install(g, mkLevel(LONG_CORRIDOR), { x: 10, y: 1 });
   const st = g.state;
-  // Walk a trail 1,1 .. 5,1 by hand.
-  st.trail = new Set(['1,1', '2,1', '3,1', '4,1', '5,1']);
-  st.hero.pos = { x: 5, y: 1 };
+  // Walk a trail 1,1 .. 10,1 by hand.
+  st.trail = trailTo(10);
+  st.hero.pos = { x: 10, y: 1 };
   st.hero.hp = 1;
   st.hero.maxHp = 20;
-  const m = mkMonster({ pos: { x: 6, y: 1 }, atk: 50 });
+  const m = mkMonster({ pos: { x: 11, y: 1 }, atk: 50, sightRange: 4 });
   st.level.monsters.push(m);
 
   monsterAttack(st, m, makeRng(3));
@@ -287,23 +303,39 @@ test('monsterAttack knocks the hero down without ever killing them', () => {
   assert.equal(st.hero.hp, 1, 'wakes up from a quarter heart');
   assert.equal(st.hero.sleeping, true);
   assert.equal(st.path.length, 0);
-  // Carried to the most recently walked tile that is 3+ tiles from the monster.
-  assert.deepEqual(st.hero.pos, { x: 3, y: 1 });
+  // Knocked back to 9,1, then carried to the most recent trail tile that is
+  // out of the monster's reach and sight (>= sightRange + 2 = 6 tiles).
+  assert.deepEqual(st.hero.pos, { x: 5, y: 1 });
   assert.ok(st.log.some((l) => l.text === 'Knocked down!'));
   assert.ok(st.fx.some((f) => f.kind === 'shake'));
 });
 
-test('retreat picks a nearby recently walked tile, not a far one', () => {
-  const g = corridorGame();
+test('retreat skips tiles near a monster or on a patrol route', () => {
+  const g = Game.forTest(1234);
+  install(g, mkLevel(LONG_CORRIDOR), { x: 10, y: 1 });
   const st = g.state;
-  st.trail = new Set(['1,1', '2,1', '3,1', '4,1', '5,1', '6,1']);
-  st.hero.pos = { x: 6, y: 1 };
+  st.trail = trailTo(10);
+  st.hero.pos = { x: 10, y: 1 };
   st.hero.hp = 1;
-  const m = mkMonster({ pos: { x: 7, y: 1 }, atk: 50 });
-  st.level.monsters.push(m);
+  const m = mkMonster({ pos: { x: 11, y: 1 }, atk: 50, sightRange: 4 });
+  // A beat walker sitting where the hero would otherwise have been dropped.
+  const patrol = mkMonster({
+    id: 'p1',
+    kind: 'patrol',
+    pos: { x: 5, y: 1 },
+    sightRange: 1,
+    patrolPath: [
+      { x: 5, y: 1 },
+      { x: 6, y: 1 },
+    ],
+    attackInterval: 99999,
+  });
+  st.level.monsters.push(m, patrol);
+
   monsterAttack(st, m, makeRng(3));
-  // Knocked back to 5,1 then carried to 4,1 (3 tiles from the monster), not to 1,1.
-  assert.deepEqual(st.hero.pos, { x: 4, y: 1 });
+  // 6,1..9,1 are too close to the guard, 2,1..8,1 too close to the patrol (and
+  // its route is out of bounds anyway): the hero wakes up back at the start.
+  assert.deepEqual(st.hero.pos, { x: 1, y: 1 });
 });
 
 test('a sleeping hero ignores input, heals to full, then wakes', () => {
@@ -390,7 +422,7 @@ test('a lurker starts chasing when the hero comes within sightRange', () => {
   assert.deepEqual(lurk.pos, { x: 5, y: 2 }, 'heads home');
 });
 
-test('a guard never moves but attacks an adjacent hero', () => {
+test('a guard never moves and only fights once it has been hit', () => {
   const g = corridorGame();
   const guard = mkMonster({ pos: { x: 2, y: 1 }, kind: 'guard', atk: 3, attackInterval: 700 });
   g.state.level.monsters.push(guard);
@@ -398,9 +430,19 @@ test('a guard never moves but attacks an adjacent hero', () => {
   g.state.hero.maxHp = 20;
 
   updateMonsters(g.state, 16, makeRng(5));
-  assert.deepEqual(guard.pos, { x: 2, y: 1 });
-  assert.ok(g.state.hero.hp < 20, 'adjacent hero takes a hit');
+  assert.deepEqual(guard.pos, { x: 2, y: 1 }, 'guards never move');
+  assert.equal(g.state.hero.hp, 20, 'an untouched guard lets the hero squeeze by');
+
+  heroAttack(g.state, guard, makeRng(5)); // provoke it
+  updateMonsters(g.state, 16, makeRng(5));
+  assert.ok(g.state.hero.hp < 20, 'once hit, it hits back');
   assert.equal(guard.attackCooldown, 700);
+
+  // ...and it settles down again after a few quiet seconds.
+  g.state.hero.hp = 20;
+  guard.attackCooldown = 0;
+  updateMonsters(g.state, 6000, makeRng(5));
+  assert.equal(g.state.hero.hp, 20, 'the guard goes back to dozing');
 });
 
 test('a patrol walks its route back and forth', () => {
@@ -555,4 +597,526 @@ test('monsters carry a level and combat resets their regen clock', () => {
   assert.equal(m.level, 3);
   heroAttack(g.state, m, makeRng(1));
   assert.equal(m.sinceCombat, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Shops and magic items
+// ---------------------------------------------------------------------------
+
+/** A game standing in a shop, `at` tiles, with `gold` in the purse. */
+function shopGame(gold: number, at: Vec = { x: 3, y: 5 }): Game {
+  const g = Game.forTest(2024);
+  g.state.depth = 3;
+  install(g, generateShopLevel(3, g.state.seed, g.state.hero), at);
+  g.state.hero.gold = gold;
+  return g;
+}
+
+test('a shop follows every third floor and leads on to the next depth', () => {
+  const g = corridorGame();
+  const st = g.state;
+  st.depth = 3;
+  st.stats.deepest = 3;
+  st.level.exit = { x: 2, y: 1 };
+
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(150);
+  g.tick(800);
+  assert.equal(st.level.kind, 'shop', 'depth 3 is followed by the shop');
+  assert.equal(st.depth, 3, 'a shop is not a new floor');
+  assert.equal(st.stats.deepest, 3);
+  assert.deepEqual(st.hero.pos, st.level.start);
+  assert.equal(st.level.shop?.offers.length, 3);
+  assert.ok(st.log.some((l) => l.text === 'Shop'));
+
+  // Out through the stairs at the top of the shop: on to depth 4.
+  st.hero.pos = { x: 5, y: 2 };
+  st.hero.rpos = { x: 5, y: 2 };
+  g.pointerAt({ x: 5, y: 1 });
+  g.tick(150);
+  g.tick(800);
+  assert.equal(st.level.kind, 'maze');
+  assert.equal(st.depth, 4);
+  assert.equal(st.stats.deepest, 4);
+  assert.ok(st.log.some((l) => l.text === 'Depth 4'));
+});
+
+test('walking into a pedestal buys the item and freezes the game', () => {
+  const g = shopGame(9999);
+  const st = g.state;
+  const shop = st.level.shop as NonNullable<LevelData['shop']>;
+  const offer = shop.offers[0];
+
+  g.pointerAt(offer.pos);
+  assert.equal(st.path.length, 1, 'a pedestal is a legal drag target');
+  g.tick(150);
+
+  assert.deepEqual(st.hero.pos, { x: 3, y: 5 }, 'pedestals are solid');
+  assert.equal(st.hero.gold, 9999 - offer.price, 'the gold is spent');
+  assert.equal(shop.bought, true);
+  assert.equal(st.hero.gear[ITEM_SLOT[offer.item.kind]]?.kind, offer.item.kind);
+  const modal = st.modal as { kind: string; item: MagicItem; replaced: MagicItem | null } | null;
+  assert.ok(modal, 'a popup shows the new item');
+  assert.equal(modal.kind, 'item');
+  assert.equal(modal.item.kind, offer.item.kind);
+  assert.equal(modal.replaced, null);
+  assert.ok(st.fx.some((f) => f.kind === 'ring'));
+
+  // The other pedestals are sold out: they only blink.
+  g.dismissModal();
+  const other = shop.offers[1];
+  st.hero.pos = { x: other.pos.x, y: other.pos.y + 1 };
+  st.fx.length = 0;
+  const goldLeft = st.hero.gold;
+  g.pointerAt(other.pos);
+  g.tick(150);
+  assert.equal(st.hero.gear[ITEM_SLOT[other.item.kind]], null, 'only one item per shop');
+  assert.equal(st.hero.gold, goldLeft);
+  assert.equal(st.modal, null);
+  assert.ok(st.fx.some((f) => f.kind === 'flash'), 'sold out is a blink, not words');
+});
+
+test('a pedestal the hero cannot afford just blinks', () => {
+  const g = shopGame(0);
+  const st = g.state;
+  const shop = st.level.shop as NonNullable<LevelData['shop']>;
+  const offer = shop.offers[0];
+
+  g.pointerAt(offer.pos);
+  g.tick(150);
+  assert.equal(st.hero.gold, 0);
+  assert.equal(shop.bought, false);
+  assert.equal(st.modal, null);
+  assert.equal(st.hero.gear.offense, null);
+  assert.ok(st.fx.some((f) => f.kind === 'flash'));
+});
+
+test('the long sword swings two tiles down a straight corridor', () => {
+  const g = corridorGame();
+  equip(g.state.hero, { kind: 'longSword', level: 3 });
+  const m = mkMonster({
+    pos: { x: 3, y: 1 },
+    hp: 40,
+    maxHp: 40,
+    attackInterval: 99999,
+    attackCooldown: 99999,
+  });
+  g.state.level.monsters.push(m);
+
+  g.pointerAt({ x: 3, y: 1 });
+  assert.equal(g.state.path.length, 2);
+  g.state.pointer = null; // no hold-to-attack for this assertion
+  g.tick(150);
+  assert.deepEqual(g.state.hero.pos, { x: 1, y: 1 }, 'the hero holds their ground');
+  assert.ok(m.hp < 40, 'and still lands the hit');
+  assert.equal(g.state.path.length, 0);
+  assert.ok(g.state.fx.some((f) => f.kind === 'slash'));
+
+  // Holding the finger on a monster two tiles away keeps swinging.
+  const hp = m.hp;
+  g.pointerAt({ x: 3, y: 1 });
+  g.tick(400);
+  assert.ok(m.hp < hp, 'hold-to-attack reaches too');
+});
+
+test('the shield amulet eats one hit and recharges on its timer', () => {
+  const g = corridorGame();
+  const hero = g.state.hero;
+  hero.maxHp = 20;
+  hero.hp = 20;
+  equip(hero, { kind: 'shieldAmulet', level: 1 }); // 7600ms recharge
+  hero.shieldReady = true;
+  const m = mkMonster({ pos: { x: 2, y: 1 }, atk: 5 });
+  g.state.level.monsters.push(m);
+
+  monsterAttack(g.state, m, makeRng(3));
+  assert.equal(hero.hp, 20, 'the bubble swallowed the hit');
+  assert.equal(hero.shieldReady, false);
+  assert.deepEqual(hero.pos, { x: 1, y: 1 }, 'and the knockback with it');
+  assert.ok(g.state.fx.some((f) => f.kind === 'ring'));
+  assert.ok(!g.state.fx.some((f) => f.kind === 'text'), 'wordless');
+
+  monsterAttack(g.state, m, makeRng(3));
+  assert.ok(hero.hp < 20, 'the next hit lands');
+
+  hero.hp = 20;
+  g.state.level.monsters.length = 0;
+  g.tick(7000);
+  assert.equal(hero.shieldReady, false, 'not yet');
+  g.tick(700);
+  assert.equal(hero.shieldReady, true, 'the bubble is back');
+});
+
+test('the poison dagger keeps hurting once a second', () => {
+  const g = corridorGame();
+  equip(g.state.hero, { kind: 'poisonDagger', level: 4 }); // 5s, 2 per tick
+  const m = mkMonster({
+    pos: { x: 2, y: 1 },
+    hp: 40,
+    maxHp: 40,
+    attackInterval: 99999,
+    attackCooldown: 99999,
+  });
+  g.state.level.monsters.push(m);
+
+  heroAttack(g.state, m, makeRng(9));
+  assert.equal(m.poisonMs, 5000);
+  assert.equal(m.poisonDmg, 2);
+  const hp = m.hp;
+
+  updateMonsters(g.state, 500, makeRng(1));
+  assert.equal(m.hp, hp, 'nothing before the first second is up');
+  updateMonsters(g.state, 500, makeRng(1));
+  assert.equal(m.hp, hp - 2, 'one tick per second');
+  assert.equal(m.poisonMs, 4000);
+
+  for (let i = 0; i < 8; i++) updateMonsters(g.state, 500, makeRng(1));
+  assert.equal(m.poisonMs, 0);
+  assert.equal(m.poisonDmg, 0);
+  assert.equal(m.hp, hp - 10, 'five ticks in all, then it wears off');
+});
+
+test('the frost blade halves a monster pace until it thaws', () => {
+  const g = corridorGame();
+  const hero = g.state.hero;
+  hero.maxHp = 40;
+  hero.hp = 40;
+  equip(hero, { kind: 'frostBlade', level: 2 }); // 2600ms
+  const m = mkMonster({ pos: { x: 2, y: 1 }, hp: 40, maxHp: 40, atk: 1, attackInterval: 800 });
+  g.state.level.monsters.push(m);
+
+  heroAttack(g.state, m, makeRng(4));
+  assert.equal(m.slowMs, 2600);
+
+  updateMonsters(g.state, 16, makeRng(4));
+  assert.equal(m.attackCooldown, 1600, 'attacks come at half speed');
+
+  updateMonsters(g.state, 3000, makeRng(4));
+  assert.equal(m.slowMs, 0, 'and it thaws out');
+});
+
+test('the fire staff throws a fireball at the nearest monster', () => {
+  const g = corridorGame();
+  equip(g.state.hero, { kind: 'fireStaff', level: 1 }); // every 5600ms, 3 damage
+  const near = mkMonster({ id: 'a', pos: { x: 4, y: 1 }, hp: 40, maxHp: 40, attackInterval: 99999, attackCooldown: 99999 });
+  const beside = mkMonster({ id: 'b', pos: { x: 5, y: 1 }, hp: 40, maxHp: 40, attackInterval: 99999, attackCooldown: 99999 });
+  const far = mkMonster({ id: 'c', pos: { x: 7, y: 1 }, hp: 40, maxHp: 40, attackInterval: 99999, attackCooldown: 99999 });
+  g.state.level.monsters.push(near, beside, far);
+
+  g.tick(5500);
+  assert.equal(near.hp, 40, 'the staff is still charging');
+  g.tick(200);
+  assert.equal(near.hp, 37, 'the nearest monster takes the fireball');
+  assert.equal(beside.hp, 39, 'its neighbour catches half');
+  assert.equal(far.hp, 40, 'the one down the hall is untouched');
+  assert.ok(g.state.fx.some((f) => f.kind === 'projectile'));
+  assert.ok(g.state.fx.some((f) => f.kind === 'ring' && f.t < 0), 'the burst is delayed');
+});
+
+test('thorn mail bites the monster that hit the hero', () => {
+  const g = corridorGame();
+  const hero = g.state.hero;
+  hero.maxHp = 30;
+  hero.hp = 30;
+  equip(hero, { kind: 'thornMail', level: 6 }); // 3 back
+  const m = mkMonster({ pos: { x: 2, y: 1 }, hp: 20, maxHp: 20, atk: 3 });
+  g.state.level.monsters.push(m);
+
+  monsterAttack(g.state, m, makeRng(6));
+  assert.ok(hero.hp < 30, 'the hit still lands');
+  assert.equal(m.hp, 17, 'and the mail bites back');
+});
+
+test('the phoenix feather skips one knockdown, then needs its cooldown', () => {
+  const g = corridorGame();
+  const st = g.state;
+  const hero = st.hero;
+  hero.maxHp = 20;
+  hero.hp = 1;
+  equip(hero, { kind: 'phoenixFeather', level: 1 }); // 28.5s cooldown
+  st.trail = new Set(['1,1', '2,1', '3,1', '4,1', '5,1']);
+  hero.pos = { x: 5, y: 1 };
+  const m = mkMonster({ pos: { x: 6, y: 1 }, atk: 50 });
+  st.level.monsters.push(m);
+
+  monsterAttack(st, m, makeRng(3));
+  assert.equal(hero.sleeping, false, 'straight back onto their feet');
+  assert.equal(hero.hp, 12, 'half the hearts, rounded up to whole ones');
+  assert.equal(hero.timers.phoenix, 28500);
+  assert.ok(st.fx.some((f) => f.kind === 'ring'));
+  assert.ok(st.log.some((l) => l.text.includes('feather')));
+
+  // The cooldown runs down with the clock...
+  g.tick(1000);
+  assert.equal(hero.timers.phoenix, 27500);
+
+  // ...and a second knockdown before it is up is an ordinary nap.
+  hero.pos = { x: 5, y: 1 };
+  hero.hp = 1;
+  monsterAttack(st, m, makeRng(3));
+  assert.equal(hero.sleeping, true);
+  assert.equal(hero.hp, 1);
+});
+
+test('speed boots quicken every step', () => {
+  const plain = corridorGame();
+  plain.pointerAt({ x: 2, y: 1 });
+  plain.tick(100);
+  assert.deepEqual(plain.state.hero.pos, { x: 1, y: 1 }, '100ms is not a step without boots');
+
+  const g = corridorGame();
+  equip(g.state.hero, { kind: 'speedBoots', level: 1 });
+  assert.equal(heroMoveMs(g.state.hero), 100);
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(100);
+  assert.deepEqual(g.state.hero.pos, { x: 2, y: 1 });
+  assert.ok(g.state.fx.some((f) => f.kind === 'flash'), 'boots kick up dust');
+});
+
+test('the gold charm swells monster drops and chest gold', () => {
+  const g = corridorGame({
+    chests: [{ id: 'c1', pos: { x: 2, y: 1 }, opened: false, loot: { gold: 10, xp: 4 } }],
+  });
+  const hero = g.state.hero;
+  equip(hero, { kind: 'goldCharm', level: 2 }); // x1.6
+  const m = mkMonster({ id: 'm9', pos: { x: 6, y: 1 }, hp: 1, gold: 10, xp: 5 });
+  g.state.level.monsters.push(m);
+
+  heroAttack(g.state, m, makeRng(7));
+  assert.equal(hero.gold, 16, 'monster gold is multiplied');
+  assert.equal(hero.xp, 5, 'a gold charm does not touch xp');
+
+  hero.keys.chest = 1;
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(150);
+  assert.equal(hero.gold, 32);
+  assert.equal(g.state.level.chests[0].loot.gold, 16, 'the popup shows what was pocketed');
+  assert.equal(g.state.level.chests[0].loot.xp, 4);
+});
+
+test('the key compass points at the nearest key, then at the stairs', () => {
+  const g = corridorGame({
+    keys: [
+      { id: 'k1', pos: { x: 6, y: 1 }, kind: 'chest', taken: false },
+      { id: 'k2', pos: { x: 3, y: 1 }, kind: 'door', taken: false },
+    ],
+  });
+  g.state.level.exit = { x: 7, y: 1 };
+  assert.equal(g.state.compass, null, 'no compass without the item');
+
+  equip(g.state.hero, { kind: 'keyCompass', level: 2 });
+  g.tick(16);
+  assert.deepEqual(g.state.compass, { x: 3, y: 1 }, 'the nearer key');
+
+  for (const k of g.state.level.keys) k.taken = true;
+  g.tick(600);
+  assert.deepEqual(g.state.compass, { x: 7, y: 1 }, 'the stairs once the keys are gone');
+});
+
+test('the bane totem slows monsters that come close', () => {
+  const g = corridorGame();
+  const hero = g.state.hero;
+  hero.maxHp = 40;
+  hero.hp = 40;
+  equip(hero, { kind: 'baneTotem', level: 3 });
+  const near = mkMonster({ id: 'n', pos: { x: 3, y: 1 }, kind: 'patrol', moveInterval: 400, attackInterval: 99999, patrolPath: [{ x: 3, y: 1 }, { x: 4, y: 1 }], patrolIndex: 0, patrolDir: 1, sightRange: 0 });
+  const away = mkMonster({ id: 'f', pos: { x: 6, y: 1 }, kind: 'patrol', moveInterval: 400, attackInterval: 99999, patrolPath: [{ x: 6, y: 1 }, { x: 7, y: 1 }], patrolIndex: 0, patrolDir: 1, sightRange: 0 });
+  g.state.level.monsters.push(near, away);
+
+  updateMonsters(g.state, 16, makeRng(8));
+  assert.equal(near.moveCooldown, 600, 'inside the totem the monster drags its feet');
+  assert.equal(away.moveCooldown, 400, 'outside it walks normally');
+});
+
+test('the vampire fang heals the hero on a kill', () => {
+  const g = corridorGame();
+  const hero = g.state.hero;
+  hero.maxHp = 30;
+  hero.hp = 10;
+  equip(hero, { kind: 'vampireFang', level: 6 }); // 3 quarter hearts per kill
+  const m = mkMonster({ pos: { x: 2, y: 1 }, hp: 1 });
+  g.state.level.monsters.push(m);
+
+  heroAttack(g.state, m, makeRng(12));
+  assert.equal(m.alive, false);
+  assert.ok(hero.hp >= 13, 'the kill heals');
+  assert.ok(hero.hp <= hero.maxHp);
+});
+
+test('the berserker axe hits harder once the hearts run low', () => {
+  const g = corridorGame();
+  const hero = g.state.hero;
+  hero.maxHp = 20;
+  hero.hp = 20;
+  equip(hero, { kind: 'berserkerAxe', level: 4 }); // +4 while at or below half
+  const m = mkMonster({ pos: { x: 2, y: 1 }, hp: 200, maxHp: 200, def: 0, attackInterval: 99999, attackCooldown: 99999 });
+  g.state.level.monsters.push(m);
+
+  const before = m.hp;
+  heroAttack(g.state, m, makeRng(21));
+  const healthy = before - m.hp;
+
+  hero.hp = 10; // half hearts exactly
+  const mid = m.hp;
+  heroAttack(g.state, m, makeRng(21));
+  const wounded = mid - m.hp;
+  assert.equal(wounded - healthy, 4, 'the axe adds its bonus while wounded');
+});
+
+test('the stone ring shrugs off knockback', () => {
+  const g = corridorGame();
+  const hero = g.state.hero;
+  hero.maxHp = 30;
+  hero.hp = 30;
+  equip(hero, { kind: 'stoneRing', level: 4 });
+  hero.pos = { x: 4, y: 1 };
+  const m = mkMonster({ pos: { x: 3, y: 1 }, atk: 4 });
+  g.state.level.monsters.push(m);
+
+  monsterAttack(g.state, m, makeRng(5));
+  assert.deepEqual(hero.pos, { x: 4, y: 1 }, 'not shoved an inch');
+  assert.ok(hero.hp < 30);
+});
+
+// ---------------------------------------------------------------------------
+// Monster balance: patrols slow you down, guards doze, lurkers give up
+// ---------------------------------------------------------------------------
+
+test('the hero shoves past a patrol instead of fighting it', () => {
+  const patrol = mkMonster({
+    id: 'p1',
+    kind: 'patrol',
+    pos: { x: 2, y: 1 },
+    hp: 20,
+    maxHp: 20,
+    attackInterval: 99999,
+    attackCooldown: 99999,
+    patrolPath: [
+      { x: 2, y: 1 },
+      { x: 3, y: 1 },
+    ],
+  });
+  const g = corridorGame({ monsters: [patrol] });
+  const hero = g.state.hero;
+  hero.hp = 20;
+  hero.maxHp = 20;
+
+  g.pointerAt({ x: 4, y: 1 });
+  assert.equal(g.state.path.length, 3, 'a drag routes straight through a patrol');
+  g.state.pointer = null; // no hold-to-attack for this assertion
+
+  g.tick(150);
+  assert.deepEqual(hero.pos, { x: 2, y: 1 }, 'the hero takes the tile');
+  assert.deepEqual(patrol.pos, { x: 1, y: 1 }, 'and the patrol is pushed behind');
+  assert.equal(patrol.hp, 20, 'no swing');
+  assert.equal(hero.hp, 20, 'and no damage either way');
+  assert.equal(hero.stun, 350, 'shoving costs a moment');
+  assert.equal(g.state.path.length, 2, 'the rest of the path is still queued');
+
+  g.tick(150);
+  assert.deepEqual(hero.pos, { x: 2, y: 1 }, 'the stagger holds the hero still');
+  g.tick(300);
+  assert.deepEqual(hero.pos, { x: 4, y: 1 }, 'then the walk carries on');
+});
+
+test('holding the finger on a patrol still swings at it', () => {
+  const patrol = mkMonster({
+    id: 'p1',
+    kind: 'patrol',
+    pos: { x: 2, y: 1 },
+    hp: 20,
+    maxHp: 20,
+    attackInterval: 99999,
+    attackCooldown: 99999,
+  });
+  const g = corridorGame({ monsters: [patrol] });
+  g.state.pointer = { x: 2, y: 1 };
+  g.tick(400);
+  assert.ok(patrol.hp < 20, 'patrols can be fought on purpose');
+  assert.deepEqual(g.state.hero.pos, { x: 1, y: 1 }, 'a swing is not a shove');
+});
+
+test('a patrol hit never knocks the hero back, a guard hit does', () => {
+  const g = corridorGame();
+  const st = g.state;
+  const hero = st.hero;
+  hero.maxHp = 30;
+  hero.hp = 30;
+  hero.pos = { x: 4, y: 1 };
+
+  const patrol = mkMonster({ id: 'p1', kind: 'patrol', pos: { x: 3, y: 1 }, atk: 3 });
+  st.level.monsters.push(patrol);
+  monsterAttack(st, patrol, makeRng(5));
+  assert.deepEqual(hero.pos, { x: 4, y: 1 }, 'patrols slow you, they do not shove');
+  assert.ok(hero.hp < 30, 'the hit still lands');
+
+  patrol.alive = false;
+  hero.hp = 30;
+  const guard = mkMonster({ id: 'g1', kind: 'guard', pos: { x: 3, y: 1 }, atk: 3 });
+  st.level.monsters.push(guard);
+  monsterAttack(st, guard, makeRng(5));
+  assert.deepEqual(hero.pos, { x: 5, y: 1 }, 'guards still knock the hero back');
+});
+
+test('a lurker gives up once the hero is out of aggro range', () => {
+  const level = mkLevel(LONG_CORRIDOR);
+  const g = Game.forTest(99);
+  install(g, level, { x: 8, y: 1 });
+
+  const lurk = mkMonster({
+    id: 'l1',
+    kind: 'lurker',
+    pos: { x: 10, y: 1 },
+    home: { x: 10, y: 1 },
+    sightRange: 3,
+    leash: 20, // plenty of leash left: only losing sight ends the chase
+    moveInterval: 200,
+    attackInterval: 99999,
+  });
+  level.monsters.push(lurk);
+  const rng = makeRng(11);
+
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 16, rng);
+  assert.equal(lurk.state, 'chasing');
+  assert.deepEqual(lurk.pos, { x: 9, y: 1 }, 'steps toward the hero');
+
+  g.state.hero.pos = { x: 1, y: 1 }; // 8 tiles away: well past sightRange + 1
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 16, rng);
+  assert.equal(lurk.state, 'returning', 'the chase is off');
+  assert.deepEqual(lurk.pos, { x: 10, y: 1 }, 'and it heads home');
+});
+
+test('a patrol never chases the hero off its route', () => {
+  const level = mkLevel(LONG_CORRIDOR);
+  const g = Game.forTest(7);
+  install(g, level, { x: 5, y: 1 });
+
+  const route: Vec[] = [
+    { x: 8, y: 1 },
+    { x: 9, y: 1 },
+  ];
+  const p = mkMonster({
+    id: 'p1',
+    kind: 'patrol',
+    pos: { x: 8, y: 1 },
+    patrolPath: route,
+    patrolIndex: 0,
+    patrolDir: 1,
+    sightRange: 6, // it can see the hero and still does not care
+    moveInterval: 100,
+    attackInterval: 99999,
+  });
+  level.monsters.push(p);
+  const rng = makeRng(3);
+
+  const seen: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    p.moveCooldown = 0;
+    updateMonsters(g.state, 16, rng);
+    seen.push(key(p.pos));
+  }
+  assert.deepEqual(seen, ['9,1', '8,1', '9,1', '8,1'], 'it just walks its beat');
+  assert.notEqual(p.state, 'chasing');
 });

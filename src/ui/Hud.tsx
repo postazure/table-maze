@@ -1,7 +1,10 @@
 import { memo } from 'react';
+import type { ItemSlot } from '../engine/types';
 import type { HudModel } from './hudModel';
 import { PixelIcon, type IconName } from './icons';
 import { Hearts } from './Hearts';
+
+const GEAR_SLOTS: readonly ItemSlot[] = ['offense', 'defense', 'spirit'];
 
 export interface HudProps {
   model: HudModel;
@@ -38,7 +41,13 @@ function HudInner({ model, onNewGame }: HudProps) {
       <div className="hud-top">
         <div className="hud-badges">
           <span className="hud-badge">
-            DEPTH <b>{model.depth}</b>
+            {model.shop ? (
+              <>SHOP</>
+            ) : (
+              <>
+                DEPTH <b>{model.depth}</b>
+              </>
+            )}
           </span>
           <span className="hud-badge">
             LV <b>{model.level}</b>
@@ -72,6 +81,18 @@ function HudInner({ model, onNewGame }: HudProps) {
         <Stat icon="doorKey" title="Door keys" value={model.doorKeys} />
         <Stat icon="chestKey" title="Chest keys" value={model.chestKeys} />
         <Stat icon="skull" title="Kills" value={model.kills} />
+      </div>
+
+      <div className="hud-gear">
+        {GEAR_SLOTS.map((slot) => {
+          const item = model.gear[slot];
+          return (
+            <div key={slot} className={`hud-gear-slot${item ? ' hud-gear-filled' : ''}`} title={slot}>
+              <PixelIcon name={item ? item.kind : slot} size={20} />
+              {item && <span className="hud-gear-level">{item.level}</span>}
+            </div>
+          );
+        })}
       </div>
 
       <div className="hud-log">

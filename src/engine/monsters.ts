@@ -6,14 +6,19 @@
 import type { GameState, LevelData, Monster, Rng, Vec } from './types';
 import { eq, key, manhattan } from './types';
 import { bfsDistances, bfsPath } from './pathfind';
-import { chestAt, closedDoorAt, keyAt, liveMonsterAt, monsterAttack } from './combat';
+import { GREEN, chestAt, closedDoorAt, damageMonster, keyAt, liveMonsterAt, monsterAttack } from './combat';
+import type { ItemStats } from './items';
+import { heroStats } from './items';
 
 /** Render position catch-up speed, tiles per second. */
 const RPOS_SPEED = 14;
+/** One poison tick per second. */
+const POISON_TICK_MS = 1000;
 
 /** Advance every monster by `dt` ms. */
 export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
   const level = state.level;
+  const stats = heroStats(state.hero);
   for (const m of level.monsters) {
     if (!m.alive) continue;
 
@@ -26,6 +31,9 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
     if (m.moveCooldown > 0) m.moveCooldown = Math.max(0, m.moveCooldown - dt);
     lerpRpos(m, dt);
     regen(m, dt);
+    tickPoison(state, m, dt, rng);
+    if (m.slowMs > 0) m.slowMs = Math.max(0, m.slowMs - dt);
+    if (!m.alive) continue; // poison finished it off
 
     if (state.descending > 0) continue;
 
@@ -33,23 +41,72 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
 
     // Attack takes priority over movement. A sleeping hero is left alone.
     if (!state.hero.sleeping && manhattan(m.pos, heroPos) === 1) {
-      if (m.attackCooldown <= 0) {
+      if (m.attackCooldown <= 0 && willFight(m)) {
         monsterAttack(state, m, rng);
-        m.attackCooldown = m.attackInterval;
+        m.attackCooldown = cooldownFor(state, m, stats, m.attackInterval);
       }
       continue;
     }
 
     if (m.moveCooldown > 0) continue;
 
-    const step = chooseStep(state, m);
+    const step = chooseStep(state, m, stats);
     if (step) {
       m.pos = { x: step.x, y: step.y };
-      m.moveCooldown = m.moveInterval;
+      m.moveCooldown = cooldownFor(state, m, stats, m.moveInterval);
     } else {
       // Blocked / waiting: re-check next cycle rather than every frame.
-      m.moveCooldown = m.moveInterval;
+      m.moveCooldown = cooldownFor(state, m, stats, m.moveInterval);
     }
+  }
+}
+
+/**
+ * How long this monster must wait after acting. Frost doubles it; the bane
+ * totem stretches it further while the hero is close.
+ */
+function cooldownFor(state: GameState, m: Monster, stats: ItemStats, base: number): number {
+  let ms = base;
+  if (m.slowMs > 0) ms *= 2;
+  if (stats.baneRadius > 0 && manhattan(m.pos, state.hero.pos) <= stats.baneRadius) {
+    ms *= stats.baneSlowMult;
+  }
+  return ms;
+}
+
+/**
+ * Guards are furniture until you poke them: they only swing at an adjacent
+ * hero while the fight they were dragged into is still fresh. Patrols and
+ * lurkers always attack whoever stands next to them.
+ */
+function willFight(m: Monster): boolean {
+  return m.kind !== 'guard' || m.sinceCombat < GUARD_ENGAGE_MS;
+}
+
+/** How long a struck guard keeps fighting back. */
+const GUARD_ENGAGE_MS = 5000;
+
+/** How far this monster can see, with the bane totem's blinding subtracted. */
+function sightOf(m: Monster, stats: ItemStats): number {
+  if (stats.baneSightPenalty <= 0) return m.sightRange;
+  return Math.max(1, m.sightRange - stats.baneSightPenalty);
+}
+
+/** Poison dagger: one hit per second of the remaining poison. */
+function tickPoison(state: GameState, m: Monster, dt: number, rng: Rng): void {
+  if (m.poisonMs <= 0) {
+    m.poisonMs = 0;
+    m.poisonDmg = 0;
+    return;
+  }
+  const before = m.poisonMs;
+  const after = Math.max(0, before - dt);
+  const ticks = Math.ceil(before / POISON_TICK_MS) - Math.ceil(after / POISON_TICK_MS);
+  m.poisonMs = after;
+  const dmg = m.poisonDmg;
+  if (after === 0) m.poisonDmg = 0;
+  if (ticks > 0 && dmg > 0) {
+    damageMonster(state, m, dmg * ticks, rng, { source: 'poison', color: GREEN });
   }
 }
 
@@ -136,32 +193,30 @@ function stepToward(state: GameState, m: Monster, to: Vec, maxLen: number): Vec 
 // Per-kind behaviour
 // ---------------------------------------------------------------------------
 
-function chooseStep(state: GameState, m: Monster): Vec | null {
+function chooseStep(state: GameState, m: Monster, stats: ItemStats): Vec | null {
   switch (m.kind) {
     case 'guard':
       return null;
     case 'patrol':
-      return patrolStep(state, m);
+      return patrolStep(state, m, stats);
     case 'lurker':
-      return lurkerStep(state, m);
+      return lurkerStep(state, m, stats);
     default:
       return null;
   }
 }
 
-function patrolStep(state: GameState, m: Monster): Vec | null {
+/**
+ * Patrols never chase: they walk their beat and hit whatever is next to them
+ * when they get there. The hero shoves past them instead of fighting through.
+ */
+function patrolStep(state: GameState, m: Monster, stats: ItemStats): Vec | null {
   const path = m.patrolPath;
   if (!path || path.length === 0) return null;
 
-  const seen = distToHero(state, m, m.pos, m.sightRange);
-  const heroOnRoute = seen !== null && path.some((p) => eq(p, state.hero.pos));
+  const sight = sightOf(m, stats);
 
-  if (heroOnRoute) {
-    m.state = 'chasing';
-    return stepToward(state, m, state.hero.pos, m.sightRange + 4);
-  }
-
-  // Not chasing (any more): get back on the route, then walk it.
+  // Off the route (shoved aside, say): find the way back onto it.
   const idx = path.findIndex((p) => eq(p, m.pos));
   if (idx < 0) {
     m.state = 'returning';
@@ -170,7 +225,7 @@ function patrolStep(state: GameState, m: Monster): Vec | null {
     for (const t of path) {
       const route = bfsPath(state.level, m.pos, t, {
         blocked: moveBlockedTo(state, m, t),
-        maxLen: bestLen === Infinity ? m.sightRange + path.length + 8 : bestLen,
+        maxLen: bestLen === Infinity ? sight + path.length + 8 : bestLen,
       });
       if (route && route.length > 0 && route.length < bestLen) {
         bestLen = route.length;
@@ -198,18 +253,22 @@ function patrolStep(state: GameState, m: Monster): Vec | null {
   return target;
 }
 
-function lurkerStep(state: GameState, m: Monster): Vec | null {
+function lurkerStep(state: GameState, m: Monster, stats: ItemStats): Vec | null {
+  const sight = sightOf(m, stats);
   if (m.state === 'idle') {
-    const d = distToHero(state, m, m.pos, m.sightRange);
+    const d = distToHero(state, m, m.pos, sight);
     if (d !== null) m.state = 'chasing';
   } else if (m.state === 'returning') {
     // Slightly tighter re-aggro so baiting still works, but not trivially.
-    const d = distToHero(state, m, m.pos, Math.max(0, m.sightRange - 1));
+    const d = distToHero(state, m, m.pos, Math.max(0, sight - 1));
     if (d !== null) m.state = 'chasing';
   }
 
   if (m.state === 'chasing') {
-    const fromHome = distToHero(state, m, m.home, m.leash);
+    // Lose the hero (a little hysteresis so it does not flicker), or run out
+    // of leash, and the lurker heads home.
+    const toHero = distToHero(state, m, m.pos, sight + 1);
+    const fromHome = toHero === null ? null : distToHero(state, m, m.home, m.leash);
     if (fromHome === null) {
       m.state = 'returning';
     } else {

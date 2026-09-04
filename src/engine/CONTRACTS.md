@@ -173,3 +173,51 @@ export class Hud {
 Shows: depth, hero level, HP bar, XP bar, ATK/DEF, gold, key counts (door/chest
 with the two icons), kills/chests, last 3 log messages, a "New game" button
 (with confirm). Compact, fits below the maze on a phone in portrait.
+
+# Magic items and shops (added later)
+
+Shared types: `ItemSlot`, `ItemKind`, `ITEM_KINDS`, `ITEM_SLOT`, `MagicItem`,
+`ShopOffer`, `Shop`, `LevelData.kind/shop`, `Hero.gear/shieldReady/timers`,
+`Monster.poisonMs/poisonDmg/slowMs`, new `Effect` kinds (`bolt`, `projectile`,
+`ring`, `slash`), `Modal` kind `'item'`, `GameState.compass`. See types.ts.
+
+Rules:
+- Three slots: offense, defense, spirit. One item per slot. Buying into a
+  filled slot replaces the old item (its constant bonuses are removed first).
+- Everything is passive. Controls never change.
+- Every third maze floor is followed by a **shop level** (`kind: 'shop'`):
+  after depth 3, 6, 9, ... The shop is generated with the depth just finished
+  and its items have `level = that depth`. Leaving the shop by its stairs goes
+  to the next maze depth. `state.depth` counts maze floors only.
+- A shop has three pedestals, one item per slot, prices scaling with depth.
+  Walking into a pedestal buys it if the hero has the gold (gold is spent,
+  item equipped, `modal = {kind:'item', ...}` freezes the game). Otherwise the
+  pedestal blinks red. After one purchase `shop.bought = true` and the other
+  pedestals are dark and just blink. Pedestals are solid like chests.
+- No monsters, keys, doors or chests in a shop.
+
+## engine/items.ts
+```ts
+export function itemName(kind: ItemKind): string;                          // "Long Sword"
+export function itemStats(item: MagicItem): ItemStats;                     // every number an item needs, derived from kind + level
+export function itemPrice(kind: ItemKind, level: number): number;          // gold
+export function rollShopOffers(depth: number, rng: Rng, owned: Hero['gear']): MagicItem[]; // one per slot, avoid kinds already owned when possible
+export function equip(hero: Hero, item: MagicItem): MagicItem | null;       // applies constant bonuses, removes the old item's, returns the replaced item
+export function hasItem(hero: Hero, kind: ItemKind): MagicItem | null;
+```
+`ItemStats` is a flat bag: `{ atkBonus, defBonus, maxHpBonus, reach, fireIntervalMs, fireDmg, fireRange, chainChance, chainTargets, chainDmg, poisonMs, poisonDmg, slowMs, berserkAtk, shieldRechargeMs, moveMs, thornDmg, phoenixCooldownMs, regenMult, knockbackImmune, goldMult, xpMult, lifePulseMs, compass, vampKillHeal, vampHitChance, baneRadius, baneSlowMult, baneSightPenalty }` with zero/1/false for anything the item doesn't do.
+
+## engine/shop.ts
+```ts
+export function generateShopLevel(depth: number, runSeed: number, hero: Hero): LevelData;  // kind 'shop', small room, 3 pedestals, start at the bottom, exit at the top
+```
+Layout: 11 wide x 13 tall tiles, walls around a 9x11 room, start bottom-centre,
+exit top-centre, pedestals at (3,4), (5,4), (7,4) (x, y) — a row across the
+upper part of the room, offense / defense / spirit left to right.
+
+## render/itemArt.ts (shared pixel art; both canvas and DOM use it)
+```ts
+export const ITEM_ART: Record<ItemKind, { rows: string[]; palette: Record<string, string> }>; // 8x8 each
+export const SLOT_ART: Record<ItemSlot, { rows: string[]; palette: Record<string, string> }>; // small slot glyphs (sword / shield / star)
+export const PEDESTAL_ART: { rows: string[]; palette: Record<string, string> };
+```
