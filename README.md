@@ -1,6 +1,6 @@
 # Table Maze
 
-A top-down maze dungeon crawler for your phone. Drag your finger to guide the
+A retro pixel-art, top-down maze dungeon crawler for your phone. Drag your finger to guide the
 hero through a procedurally generated maze, grab keys, open doors and chests,
 fight (or bait) monsters, and take the stairs down to a deeper, harder level.
 
@@ -35,7 +35,7 @@ npm test           # unit tests (maze generation, pathfinding, game rules)
 npm run build      # typecheck + production build into dist/
 ```
 
-Plain TypeScript and the Canvas API. No runtime dependencies.
+Plain TypeScript and the Canvas API with hand-drawn pixel sprites. No runtime dependencies.
 
 ## Deploying
 
