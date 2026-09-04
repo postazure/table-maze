@@ -32,6 +32,7 @@ function mkLevel(rows: string[], over: Partial<LevelData> = {}): LevelData {
     depth: 1,
     seed: 1,
     kind: 'maze',
+    theme: 'crypt',
     width,
     height,
     tiles,

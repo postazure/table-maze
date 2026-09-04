@@ -16,6 +16,7 @@ import { Tile, key, parseKey, eq } from './types';
 import type { Chest, Door, KeyItem, LevelData, Monster, MonsterKind, Rng, Vec } from './types';
 import { hashSeed, makeRng } from './rng';
 import { levelDims, makeMonster, rollChestLoot } from './balance';
+import { themeForDepth } from './themes';
 import { bfsDistances, bfsPath, floorNeighbors, isFloor } from './pathfind';
 
 const MAX_ATTEMPTS = 20;
@@ -154,6 +155,7 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
     depth,
     seed,
     kind: 'maze',
+    theme: themeForDepth(depth).id,
     width,
     height,
     tiles,

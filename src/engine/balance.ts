@@ -4,6 +4,7 @@
  */
 import type { Hero, Loot, LootItem, Monster, MonsterKind, Rng, Vec } from './types';
 import { HEART } from './types';
+import { themeForDepth } from './themes';
 
 // ---------------------------------------------------------------------------
 // Level size
@@ -77,78 +78,6 @@ export function applyLevelUp(hero: Hero): void {
 // Monsters
 // ---------------------------------------------------------------------------
 
-type Look = { name: string; glyph: string };
-
-/** Depth tier 0..4; sturdy glyphs for guards, mobile for patrols, sneaky for lurkers. */
-const BESTIARY: Record<MonsterKind, Look[][]> = {
-  guard: [
-    [
-      { name: 'Spider', glyph: '🕷️' },
-      { name: 'Scorpion', glyph: '🦂' },
-    ],
-    [
-      { name: 'Goblin', glyph: '👺' },
-      { name: 'Scorpion', glyph: '🦂' },
-    ],
-    [
-      { name: 'Skeleton', glyph: '💀' },
-      { name: 'Zombie', glyph: '🧟' },
-    ],
-    [
-      { name: 'Ogre', glyph: '👹' },
-      { name: 'Skeleton', glyph: '💀' },
-    ],
-    [
-      { name: 'Drake', glyph: '🐉' },
-      { name: 'Ogre', glyph: '👹' },
-    ],
-  ],
-  patrol: [
-    [
-      { name: 'Rat', glyph: '🐀' },
-      { name: 'Bat', glyph: '🦇' },
-    ],
-    [
-      { name: 'Snake', glyph: '🐍' },
-      { name: 'Bat', glyph: '🦇' },
-    ],
-    [
-      { name: 'Goblin', glyph: '👺' },
-      { name: 'Zombie', glyph: '🧟' },
-    ],
-    [
-      { name: 'Vampire', glyph: '🧛' },
-      { name: 'Goblin', glyph: '👺' },
-    ],
-    [
-      { name: 'Ogre', glyph: '👹' },
-      { name: 'Vampire', glyph: '🧛' },
-    ],
-  ],
-  lurker: [
-    [
-      { name: 'Bat', glyph: '🦇' },
-      { name: 'Spider', glyph: '🕷️' },
-    ],
-    [
-      { name: 'Snake', glyph: '🐍' },
-      { name: 'Spider', glyph: '🕷️' },
-    ],
-    [
-      { name: 'Wraith', glyph: '👻' },
-      { name: 'Snake', glyph: '🐍' },
-    ],
-    [
-      { name: 'Wraith', glyph: '👻' },
-      { name: 'Vampire', glyph: '🧛' },
-    ],
-    [
-      { name: 'Vampire', glyph: '🧛' },
-      { name: 'Wraith', glyph: '👻' },
-    ],
-  ],
-};
-
 function tierOf(depth: number): number {
   if (depth <= 3) return 0;
   if (depth <= 7) return 1;
@@ -166,7 +95,7 @@ export function makeMonster(
   id: string,
 ): Monster {
   const depthN = Math.max(1, Math.floor(depth));
-  const look = rng.pick(BESTIARY[kind][tierOf(depthN)]);
+  const look = rng.pick(themeForDepth(depthN).roster[kind]);
   // Guards and lurkers are a level above the dungeon depth; patrols match it.
   // Every level, a few monsters roll one level higher to stand out.
   const level = depthN + (kind === 'patrol' ? 0 : 1) + (rng.chance(0.2) ? 1 : 0);

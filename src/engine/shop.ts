@@ -9,6 +9,7 @@ import type { Hero, LevelData, ShopOffer, Vec } from './types';
 import { Tile } from './types';
 import { hashSeed, makeRng } from './rng';
 import { ITEM_SLOTS, itemPrice, rollShopOffers } from './items';
+import { themeForDepth } from './themes';
 
 /** Shop rooms are always this size (11 x 13 with a 9 x 11 floor). */
 export const SHOP_WIDTH = 11;
@@ -57,6 +58,7 @@ export function generateShopLevel(depth: number, runSeed: number, hero: Hero): L
     depth: d,
     seed,
     kind: 'shop',
+    theme: themeForDepth(depth).id,
     shop: { offers, bought: false },
     width: SHOP_WIDTH,
     height: SHOP_HEIGHT,

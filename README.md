@@ -40,6 +40,9 @@ Play it at **https://postazure.github.io/table-maze/**
   chain lightning, thorns), some on a condition (berserker rage at low hearts, a
   phoenix feather when you'd be knocked down), and some all the time (speed boots,
   a compass that points at the nearest key, gold and XP charms).
+- Every three floors the dungeon changes theme: crypt, sewer, magma cavern, glacier,
+  overgrown ruins, haunted library, hive, abyss, then around again. Each theme has
+  its own colours and its own monsters, but they always fill the same three roles.
 - Step on the 🪜 stairs to descend. Levels get bigger and monsters get stronger
   the deeper you go. Your hero levels up from XP and keeps every stat and item.
 - Progress is saved in your browser's local storage automatically.

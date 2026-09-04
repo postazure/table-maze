@@ -11,6 +11,7 @@ function lvl(rows: string[]): LevelData {
     depth: 1,
     seed: 0,
     kind: 'maze',
+    theme: 'crypt',
     width: rows[0].length,
     height: rows.length,
     tiles,

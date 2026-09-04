@@ -143,6 +143,8 @@ export interface LevelData {
   seed: number;
   /** 'maze' is a normal floor. 'shop' is the small room visited after every third floor. */
   kind: 'maze' | 'shop';
+  /** Visual theme id (see engine/themes.ts); changes every three floors. */
+  theme: string;
   /** Only on shop levels. */
   shop?: Shop;
   width: number; // tiles, odd
