@@ -122,6 +122,11 @@ export interface Monster {
   alive: boolean;
   /** ms since this monster last dealt or took damage; drives its self-heal. */
   sinceCombat: number;
+  /** Poison: remaining ms and damage per tick (one tick per second). 0 = none. */
+  poisonMs: number;
+  poisonDmg: number;
+  /** Slow: remaining ms. While > 0 the monster moves and attacks at half speed. */
+  slowMs: number;
   hitFlash: number; // ms remaining of "just got hit" flash (renderer reads, game decrements)
   lunge?: Vec; // unit vector of a short attack lunge animation, set by game when it attacks
   lungeT: number; // ms remaining of lunge
@@ -130,6 +135,10 @@ export interface Monster {
 export interface LevelData {
   depth: number; // 1-based dungeon depth
   seed: number;
+  /** 'maze' is a normal floor. 'shop' is the small room visited after every third floor. */
+  kind: 'maze' | 'shop';
+  /** Only on shop levels. */
+  shop?: Shop;
   width: number; // tiles, odd
   height: number; // tiles, odd
   tiles: Tile[][]; // tiles[y][x]
@@ -139,6 +148,122 @@ export interface LevelData {
   doors: Door[];
   chests: Chest[];
   monsters: Monster[];
+}
+
+// ---------------------------------------------------------------------------
+// Magic items (bought in shops, one per slot, all passive)
+// ---------------------------------------------------------------------------
+
+export type ItemSlot = 'offense' | 'defense' | 'spirit';
+
+/**
+ * Every magic item kind. Each belongs to exactly one slot (see ITEM_SLOT).
+ * All effects are passive: they trigger on conditions, timers, or chance,
+ * never on new controls. Numbers scale with `MagicItem.level` (the depth the
+ * item was bought at); see src/engine/items.ts for the formulas.
+ *
+ * offense
+ *  - longSword     reach: swings hit a monster two tiles away in a straight line
+ *  - fireStaff     timer: every few seconds a fireball flies at the nearest monster in sight, splash damage
+ *  - lightningWand chance on hit: lightning chains from the target to nearby monsters
+ *  - poisonDagger  on hit: the monster is poisoned and takes damage over time
+ *  - frostBlade    on hit: the monster is slowed (moves and attacks at half speed)
+ *  - berserkerAxe  condition: while at or below half hearts, big attack bonus
+ * defense
+ *  - shieldAmulet  timer: a bubble that absorbs one hit, recharges after a while
+ *  - speedBoots    constant: the hero walks faster
+ *  - thornMail     on being hit: the attacker takes damage back
+ *  - phoenixFeather on knockdown (cooldown): burst back up at half hearts instead of sleeping
+ *  - regenRing     constant: hearts refill much faster out of combat and while sleeping
+ *  - stoneRing     constant: defense bonus and immunity to knockback
+ * spirit
+ *  - goldCharm     constant: more gold from monsters and chests
+ *  - xpTome        constant: more xp from monsters and chests
+ *  - lifeAmulet    constant: extra max hearts; timer: a quarter heart every few seconds even in combat
+ *  - keyCompass    constant: an arrow over the hero points to the nearest key (or the stairs)
+ *  - vampireFang   on kill: heal; chance on hit: heal a quarter heart
+ *  - baneTotem     constant: monsters near the hero move slower and lurkers see less far
+ */
+export type ItemKind =
+  | 'longSword'
+  | 'fireStaff'
+  | 'lightningWand'
+  | 'poisonDagger'
+  | 'frostBlade'
+  | 'berserkerAxe'
+  | 'shieldAmulet'
+  | 'speedBoots'
+  | 'thornMail'
+  | 'phoenixFeather'
+  | 'regenRing'
+  | 'stoneRing'
+  | 'goldCharm'
+  | 'xpTome'
+  | 'lifeAmulet'
+  | 'keyCompass'
+  | 'vampireFang'
+  | 'baneTotem';
+
+export const ITEM_KINDS: readonly ItemKind[] = [
+  'longSword',
+  'fireStaff',
+  'lightningWand',
+  'poisonDagger',
+  'frostBlade',
+  'berserkerAxe',
+  'shieldAmulet',
+  'speedBoots',
+  'thornMail',
+  'phoenixFeather',
+  'regenRing',
+  'stoneRing',
+  'goldCharm',
+  'xpTome',
+  'lifeAmulet',
+  'keyCompass',
+  'vampireFang',
+  'baneTotem',
+];
+
+export const ITEM_SLOT: Record<ItemKind, ItemSlot> = {
+  longSword: 'offense',
+  fireStaff: 'offense',
+  lightningWand: 'offense',
+  poisonDagger: 'offense',
+  frostBlade: 'offense',
+  berserkerAxe: 'offense',
+  shieldAmulet: 'defense',
+  speedBoots: 'defense',
+  thornMail: 'defense',
+  phoenixFeather: 'defense',
+  regenRing: 'defense',
+  stoneRing: 'defense',
+  goldCharm: 'spirit',
+  xpTome: 'spirit',
+  lifeAmulet: 'spirit',
+  keyCompass: 'spirit',
+  vampireFang: 'spirit',
+  baneTotem: 'spirit',
+};
+
+export interface MagicItem {
+  kind: ItemKind;
+  /** The depth it was bought at. All of its numbers scale from this. */
+  level: number;
+}
+
+/** A pedestal in a shop level. Solid like a chest; walk into it to buy. */
+export interface ShopOffer {
+  id: string;
+  pos: Vec;
+  item: MagicItem;
+  price: number; // gold
+}
+
+export interface Shop {
+  offers: ShopOffer[];
+  /** Set once anything is bought; the other pedestals go dark. */
+  bought: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +295,12 @@ export interface Hero {
   lungeT: number;
   /** ms since the hero was last in combat; used for out-of-combat regen. */
   sinceCombat: number;
+  /** One magic item per slot. Bonuses of constant items are applied to the base stats on equip. */
+  gear: Record<ItemSlot, MagicItem | null>;
+  /** shieldAmulet: true while the bubble is up (absorbs the next hit). */
+  shieldReady: boolean;
+  /** Per-item timers in ms (shield recharge, fireball, life pulse, phoenix cooldown...). */
+  timers: { shield: number; fire: number; life: number; phoenix: number; bane: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -177,10 +308,23 @@ export interface Hero {
 // ---------------------------------------------------------------------------
 
 /** Transient visual effects. The game pushes them, the renderer draws & ages them. */
+/**
+ * Transient visual effects. `t` starts at 0 (or negative to delay the effect:
+ * the renderer ages it but draws nothing while t < 0) and the effect is
+ * dropped once t >= ttl.
+ */
 export type Effect =
   | { kind: 'text'; pos: Vec; text: string; color: string; t: number; ttl: number }
   | { kind: 'flash'; pos: Vec; color: string; t: number; ttl: number }
-  | { kind: 'shake'; t: number; ttl: number; strength: number };
+  | { kind: 'shake'; t: number; ttl: number; strength: number }
+  /** Jagged lightning through `points` (tile coords, in order). */
+  | { kind: 'bolt'; points: Vec[]; color: string; t: number; ttl: number }
+  /** A projectile flying from `from` to `to` over ttl (fireball). */
+  | { kind: 'projectile'; from: Vec; to: Vec; color: string; t: number; ttl: number }
+  /** A ring expanding from `pos` to `radius` tiles over ttl (pulses, bubble pop). */
+  | { kind: 'ring'; pos: Vec; radius: number; color: string; t: number; ttl: number }
+  /** A straight slash line from `from` to `to` (long sword reach). */
+  | { kind: 'slash'; from: Vec; to: Vec; color: string; t: number; ttl: number };
 
 export interface Message {
   text: string;
@@ -188,7 +332,10 @@ export interface Message {
 }
 
 /** A blocking popup the UI shows while the simulation is frozen. */
-export type Modal = { kind: 'chest'; loot: Loot };
+export type Modal =
+  | { kind: 'chest'; loot: Loot }
+  /** Bought a magic item. `replaced` is the item it pushed out of the slot, if any. */
+  | { kind: 'item'; item: MagicItem; replaced: MagicItem | null };
 
 export interface GameState {
   version: number; // save format version
@@ -213,10 +360,12 @@ export interface GameState {
   descending: number; // ms remaining of the descend animation, 0 when not descending
   /** While set, `Game.tick` does nothing; the UI must call `Game.dismissModal()`. */
   modal: Modal | null;
+  /** keyCompass: the tile the arrow over the hero points at, or null. Updated by the game. */
+  compass: Vec | null;
 }
 
 /** JSON-serialisable form of GameState (Set -> array). */
-export interface SaveData extends Omit<GameState, 'trail' | 'fx' | 'pointer' | 'path' | 'log' | 'modal'> {
+export interface SaveData extends Omit<GameState, 'trail' | 'fx' | 'pointer' | 'path' | 'log' | 'modal' | 'compass'> {
   trail: string[];
 }
 
@@ -240,7 +389,7 @@ export interface Rng {
   chance(p: number): boolean;
 }
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 /** Health is measured in quarter-hearts. One heart = 4 hp. */
 export const HEART = 4;

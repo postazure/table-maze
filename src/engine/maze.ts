@@ -153,6 +153,7 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
   const level: LevelData = {
     depth,
     seed,
+    kind: 'maze',
     width,
     height,
     tiles,

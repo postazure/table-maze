@@ -29,6 +29,7 @@ function mkLevel(rows: string[], over: Partial<LevelData> = {}): LevelData {
   return {
     depth: 1,
     seed: 1,
+    kind: 'maze',
     width,
     height,
     tiles,
@@ -67,6 +68,9 @@ function mkMonster(over: Partial<Monster> & { pos: Vec }): Monster {
     alive: true,
     level: 1,
     sinceCombat: 99999,
+    poisonMs: 0,
+    poisonDmg: 0,
+    slowMs: 0,
     hitFlash: 0,
     lungeT: 0,
   };

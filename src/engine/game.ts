@@ -230,6 +230,7 @@ export class Game {
       stats: { kills: 0, deepest: depth, playMs: 0 },
       descending: 0,
       modal: null,
+      compass: null,
     };
     this.rng = makeRng(hashSeed(seed, depth, RNG_SALT));
     this.moveTimer = 0;
@@ -527,6 +528,7 @@ function reviveState(saved: GameState): GameState {
   s.log = Array.isArray(s.log) ? s.log : [];
   s.descending = 0;
   s.modal = null;
+  s.compass = null;
   if (!s.stats) s.stats = { kills: 0, deepest: s.depth || 1, playMs: 0 };
   const hero = s.hero as Hero;
   if (!hero.keys) hero.keys = { door: 0, chest: 0 };
