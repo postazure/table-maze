@@ -340,9 +340,11 @@ function pickChestSpots(
       else if (nb === 2 && !onMain.has(k)) offPath.push(p);
     }
   }
+  // Chests are solid tiles, so they may only sit in dead ends: anywhere else
+  // they would wall off part of the maze.
+  void offPath;
   rng.shuffle(deadEnds);
-  rng.shuffle(offPath);
-  const pool = [...deadEnds, ...offPath];
+  const pool = deadEnds;
   const out: Vec[] = [];
   const taken = new Set<string>();
   for (const p of pool) {
@@ -555,10 +557,15 @@ function validate(level: LevelData): boolean {
   // Doors sit in corridors.
   for (const d of level.doors) if (!isCorridor(level, d.pos)) return false;
 
-  // Reachability with all doors open.
-  const open = bfsDistances(level, start);
+  // Reachability with all doors open. Chests are solid, so they count as
+  // walls here; each must still be reachable via a neighbouring tile.
+  const chestTiles = new Set(level.chests.map((c) => key(c.pos)));
+  const open = bfsDistances(level, start, { blocked: (p) => chestTiles.has(key(p)) });
   if (!open.has(key(exit))) return false;
-  for (const c of level.chests) if (!open.has(key(c.pos))) return false;
+  for (const c of level.chests) {
+    if (floorNeighbors(level, c.pos).length !== 1) return false; // dead end only
+    if (!floorNeighbors(level, c.pos).some((nb) => open.has(key(nb)))) return false;
+  }
   for (const k of level.keys) if (!open.has(key(k.pos))) return false;
 
   // Monsters: enough of them, none lurking on the doorstep.
@@ -581,10 +588,11 @@ function validate(level: LevelData): boolean {
  */
 function canProgress(level: LevelData): boolean {
   const closed = new Set(level.doors.map((d) => key(d.pos)));
+  const solid = new Set(level.chests.map((c) => key(c.pos)));
   const taken = new Set<string>();
   let held = 0;
   for (let iter = 0; iter <= level.doors.length + 1 && closed.size > 0; iter++) {
-    const reach = bfsDistances(level, level.start, { blocked: (p) => closed.has(key(p)) });
+    const reach = bfsDistances(level, level.start, { blocked: (p) => closed.has(key(p)) || solid.has(key(p)) });
     for (const k of level.keys) {
       if (k.kind !== 'door' || taken.has(k.id)) continue;
       if (reach.has(key(k.pos))) {

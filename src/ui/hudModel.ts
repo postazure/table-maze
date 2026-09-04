@@ -1,4 +1,4 @@
-import type { GameState } from '../engine/types';
+import type { GameState, Modal } from '../engine/types';
 
 export interface HudModel {
   depth: number;
@@ -15,6 +15,8 @@ export interface HudModel {
   kills: number;
   stunned: boolean;
   log: string[]; // last 3 messages, oldest first
+  /** Current popup, compared by reference. */
+  modal: Modal | null;
 }
 
 export function deriveHudModel(state: GameState): HudModel {
@@ -32,7 +34,8 @@ export function deriveHudModel(state: GameState): HudModel {
     doorKeys: hero.keys.door ?? 0,
     chestKeys: hero.keys.chest ?? 0,
     kills: state.stats.kills,
-    stunned: hero.stun > 0,
+    stunned: hero.sleeping || hero.stun > 0,
+    modal: state.modal,
     log: state.log.slice(-3).map((m) => m.text),
   };
 }
@@ -54,6 +57,7 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     a.chestKeys !== b.chestKeys ||
     a.kills !== b.kills ||
     a.stunned !== b.stunned ||
+    a.modal !== b.modal ||
     a.log.length !== b.log.length
   ) {
     return false;

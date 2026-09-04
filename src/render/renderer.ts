@@ -837,7 +837,7 @@ export class Renderer implements TileMapper {
     const size = Math.round(t * 0.86);
     const dx = Math.round(cx - size / 2);
     const dy = Math.round(cy - size / 2);
-    const stunned = hero.stun > 0;
+    const stunned = hero.stun > 0 || hero.sleeping;
 
     const outlineSize = size + 4;
     const ox2 = Math.round(cx - outlineSize / 2);
@@ -867,6 +867,31 @@ export class Renderer implements TileMapper {
     if (hero.hp < hero.maxHp) {
       this.drawHpBar(ctx, cx, dy - Math.max(2, Math.round(t * 0.16)), size, Math.max(1, Math.round(t / SUB)), hero.hp / hero.maxHp, HP_BAR_COLOR);
     }
+
+    if (hero.sleeping) this.drawZzz(ctx, cx, dy, t);
+  }
+
+  /** Three little "z"s drifting up from a sleeping hero, staggered in time. */
+  private drawZzz(ctx: CanvasRenderingContext2D, cx: number, top: number, t: number): void {
+    const sub = Math.max(1, t / SUB);
+    const now = performance.now();
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < 3; i++) {
+      const phase = ((now / 1400 + i / 3) % 1 + 1) % 1;
+      const px = Math.round((cx + t * 0.25 + phase * t * 0.35) / sub) * sub;
+      const py = Math.round((top - t * 0.15 - phase * t * 0.9) / sub) * sub;
+      const fontPx = Math.max(6, Math.round(t * (0.22 + phase * 0.14)));
+      ctx.font = `${fontPx}px "Press Start 2P", monospace`;
+      ctx.globalAlpha = phase < 0.15 ? phase / 0.15 : 1 - (phase - 0.15) / 0.85;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#050509';
+      ctx.strokeText('z', px, py);
+      ctx.fillStyle = '#bfe3ff';
+      ctx.fillText('z', px, py);
+    }
+    ctx.restore();
   }
 
   private drawEffect(ctx: CanvasRenderingContext2D, fx: Effect, t: number): void {

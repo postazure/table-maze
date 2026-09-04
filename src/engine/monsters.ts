@@ -31,8 +31,8 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
 
     const heroPos = state.hero.pos;
 
-    // Attack takes priority over movement.
-    if (manhattan(m.pos, heroPos) === 1) {
+    // Attack takes priority over movement. A sleeping hero is left alone.
+    if (!state.hero.sleeping && manhattan(m.pos, heroPos) === 1) {
       if (m.attackCooldown <= 0) {
         monsterAttack(state, m, rng);
         m.attackCooldown = m.attackInterval;
@@ -110,6 +110,7 @@ function occupiedByOther(level: LevelData, m: Monster, p: Vec): boolean {
 /** BFS distance from `from` to the hero, or null if further than `maxDist`. */
 function distToHero(state: GameState, m: Monster, from: Vec, maxDist: number): number | null {
   if (maxDist < 0) return null;
+  if (state.hero.sleeping) return null; // monsters lose interest in a sleeping hero
   const heroPos = state.hero.pos;
   if (manhattan(from, heroPos) > maxDist) return null;
   const dists = bfsDistances(state.level, from, { blocked: sightBlocked(state, m), maxDist });

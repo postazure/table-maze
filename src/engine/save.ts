@@ -74,6 +74,7 @@ export function loadGame(): GameState | null {
     if (!hero.keys) hero.keys = { door: 0, chest: 0 };
     if (!Array.isArray(hero.items)) hero.items = [];
     hero.stun = 0;
+    if (typeof hero.sleeping !== 'boolean') hero.sleeping = false;
     hero.hitFlash = 0;
     hero.lungeT = 0;
     hero.lunge = undefined;
@@ -94,6 +95,7 @@ export function loadGame(): GameState | null {
       log: [],
       stats: d.stats ?? { kills: 0, deepest: d.depth, playMs: 0 },
       descending: 0,
+      modal: null,
     };
     return state;
   } catch {

@@ -4,7 +4,7 @@
  * No DOM access here: `main.ts` drives `tick`, `input.ts` drives `pointerAt`/
  * `pointerEnd`, and `onChange` is the "worth persisting" signal for save.ts.
  */
-import type { Dir, GameState, Hero, Monster, Rng, Vec } from './types';
+import type { Chest, Dir, GameState, Hero, Monster, Rng, Vec } from './types';
 import { SAVE_VERSION, eq, key, manhattan } from './types';
 import { hashSeed, makeRng } from './rng';
 import { bfsPath } from './pathfind';
@@ -28,6 +28,8 @@ import { isFloor } from './pathfind';
 
 /** ms between hero steps (~7 tiles/s). */
 const MOVE_MS = 140;
+/** A knocked-down hero sleeps back to full health over about this long. */
+const SLEEP_MS = 3500;
 /** ms between swings while the finger is held on an adjacent monster. */
 const HOLD_ATTACK_MS = 300;
 /** hero render position catch-up speed, tiles/s. */
@@ -53,6 +55,7 @@ export class Game {
   private moveTimer = 0;
   private holdTimer = 0;
   private regenTimer = 0;
+  private sleepTimer = 0;
   private dirty = false;
 
   constructor(saved?: GameState | null) {
@@ -82,6 +85,7 @@ export class Game {
 
   /** Finger is over `tile` (or null when off the maze). Extends the path. */
   pointerAt(tile: Vec | null): void {
+    if (this.state.modal || this.state.hero.sleeping) return;
     const st = this.state;
     st.pointer = tile ? { x: tile.x, y: tile.y } : null;
     if (!tile) return;
@@ -130,6 +134,8 @@ export class Game {
     const st = this.state;
     const hero = st.hero;
     this.dirty = false;
+    // A popup is up: the whole world waits.
+    if (st.modal) return;
 
     st.stats.playMs += dt;
     hero.sinceCombat += dt;
@@ -155,7 +161,12 @@ export class Game {
 
     // --- hero movement -----------------------------------------------------
     this.moveTimer += dt;
-    if (hero.stun > 0) {
+    if (hero.sleeping) {
+      st.path.length = 0;
+      this.holdTimer = 0;
+      this.moveTimer = Math.min(this.moveTimer, MOVE_MS);
+      this.sleep(dt);
+    } else if (hero.stun > 0) {
       this.moveTimer = Math.min(this.moveTimer, MOVE_MS);
     } else {
       let guard = 0;
@@ -181,7 +192,7 @@ export class Game {
     this.checkLevelUp();
 
     // --- out of combat regen ------------------------------------------------
-    if (hero.sinceCombat > REGEN_DELAY && hero.hp < hero.maxHp) {
+    if (!hero.sleeping && hero.sinceCombat > REGEN_DELAY && hero.hp < hero.maxHp) {
       this.regenTimer += dt;
       while (this.regenTimer >= REGEN_MS && hero.hp < hero.maxHp) {
         this.regenTimer -= REGEN_MS;
@@ -218,6 +229,7 @@ export class Game {
       log: [],
       stats: { kills: 0, deepest: depth, playMs: 0 },
       descending: 0,
+      modal: null,
     };
     this.rng = makeRng(hashSeed(seed, depth, RNG_SALT));
     this.moveTimer = 0;
@@ -238,6 +250,7 @@ export class Game {
     hero.keys = { door: 0, chest: 0 };
     hero.hp = Math.min(hero.maxHp, hero.hp + Math.floor((hero.maxHp - hero.hp) / 2));
     hero.stun = 0;
+    hero.sleeping = false;
     hero.hitFlash = 0;
     hero.lungeT = 0;
     hero.lunge = undefined;
@@ -260,15 +273,21 @@ export class Game {
     const st = this.state;
     if (!isFloor(st.level, p)) return false;
     if (liveMonsterAt(st.level, p)) return false;
+    if (chestAt(st.level, p)) return false;
     if (closedDoorAt(st.level, p) && st.hero.keys.door <= 0) return false;
     return true;
   }
 
-  /** Tiles a drag may *end* on: monsters are legal targets (walking in = attack). */
+  /**
+   * Tiles a drag may *end* on: monsters (walking in = attack) and chests
+   * (walking in = open) are legal targets even though they can't be crossed.
+   */
   private isTarget(p: Vec): boolean {
     const st = this.state;
     if (!isFloor(st.level, p)) return false;
     if (closedDoorAt(st.level, p) && st.hero.keys.door <= 0) return false;
+    const chest = chestAt(st.level, p);
+    if (chest && chest.opened) return false;
     return true;
   }
 
@@ -289,6 +308,12 @@ export class Game {
       return;
     }
 
+    const chest = chestAt(st.level, next);
+    if (chest) {
+      this.bumpChest(chest);
+      return;
+    }
+
     const door = closedDoorAt(st.level, next);
     if (door) {
       if (hero.keys.door > 0) {
@@ -298,8 +323,9 @@ export class Game {
         pushLog(st, 'Unlocked the door');
         this.dirty = true;
       } else {
+        // Wordless cue: the door blinks red.
+        st.fx.push({ kind: 'flash', pos: { x: next.x, y: next.y }, color: '#e53b3b', t: 0, ttl: 320 });
         st.path.length = 0;
-        pushLog(st, 'Locked. Find a door key');
         return;
       }
     }
@@ -311,6 +337,55 @@ export class Game {
     st.trail.add(key(hero.pos));
     this.dirty = true;
     this.onEnter(hero.pos);
+  }
+
+  /**
+   * The hero walked into a chest. Chests are solid, so the hero stays put.
+   * A closed chest opens if the hero carries a chest key: the loot is applied
+   * at once and a modal freezes the game until the player taps it away.
+   */
+  private bumpChest(chest: Chest): void {
+    const st = this.state;
+    const hero = st.hero;
+    st.path.length = 0;
+    this.holdTimer = 0;
+    if (chest.opened) return;
+    if (hero.keys.chest <= 0) {
+      // No words: a red blink on the chest says "locked".
+      st.fx.push({ kind: 'flash', pos: { x: chest.pos.x, y: chest.pos.y }, color: '#e53b3b', t: 0, ttl: 320 });
+      return;
+    }
+    hero.keys.chest -= 1;
+    chest.opened = true;
+    hero.gold += chest.loot.gold;
+    hero.xp += chest.loot.xp;
+    const item = chest.loot.item;
+    if (item) {
+      if (item.atk) hero.atk += item.atk;
+      if (item.def) hero.def += item.def;
+      if (item.maxHp) {
+        hero.maxHp += item.maxHp;
+        hero.hp += item.maxHp;
+      }
+      hero.items.push(item);
+    }
+    const face = dirFromVec(unitToward(hero.pos, chest.pos));
+    if (face) hero.facing = face;
+    st.modal = { kind: 'chest', loot: chest.loot };
+    this.dirty = true;
+  }
+
+  /** Close the current popup and let the simulation run again. */
+  dismissModal(): void {
+    const st = this.state;
+    if (!st.modal) return;
+    st.modal = null;
+    st.path.length = 0;
+    st.pointer = null;
+    this.holdTimer = 0;
+    this.moveTimer = 0;
+    this.checkLevelUp();
+    this.emit();
   }
 
   private swingAt(m: Monster): void {
@@ -359,36 +434,31 @@ export class Game {
       this.dirty = true;
     }
 
-    const c = chestAt(level, tile);
-    if (c) {
-      if (hero.keys.chest > 0) {
-        hero.keys.chest -= 1;
-        c.opened = true;
-        hero.gold += c.loot.gold;
-        hero.xp += c.loot.xp;
-        const item = c.loot.item;
-        if (item) {
-          if (item.atk) hero.atk += item.atk;
-          if (item.def) hero.def += item.def;
-          if (item.maxHp) {
-            hero.maxHp += item.maxHp;
-            hero.hp += item.maxHp;
-          }
-          hero.items.push(item);
-        }
-        pushText(st, tile, `+${c.loot.gold}g`, GOLD, 1100);
-        pushLog(st, item ? `Found ${item.name}!` : `Found ${c.loot.gold} gold`);
-        this.dirty = true;
-      } else {
-        pushLog(st, 'Chest is locked. Find a chest key');
-      }
-    }
-
     if (eq(tile, level.exit)) {
       st.descending = DESCEND_MS;
       st.path.length = 0;
       pushText(st, tile, 'Descending...', GREEN, 1200);
       pushLog(st, 'Stairs down!');
+      this.dirty = true;
+    }
+  }
+
+  /** Heal a sleeping hero; wake them (and hand control back) at full health. */
+  private sleep(dt: number): void {
+    const hero = this.state.hero;
+    this.sleepTimer += dt;
+    const per = SLEEP_MS / Math.max(1, hero.maxHp);
+    while (this.sleepTimer >= per && hero.hp < hero.maxHp) {
+      this.sleepTimer -= per;
+      hero.hp += 1;
+      this.dirty = true;
+    }
+    if (hero.hp >= hero.maxHp) {
+      hero.hp = hero.maxHp;
+      hero.sleeping = false;
+      hero.sinceCombat = 0;
+      this.sleepTimer = 0;
+      this.state.fx.push({ kind: 'flash', pos: { x: hero.pos.x, y: hero.pos.y }, color: '#f5c451', t: 0, ttl: 260 });
       this.dirty = true;
     }
   }
@@ -456,12 +526,14 @@ function reviveState(saved: GameState): GameState {
   s.pointer = null;
   s.log = Array.isArray(s.log) ? s.log : [];
   s.descending = 0;
+  s.modal = null;
   if (!s.stats) s.stats = { kills: 0, deepest: s.depth || 1, playMs: 0 };
   const hero = s.hero as Hero;
   if (!hero.keys) hero.keys = { door: 0, chest: 0 };
   if (!Array.isArray(hero.items)) hero.items = [];
   if (!hero.rpos) hero.rpos = { x: hero.pos.x, y: hero.pos.y };
   hero.stun = 0;
+  if (typeof hero.sleeping !== 'boolean') hero.sleeping = false;
   hero.hitFlash = 0;
   hero.lungeT = 0;
   hero.lunge = undefined;

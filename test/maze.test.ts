@@ -124,11 +124,12 @@ test('generateLevel: structure, entities and solvability', () => {
       assert.equal(chestKeys.length, lv.chests.length, `${where}: one key per chest`);
       for (const k of lv.keys) assert.equal(k.taken, false, where);
 
-      // chests
+      // chests: solid tiles, so only ever in dead ends
       assert.ok(lv.chests.length <= 8, where);
       for (const c of lv.chests) {
         assert.equal(c.opened, false, where);
         assert.ok(c.loot.gold > 0 && c.loot.xp > 0, where);
+        assert.equal(floorNeighbors(lv, c.pos).length, 1, `${where}: chest ${c.id} must be in a dead end`);
       }
 
       // monsters

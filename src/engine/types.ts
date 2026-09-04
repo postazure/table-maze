@@ -160,7 +160,12 @@ export interface Hero {
   keys: Record<KeyKind, number>; // how many of each key kind the hero carries
   items: LootItem[]; // permanent items picked up (bonuses already applied to stats)
   hitFlash: number; // ms remaining
-  stun: number; // ms the hero cannot move (after being knocked down)
+  stun: number; // ms the hero cannot move (short staggers)
+  /**
+   * Knocked-down rest. While true the hero sleeps ("zzz"), ignores input,
+   * is ignored by monsters, and heals quickly; control returns at full hp.
+   */
+  sleeping: boolean;
   lunge?: Vec;
   lungeT: number;
   /** ms since the hero was last in combat; used for out-of-combat regen. */
@@ -181,6 +186,9 @@ export interface Message {
   text: string;
   t: number; // ms since shown
 }
+
+/** A blocking popup the UI shows while the simulation is frozen. */
+export type Modal = { kind: 'chest'; loot: Loot };
 
 export interface GameState {
   version: number; // save format version
@@ -203,10 +211,12 @@ export interface GameState {
   };
   /** true once the hero steps on the exit; game handles the transition. */
   descending: number; // ms remaining of the descend animation, 0 when not descending
+  /** While set, `Game.tick` does nothing; the UI must call `Game.dismissModal()`. */
+  modal: Modal | null;
 }
 
 /** JSON-serialisable form of GameState (Set -> array). */
-export interface SaveData extends Omit<GameState, 'trail' | 'fx' | 'pointer' | 'path' | 'log'> {
+export interface SaveData extends Omit<GameState, 'trail' | 'fx' | 'pointer' | 'path' | 'log' | 'modal'> {
   trail: string[];
 }
 

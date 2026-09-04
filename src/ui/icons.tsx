@@ -30,13 +30,17 @@ const ICONS: Record<IconName, { rows: Rows; palette: Palette }> = {
     rows: ['........', '.GGG....', 'G...G...', 'G..GGGGG', '.GGG...G', '......G.', '........', '........'],
     palette: { G: '#5aa9ff' },
   },
+  heart: {
+    rows: ['.DD..DD.', 'DRRDDRRD', 'DRRRRRRD', 'DRRRRRRD', '.DRRRRD.', '..DRRD..', '...DD...', '........'],
+    palette: { R: '#e53b3b', D: '#1a0507' },
+  },
   skull: {
     rows: ['..WWWW..', '.WWWWWW.', 'WWEWWEWW', 'WWEWWEWW', 'WWWWWWWW', '.WWWWWW.', '..W.W.W.', '..WWWWW.'],
     palette: { W: '#f0ecff', E: '#141414' },
   },
 };
 
-export type IconName = 'sword' | 'shield' | 'coin' | 'doorKey' | 'chestKey' | 'skull';
+export type IconName = 'sword' | 'shield' | 'coin' | 'doorKey' | 'chestKey' | 'skull' | 'heart';
 
 export interface PixelIconProps {
   name: IconName;
