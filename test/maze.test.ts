@@ -284,19 +284,36 @@ test('damage is never below 1', () => {
   }
 });
 
-test('low-level monsters hit for a quarter heart', () => {
+test('patrols are trash, guards are a fight, lurkers are the thing you lure', () => {
   const rng = makeRng(9);
-  for (const kind of ['guard', 'patrol', 'lurker'] as const) {
-    const m = makeMonster(kind, 1, rng, { x: 1, y: 1 }, 'm');
-    assert.ok(m.atk <= 2, `${kind} level ${m.level} atk ${m.atk}`);
-    if (m.level === 1) assert.equal(m.atk, 1);
-  }
   const hero = newHero();
   assert.equal(hero.def, 0);
   // A plain (non-crit) hit from a level-1 patrol is exactly one quarter heart.
   const hits = new Set<number>();
   for (let i = 0; i < 50; i++) hits.add(damage(1, hero.def, rng));
   assert.ok(hits.has(1) && !hits.has(3), 'quarter-heart baseline, crit at most a half');
+
+  for (const depth of [1, 2, 3, 5, 8, 12]) {
+    for (let i = 0; i < 10; i++) {
+      const patrol = makeMonster('patrol', depth, rng, { x: 1, y: 1 }, 'p');
+      const guard = makeMonster('guard', depth, rng, { x: 1, y: 1 }, 'g');
+      const lurker = makeMonster('lurker', depth, rng, { x: 1, y: 1 }, 'l');
+      const where = `depth ${depth}`;
+      // Level tags climb with the role: patrol at depth, guard above, lurker higher still.
+      assert.ok(patrol.level >= depth && patrol.level <= depth + 1, where);
+      assert.ok(guard.level >= depth + 1 && guard.level <= depth + 2, where);
+      assert.ok(lurker.level >= depth + 2 && lurker.level <= depth + 3, where);
+      // Patrols stay a speed bump: a quarter heart at depth 1, never more than a few swings to kill.
+      if (depth === 1) assert.equal(patrol.atk, 1, where);
+      assert.ok(patrol.hp <= 4 + 2 * (depth + 1), where);
+      // Each role is strictly tougher, harder hitting and better paid than the last.
+      assert.ok(patrol.hp < guard.hp && guard.hp < lurker.hp, `${where}: hp ${patrol.hp} ${guard.hp} ${lurker.hp}`);
+      assert.ok(patrol.atk < guard.atk && guard.atk < lurker.atk, `${where}: atk ${patrol.atk} ${guard.atk} ${lurker.atk}`);
+      assert.ok(patrol.xp < guard.xp && guard.xp < lurker.xp, `${where}: xp ${patrol.xp} ${guard.xp} ${lurker.xp}`);
+      // A lurker at depth hits for a whole heart or more: not a monster to trade blows with.
+      assert.ok(lurker.atk >= HEART, `${where}: lurker atk ${lurker.atk}`);
+    }
+  }
 });
 
 test('monster stats scale with depth', () => {

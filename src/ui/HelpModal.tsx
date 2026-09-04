@@ -62,9 +62,10 @@ export function HelpModal({ model, onClose }: HelpModalProps) {
               <li>Drag your finger to walk. The hero follows your line.</li>
               <li>Walk into a monster to fight it. The hero keeps swinging on their own until it's beaten or you walk away.</li>
               <li>Purple horned keys open horned doors. Gold keys open chests. Keys stay on their floor.</li>
-              <li>Guards stand still and only fight back if you hit them.</li>
-              <li>Roaming monsters slow you down but never block you.</li>
-              <li>Hunters chase you when you get close. Lead them away, then loop around.</li>
+              <li>Monsters are solid. Nobody walks through one.</li>
+              <li>Roaming monsters are weak. Cut them down and move on.</li>
+              <li>Guards stand still and only fight back if you hit them. Beating one costs real hearts.</li>
+              <li>Hunters chase you when you get close and hit far too hard to fight at your level. Lead them away, then loop around.</li>
               <li>Out of hearts? You sleep somewhere safe until they refill.</li>
               <li>Every third floor has a shop. You can buy one item there.</li>
             </ul>

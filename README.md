@@ -30,11 +30,16 @@ Play it at **https://postazure.github.io/table-maze/**
   combat, hearts also refill slowly on their own. Monsters heal too, so finish
   a fight or walk away and expect them at full strength.
 - Every monster wears a level tag. Red means it's above your level, green below.
-- Monster types:
-  - **Guards** never move. They block a tile until you beat them.
-  - **Patrols** walk a fixed route. Time your run, or fight.
-  - **Lurkers** sit off the main path and chase you when you get close. Lure one
-    away from the corridor it watches, then loop around it through another passage.
+- Monster types, from weakest to deadliest:
+  - **Patrols** walk a fixed route. They're trash: a speed bump you cut down in
+    a few swings, or time your run past.
+  - **Guards** never move. They block a tile until you beat them, and beating
+    one at your level costs about half your hearts. Untouched, they doze.
+  - **Lurkers** sit off the main path and chase you when you get close. They hit
+    for whole hearts and outlast you at your level: fight one head-on and you'll
+    be knocked down. Lure it away from the corridor it watches, then loop around
+    it through another passage. Kill one when you're well over its level and the
+    reward is the biggest in the dungeon.
 - After every third floor you visit a **shop**: a small room with three pedestals,
   one magic item per slot (offense, defense, spirit). Walk into a pedestal to buy it
   with your gold. You can buy one item per shop, and a new item replaces whatever

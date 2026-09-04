@@ -297,7 +297,12 @@ button {
   font-family: 'Press Start 2P', 'Courier New', monospace;
   font-size: 8px;
   line-height: 1.6;
-  min-height: 2.8em;
+  /* Always three lines tall. If the log grew and shrank with its messages the
+     maze above would resize every time a line expired, and each resize wipes
+     the canvas for a frame: a visible flicker. 3 lines + 2 gaps + padding +
+     border (box-sizing is border-box). */
+  height: calc(3 * 1.6em + 2 * 3px + 2 * 4px + 2 * 2px);
+  justify-content: flex-end;
   overflow: hidden;
 }
 
