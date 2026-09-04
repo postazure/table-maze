@@ -10,6 +10,7 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
     "isolatedModules": true,
+    "jsx": "react-jsx",
     "esModuleInterop": true,
     "allowImportingTsExtensions": false,
     "noEmit": true,
