@@ -1,9 +1,13 @@
 /**
  * Shop levels: the little room the hero walks into after every third maze
- * floor. One small room, three pedestals across the top half, stairs out.
+ * floor. One room, three pedestals across the middle, stairs out.
  *
  * No monsters, keys, doors or chests live here: it is a safe breather where
  * the gold from the last three floors turns into one magic item.
+ *
+ * Pedestals are 2x2 tiles so the item on top and its slot emblem read at a
+ * glance, and they sit two clear tiles apart so the hero can walk between
+ * them without bumping into the wrong one.
  */
 import type { Hero, LevelData, ShopOffer, Vec } from './types';
 import { Tile } from './types';
@@ -11,15 +15,23 @@ import { hashSeed, makeRng } from './rng';
 import { ITEM_SLOTS, itemPrice, rollShopOffers } from './items';
 import { themeForDepth } from './themes';
 
-/** Shop rooms are always this size (11 x 13 with a 9 x 11 floor). */
-export const SHOP_WIDTH = 11;
-export const SHOP_HEIGHT = 13;
-/** Pedestal tiles, offense / defense / spirit from left to right. */
+/** Shop rooms are always this size (16 x 15 with a 14 x 13 floor). */
+export const SHOP_WIDTH = 16;
+export const SHOP_HEIGHT = 15;
+/** A pedestal covers PEDESTAL_SIZE x PEDESTAL_SIZE tiles from its `pos`. */
+export const PEDESTAL_SIZE = 2;
+/**
+ * Top-left tile of each pedestal, offense / defense / spirit from left to
+ * right. Each block is 2 wide with 2 empty tiles between blocks:
+ * `..AA..BB..CC..` across the 14-tile floor.
+ */
 export const PEDESTAL_TILES: readonly Vec[] = [
-  { x: 3, y: 4 },
-  { x: 5, y: 4 },
-  { x: 7, y: 4 },
+  { x: 3, y: 5 },
+  { x: 7, y: 5 },
+  { x: 11, y: 5 },
 ];
+/** The column the stairs in and the stairs out share. */
+const AISLE_X = 7;
 /** Salt so the shop roll never shares a stream with the maze generator. */
 const SHOP_SALT = 4242;
 
@@ -63,8 +75,8 @@ export function generateShopLevel(depth: number, runSeed: number, hero: Hero): L
     width: SHOP_WIDTH,
     height: SHOP_HEIGHT,
     tiles,
-    start: { x: 5, y: SHOP_HEIGHT - 2 },
-    exit: { x: 5, y: 1 },
+    start: { x: AISLE_X, y: SHOP_HEIGHT - 2 },
+    exit: { x: AISLE_X, y: 1 },
     keys: [],
     doors: [],
     chests: [],
@@ -72,10 +84,32 @@ export function generateShopLevel(depth: number, runSeed: number, hero: Hero): L
   };
 }
 
+/** Does this pedestal stand on `p`? True for any of its four tiles. */
+export function offerCovers(offer: ShopOffer, p: Vec): boolean {
+  const dx = p.x - offer.pos.x;
+  const dy = p.y - offer.pos.y;
+  return dx >= 0 && dx < PEDESTAL_SIZE && dy >= 0 && dy < PEDESTAL_SIZE;
+}
+
+/** The four tiles a pedestal stands on, reading order. */
+export function offerTiles(offer: ShopOffer): Vec[] {
+  const out: Vec[] = [];
+  for (let dy = 0; dy < PEDESTAL_SIZE; dy++) {
+    for (let dx = 0; dx < PEDESTAL_SIZE; dx++) out.push({ x: offer.pos.x + dx, y: offer.pos.y + dy });
+  }
+  return out;
+}
+
+/** Middle of a pedestal block, in fractional tile coordinates. */
+export function offerCenter(offer: ShopOffer): Vec {
+  const half = (PEDESTAL_SIZE - 1) / 2;
+  return { x: offer.pos.x + half, y: offer.pos.y + half };
+}
+
 /** The pedestal standing on `p`, if any. Pedestals are solid like chests. */
 export function offerAt(level: LevelData, p: Vec): ShopOffer | null {
   const shop = level.shop;
   if (!shop) return null;
-  for (const o of shop.offers) if (o.pos.x === p.x && o.pos.y === p.y) return o;
+  for (const o of shop.offers) if (offerCovers(o, p)) return o;
   return null;
 }

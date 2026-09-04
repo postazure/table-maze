@@ -259,7 +259,10 @@ export interface MagicItem {
   level: number;
 }
 
-/** A pedestal in a shop level. Solid like a chest; walk into it to buy. */
+/**
+ * A pedestal in a shop level. Two tiles by two: `pos` is its top-left tile and
+ * all four are solid, like a chest. Walk into any of them to open the offer.
+ */
 export interface ShopOffer {
   id: string;
   pos: Vec;
@@ -341,6 +344,22 @@ export interface Message {
 /** A blocking popup the UI shows while the simulation is frozen. */
 export type Modal =
   | { kind: 'chest'; loot: Loot }
+  /**
+   * Standing at a shop pedestal: what the item is, what it does, what it
+   * costs. The UI calls `Game.buyOffer(offerId)` or `Game.dismissModal()`.
+   */
+  | {
+      kind: 'shopOffer';
+      offerId: string;
+      item: MagicItem;
+      price: number;
+      /** Hero gold when the popup opened (the world is frozen, so it cannot move). */
+      gold: number;
+      /** The item this one would push out of its slot, if any. */
+      replaces: MagicItem | null;
+      /** Something was already bought in this shop: nothing else is for sale. */
+      soldOut: boolean;
+    }
   /** Bought a magic item. `replaced` is the item it pushed out of the slot, if any. */
   | { kind: 'item'; item: MagicItem; replaced: MagicItem | null }
   /** The help screen: current gear explained in words. Opened from the HUD. */
@@ -398,7 +417,7 @@ export interface Rng {
   chance(p: number): boolean;
 }
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 /** Health is measured in quarter-hearts. One heart = 4 hp. */
 export const HEART = 4;

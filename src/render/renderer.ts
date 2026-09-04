@@ -17,7 +17,7 @@ import {
   type ItemSlot,
   type ShopOffer,
 } from '../engine/types';
-import { ITEM_ART, SLOT_ART, PEDESTAL_ART } from './itemArt';
+import { ITEM_ART, SLOT_ART, PODIUM_ART, PODIUM_NICHE } from './itemArt';
 import { themeById } from '../engine/themes';
 import { MONSTER_CFGS, creatureRows, monsterSpriteKey } from './monsterArt';
 
@@ -51,8 +51,10 @@ const SHIELD_BUBBLE_COLOR = '#5aa9ff';
 const BERSERK_RING_COLOR = '#e53b3b';
 const COMPASS_COLOR = '#f5c451';
 
-// Shop pedestal / price tag.
+// Shop podium / price tag.
 const PEDESTAL_DIM_ALPHA = 0.35;
+/** A podium covers this many tiles each way (matches PEDESTAL_SIZE in shop.ts). */
+const PODIUM_TILES = 2;
 const PRICE_BG = 'rgba(5,5,9,0.85)';
 const PRICE_COIN = '#f5c451';
 const PRICE_TEXT = '#f0ecff';
@@ -331,7 +333,7 @@ export class Renderer implements TileMapper {
   private doorOpenSprite: HTMLCanvasElement;
   private exitSprite: HTMLCanvasElement;
   private shieldBadgeSprite: HTMLCanvasElement;
-  private pedestalSprite: HTMLCanvasElement;
+  private podiumSprite: HTMLCanvasElement;
   /** Hero level captured at the start of each draw, used to color monster level badges. */
   private heroLevel = 1;
   private monsterSprites: Map<string, HTMLCanvasElement> = new Map();
@@ -354,7 +356,7 @@ export class Renderer implements TileMapper {
     this.doorOpenSprite = buildIcon(DOOR_OPEN_ROWS, DOOR_OPEN_PALETTE);
     this.exitSprite = buildIcon(EXIT_ROWS, EXIT_PALETTE);
     this.shieldBadgeSprite = buildIcon(SHIELD_BADGE_ROWS, { S: '#9a97ad' });
-    this.pedestalSprite = buildIcon(PEDESTAL_ART.rows, PEDESTAL_ART.palette);
+    this.podiumSprite = buildIcon(PODIUM_ART.rows, PODIUM_ART.palette);
 
     for (const [kind, cfg] of Object.entries(MONSTER_CFGS)) {
       const { rows, palette } = creatureRows(cfg);
@@ -625,11 +627,18 @@ export class Renderer implements TileMapper {
       this.drawTileSprite(ctx, this.exitSprite, state.level.exit, t, 0.86);
     }
 
-    // Shop pedestals.
+    // Shop podiums. Each covers a 2x2 block and draws taller than that (the
+    // item floats above it, the price tag hangs below), so the range test is
+    // deliberately generous.
     if (state.level.kind === 'shop' && state.level.shop) {
       const dimmed = state.level.shop.bought;
       for (const offer of state.level.shop.offers) {
-        if (this.inRange(offer.pos, startX, endX, startY, endY)) this.drawShopOffer(ctx, offer, dimmed, t);
+        const near =
+          offer.pos.x + PODIUM_TILES > startX - 1 &&
+          offer.pos.x < endX + 1 &&
+          offer.pos.y + PODIUM_TILES > startY - 2 &&
+          offer.pos.y < endY + 2;
+        if (near) this.drawShopOffer(ctx, offer, dimmed, t);
       }
     }
 
@@ -778,55 +787,62 @@ export class Renderer implements TileMapper {
     this.drawTileSprite(ctx, c.opened ? this.chestOpenSprite : this.chestClosedSprite, c.pos, t, 0.8);
   }
 
-  /** A shop pedestal: stone column, item icon hovering above, slot glyph top-left, price tag below-right. */
+  /**
+   * A shop podium: a 2x2 stone block with the slot emblem sunk into its face
+   * (sword = offense, shield = defense, star = spirit), the item floating
+   * above it, and the price on a tag hanging underneath.
+   */
   private drawShopOffer(ctx: CanvasRenderingContext2D, offer: ShopOffer, dimmed: boolean, t: number): void {
+    const block = PODIUM_TILES * t;
+    const bx = Math.round(offer.pos.x * t);
+    const by = Math.round(offer.pos.y * t);
+    const cx = bx + block / 2;
+
     ctx.save();
     if (dimmed) ctx.globalAlpha = PEDESTAL_DIM_ALPHA;
 
-    // Pedestal.
-    this.drawTileSprite(ctx, this.pedestalSprite, offer.pos, t, 0.72);
+    // The block itself.
+    ctx.drawImage(this.podiumSprite, bx, by, Math.round(block), Math.round(block));
 
-    // Item icon, hovering above the pedestal.
-    const itemSprite = this.itemSprites.get(offer.item.kind);
-    if (itemSprite) {
-      const size = Math.round(t * 0.5);
-      const cx = offer.pos.x * t + t / 2;
-      const cy = offer.pos.y * t + t / 2 - t * 0.35;
-      const x = Math.round(cx - size / 2);
-      const y = Math.round(cy - size / 2);
-      ctx.drawImage(itemSprite, x, y, size, size);
-    }
-
-    // Slot glyph, small, top-left of the pedestal tile.
+    // Slot emblem, sunk into the niche in the middle of the face.
     const slotSprite = this.slotSprites.get(ITEM_SLOT[offer.item.kind]);
     if (slotSprite) {
-      const size = Math.round(t * 0.24);
-      const x = Math.round(offer.pos.x * t + t * 0.04);
-      const y = Math.round(offer.pos.y * t + t * 0.04);
+      const size = Math.round(block * PODIUM_NICHE.size);
+      const x = Math.round(bx + block * PODIUM_NICHE.x);
+      const y = Math.round(by + block * PODIUM_NICHE.y);
       ctx.drawImage(slotSprite, x, y, size, size);
+    }
+
+    // The item on offer, floating just above the podium.
+    const itemSprite = this.itemSprites.get(offer.item.kind);
+    if (itemSprite) {
+      const size = Math.round(t * 1.2);
+      const iy = Math.round(by - size * 0.72);
+      const ix = Math.round(cx - size / 2);
+      ctx.drawImage(itemSprite, ix, iy, size, size);
     }
     ctx.restore();
 
-    // Price tag: dark box + tiny coin + number, below-right of the pedestal.
+    // Price tag: dark box + coin + number, hanging under the podium.
     ctx.save();
     if (dimmed) ctx.globalAlpha = PEDESTAL_DIM_ALPHA;
-    const fontPx = Math.max(6, Math.round(t * 0.24));
+    const fontPx = Math.max(7, Math.round(t * 0.3));
     const label = `${offer.price}`;
     ctx.font = `${fontPx}px "Press Start 2P", monospace`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    const coinSize = Math.max(3, Math.round(t * 0.14));
+    const coinSize = Math.max(4, Math.round(t * 0.22));
     const textW = Math.round(fontPx * 0.72 * label.length);
-    const boxW = coinSize + 3 + textW + 6;
-    const boxH = Math.max(coinSize, fontPx) + 4;
-    const bx = Math.round(offer.pos.x * t + t - boxW * 0.55);
-    const by = Math.round(offer.pos.y * t + t - boxH * 0.35);
+    const boxW = coinSize + 4 + textW + 8;
+    const boxH = Math.max(coinSize, fontPx) + 6;
+    const bxTag = Math.round(cx - boxW / 2);
+    const byTag = Math.round(by + block - boxH * 0.4);
     ctx.fillStyle = PRICE_BG;
-    ctx.fillRect(bx, by, boxW, boxH);
+    ctx.fillRect(bxTag, byTag, boxW, boxH);
     ctx.fillStyle = PRICE_COIN;
-    ctx.fillRect(bx + 2, by + Math.round((boxH - coinSize) / 2), coinSize, coinSize);
+    ctx.fillRect(bxTag + 3, byTag + Math.round((boxH - coinSize) / 2), coinSize, coinSize);
     ctx.fillStyle = PRICE_TEXT;
-    ctx.fillText(label, bx + coinSize + 5, by + boxH / 2 + 1);
+    ctx.fillText(label, bxTag + coinSize + 7, byTag + boxH / 2 + 1);
     ctx.restore();
   }
 
