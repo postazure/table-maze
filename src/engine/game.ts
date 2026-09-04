@@ -9,6 +9,7 @@ import { SAVE_VERSION, eq, key, manhattan } from './types';
 import { hashSeed, makeRng } from './rng';
 import { bfsDistances, bfsPath } from './pathfind';
 import { generateLevel } from './maze';
+import { themeForDepth } from './themes';
 import { newHero, applyLevelUp } from './balance';
 import { updateMonsters } from './monsters';
 import {
@@ -45,8 +46,10 @@ import { generateShopLevel, offerAt } from './shop';
 const MOVE_MS = DEFAULT_MOVE_MS;
 /** A knocked-down hero sleeps back to full health over about this long. */
 const SLEEP_MS = 3500;
-/** ms between swings while the finger is held on an adjacent monster. */
+/** ms between swings while the hero is engaged with (or the finger is on) a monster. */
 const HOLD_ATTACK_MS = 300;
+/** An engaged monster further away than this (manhattan) is forgotten. */
+const ENGAGE_LEASH = 3;
 /** hero render position catch-up speed, tiles/s. */
 const RPOS_SPEED = 12;
 /** how long the descend animation lasts before the next level is generated. */
@@ -83,6 +86,8 @@ export class Game {
   private rng!: Rng;
   private moveTimer = 0;
   private holdTimer = 0;
+  /** Monster the hero last swung at; auto-attacked while it stays in reach. */
+  private engagedId: string | null = null;
   private regenTimer = 0;
   private sleepTimer = 0;
   private berserkTimer = 0;
@@ -137,6 +142,11 @@ export class Game {
 
     if (!this.isTarget(tile)) return;
 
+    // Dragging anywhere but onto the engaged monster is a new intent.
+    if (this.engagedId) {
+      const em = st.level.monsters.find((x) => x.id === this.engagedId);
+      if (!em || !eq(em.pos, tile)) this.engagedId = null;
+    }
     const tail = st.path.length > 0 ? st.path[st.path.length - 1] : hero.pos;
     if (manhattan(tail, tile) === 1) {
       st.path.push({ x: tile.x, y: tile.y });
@@ -201,6 +211,7 @@ export class Game {
     if (hero.sleeping) {
       st.path.length = 0;
       this.holdTimer = 0;
+      this.engagedId = null;
       this.moveTimer = Math.min(this.moveTimer, moveMs);
       this.sleep(dt, stats);
     } else if (hero.stun > 0) {
@@ -214,7 +225,7 @@ export class Game {
         if (st.descending > 0 || st.modal || hero.stun > 0) break;
       }
       if (st.path.length === 0) this.moveTimer = Math.min(this.moveTimer, moveMs);
-      if (st.descending === 0 && !st.modal) this.holdAttack(dt, stats);
+      if (st.descending === 0 && !st.modal) this.autoAttack(dt, stats);
     }
 
     this.checkLevelUp();
@@ -277,6 +288,7 @@ export class Game {
     this.rng = makeRng(hashSeed(seed, depth, RNG_SALT));
     this.moveTimer = 0;
     this.holdTimer = 0;
+    this.engagedId = null;
     this.regenTimer = 0;
     pushLog(this.state, 'Drag your finger to guide the hero');
     this.emit();
@@ -318,6 +330,7 @@ export class Game {
     this.rng = makeRng(hashSeed(st.seed, st.depth, salt));
     this.moveTimer = 0;
     this.holdTimer = 0;
+    this.engagedId = null;
     this.regenTimer = 0;
     this.compassTimer = COMPASS_MS;
     pushLog(st, st.level.kind === 'shop' ? 'Shop' : `Depth ${st.depth}`);
@@ -507,6 +520,15 @@ export class Game {
     this.dirty = true;
   }
 
+  /** Pause the game behind the help screen (no-op if another popup is up). */
+  openHelp(): void {
+    const st = this.state;
+    if (st.modal) return;
+    st.modal = { kind: 'help' };
+    st.path.length = 0;
+    st.pointer = null;
+  }
+
   /** Close the current popup and let the simulation run again. */
   dismissModal(): void {
     const st = this.state;
@@ -529,8 +551,10 @@ export class Game {
     const d = dirFromVec(u);
     if (d) hero.facing = d;
     heroAttack(st, m, this.rng);
-    // Each swing needs a fresh drag (or a held finger) — clears the queue.
+    // The swing clears the queue; from here on the hero keeps attacking on
+    // their own while the monster stays in reach (see autoAttack).
     st.path.length = 0;
+    this.engagedId = m.alive ? m.id : null;
     this.holdTimer = HOLD_ATTACK_MS;
     this.dirty = true;
   }
@@ -568,25 +592,52 @@ export class Game {
     return 2;
   }
 
-  /** Holding the finger on a monster within reach keeps swinging. */
-  private holdAttack(dt: number, stats: ItemStats = heroStats(this.state.hero)): void {
+  /**
+   * Keep fighting without further input. The target is the monster under the
+   * finger if it is in reach, otherwise the monster the hero last swung at.
+   * Engagement ends when the target dies, wanders more than a few tiles off,
+   * or the player drags somewhere else.
+   */
+  private autoAttack(dt: number, stats: ItemStats = heroStats(this.state.hero)): void {
     const st = this.state;
-    const p = st.pointer;
-    if (!p || st.path.length > 0) {
+    if (st.path.length > 0) {
       this.holdTimer = 0;
       return;
     }
-    const m = liveMonsterAt(st.level, p);
-    const reach = m ? this.inReach(m, stats) : 0;
-    if (!m || reach === 0) {
+    const engaged = this.engagedId ? st.level.monsters.find((x) => x.id === this.engagedId) ?? null : null;
+    if (engaged && (!engaged.alive || manhattan(engaged.pos, st.hero.pos) > ENGAGE_LEASH)) this.engagedId = null;
+
+    const pointed = st.pointer ? liveMonsterAt(st.level, st.pointer) : null;
+    let target = pointed && this.inReach(pointed, stats) ? pointed : null;
+    if (!target && engaged && engaged.alive && this.engagedId) target = engaged;
+    if (!target) {
       this.holdTimer = 0;
+      return;
+    }
+    const reach = this.inReach(target, stats);
+    if (reach === 0) {
+      // Knocked back or the monster moved: close the gap one tile at a time.
+      this.holdTimer = Math.min(this.holdTimer, HOLD_ATTACK_MS);
+      if (target === engaged) this.closeIn(target);
       return;
     }
     this.holdTimer -= dt;
     if (this.holdTimer <= 0) {
-      if (reach === 2) this.reachSwing(m);
-      else this.swingAt(m);
+      if (reach === 2) this.reachSwing(target);
+      else this.swingAt(target);
     }
+  }
+
+  /** Queue one step toward an engaged monster that slipped out of reach. */
+  private closeIn(m: Monster): void {
+    const st = this.state;
+    if (st.hero.stun > 0) return;
+    const route = bfsPath(st.level, st.hero.pos, m.pos, {
+      blocked: (p) => !eq(p, m.pos) && !this.isWalkable(p),
+      maxLen: ENGAGE_LEASH + 1,
+    });
+    if (!route || route.length < 2) return; // adjacent already, or no way through
+    st.path.push({ x: route[0].x, y: route[0].y });
   }
 
   private onEnter(tile: Vec): void {
@@ -887,6 +938,7 @@ function reviveState(saved: GameState): GameState {
   s.descending = 0;
   s.modal = null;
   s.compass = null;
+  if (typeof s.level.theme !== 'string') s.level.theme = themeForDepth(s.depth).id;
   if (!s.stats) s.stats = { kills: 0, deepest: s.depth || 1, playMs: 0 };
   const hero = s.hero as Hero;
   if (!hero.keys) hero.keys = { door: 0, chest: 0 };

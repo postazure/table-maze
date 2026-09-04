@@ -17,7 +17,8 @@ Play it at **https://postazure.github.io/table-maze/**
 - Chests are solid. Walk into one with a chest key and the game pauses while the
   chest opens and your prize floats out: a sword, a shield, a heart, or coins.
   Tap to keep playing. Without a key the chest just blinks red.
-- Drag into a monster to attack it. Hold your finger on it to keep swinging.
+- Drag into a monster to attack it. Once engaged, the hero keeps swinging on their
+  own while the monster stays in reach. Walk away to break off.
 - Health is hearts. A weak monster takes a quarter heart per hit, and you gain a
   heart every level. Monsters hit back and shove you away. If you run out of
   hearts you don't die: you're carried back to a nearby spot you already walked
@@ -40,6 +41,9 @@ Play it at **https://postazure.github.io/table-maze/**
   chain lightning, thorns), some on a condition (berserker rage at low hearts, a
   phoenix feather when you'd be knocked down), and some all the time (speed boots,
   a compass that points at the nearest key, gold and XP charms).
+- Every three floors the dungeon changes theme: crypt, sewer, magma cavern, glacier,
+  overgrown ruins, haunted library, hive, abyss, then around again. Each theme has
+  its own colours and its own monsters, but they always fill the same three roles.
 - Step on the 🪜 stairs to descend. Levels get bigger and monsters get stronger
   the deeper you go. Your hero levels up from XP and keeps every stat and item.
 - Progress is saved in your browser's local storage automatically.

@@ -18,20 +18,13 @@ import {
   type ShopOffer,
 } from '../engine/types';
 import { ITEM_ART, SLOT_ART, PEDESTAL_ART } from './itemArt';
+import { themeById } from '../engine/themes';
+import { MONSTER_CFGS, creatureRows, monsterSpriteKey } from './monsterArt';
 
 // ---------------------------------------------------------------------------
 // Palette / constants
 // ---------------------------------------------------------------------------
 
-const WALL_A = '#34324a';
-const WALL_B = '#2b2a3d';
-const WALL_HI = '#403e5c';
-const WALL_MORTAR = '#18172a';
-const FLOOR_COLOR = '#100f1c';
-const FLOOR_SPECK_LIGHT = '#241f38';
-const FLOOR_SPECK_DARK = '#0a0912';
-
-const TRAIL_COLOR = 'rgba(245, 196, 81, 0.14)';
 const PATH_LINE_COLOR = 'rgba(245, 196, 81, 0.5)';
 const PATH_DOT_COLOR = 'rgba(245, 196, 81, 0.65)';
 const POINTER_COLOR = '#f5c451';
@@ -102,263 +95,6 @@ function buildIcon(rows: string[], palette: Record<string, string>): HTMLCanvasE
   }
   cctx.putImageData(img, 0, 0);
   return c;
-}
-
-// ---------------------------------------------------------------------------
-// Procedural creature sprites: a symmetric "blob" half-width profile (or an
-// explicit pixel list for irregular shapes like the snake) plus accent/eye
-// overrides. Produces the same row/palette shape buildIcon expects.
-// ---------------------------------------------------------------------------
-
-interface CreatureCfg {
-  widths?: number[]; // length 8, half-width (0-4) per row; ignored if bodyPositions is set
-  bodyPositions?: Array<[number, number]>;
-  body: string;
-  accent?: string;
-  accentPositions?: Array<[number, number]>;
-  eye?: string;
-  eyePositions?: Array<[number, number]>;
-}
-
-function creatureRows(cfg: CreatureCfg): { rows: string[]; palette: Record<string, string> } {
-  const size = 8;
-  const grid: string[][] = Array.from({ length: size }, () => Array<string>(size).fill('.'));
-
-  if (cfg.bodyPositions) {
-    for (const [x, y] of cfg.bodyPositions) grid[y][x] = 'X';
-  } else {
-    const widths = cfg.widths ?? [];
-    for (let y = 0; y < size; y++) {
-      const wgt = widths[y] ?? 0;
-      for (let x = 0; x < size; x++) {
-        const dist = Math.abs(x - 3.5) - 0.5;
-        if (dist <= wgt - 1) grid[y][x] = 'X';
-      }
-    }
-  }
-  for (const [x, y] of cfg.accentPositions ?? []) grid[y][x] = 'Y';
-  for (const [x, y] of cfg.eyePositions ?? []) grid[y][x] = 'E';
-
-  const palette: Record<string, string> = { X: cfg.body };
-  if (cfg.accent) palette.Y = cfg.accent;
-  if (cfg.eye) palette.E = cfg.eye;
-  return { rows: grid.map((r) => r.join('')), palette };
-}
-
-const MONSTER_CFGS: Record<string, CreatureCfg> = {
-  rat: {
-    widths: [0, 0, 2, 3, 3, 2, 1, 0],
-    body: '#8a7256',
-    accent: '#c98a8a',
-    accentPositions: [
-      [1, 2],
-      [7, 4],
-    ],
-    eye: '#141414',
-    eyePositions: [[3, 3]],
-  },
-  bat: {
-    widths: [3, 4, 2, 1, 0, 0, 0, 0],
-    body: '#4a4763',
-    accent: '#2c2a3d',
-    accentPositions: [
-      [0, 0],
-      [7, 0],
-    ],
-    eye: '#e5484d',
-    eyePositions: [
-      [2, 1],
-      [5, 1],
-    ],
-  },
-  spider: {
-    widths: [0, 1, 3, 3, 1, 0, 0, 0],
-    body: '#2f2a3d',
-    accent: '#7b6cff',
-    accentPositions: [
-      [0, 3],
-      [7, 3],
-      [0, 4],
-      [7, 4],
-      [1, 5],
-      [6, 5],
-    ],
-    eye: '#e5484d',
-    eyePositions: [
-      [3, 2],
-      [4, 2],
-    ],
-  },
-  snake: {
-    bodyPositions: [
-      [1, 0],
-      [2, 0],
-      [2, 1],
-      [3, 1],
-      [4, 2],
-      [5, 2],
-      [5, 3],
-      [4, 3],
-      [3, 4],
-      [2, 4],
-      [2, 5],
-      [3, 5],
-      [4, 6],
-      [5, 6],
-      [5, 7],
-      [4, 7],
-    ],
-    body: '#3aa15a',
-    eye: '#141414',
-    eyePositions: [[1, 0]],
-  },
-  zombie: {
-    widths: [0, 2, 2, 3, 3, 3, 3, 2],
-    body: '#5c7a52',
-    accent: '#2e3b2a',
-    accentPositions: [
-      [3, 4],
-      [4, 4],
-      [3, 5],
-      [4, 5],
-    ],
-    eye: '#c9c9c9',
-    eyePositions: [
-      [2, 2],
-      [5, 2],
-    ],
-  },
-  skeleton: {
-    widths: [0, 2, 2, 3, 2, 3, 2, 3],
-    body: '#e8e6f0',
-    accent: '#8f8ca8',
-    accentPositions: [
-      [3, 4],
-      [4, 5],
-    ],
-    eye: '#141414',
-    eyePositions: [
-      [2, 2],
-      [5, 2],
-    ],
-  },
-  ogre: {
-    widths: [0, 3, 4, 4, 4, 4, 3, 2],
-    body: '#7a8f5a',
-    accent: '#4a3b2a',
-    accentPositions: [
-      [1, 0],
-      [6, 0],
-      [2, 5],
-      [3, 5],
-      [4, 5],
-      [5, 5],
-    ],
-    eye: '#e5484d',
-    eyePositions: [
-      [2, 2],
-      [5, 2],
-    ],
-  },
-  goblin: {
-    widths: [0, 1, 2, 3, 2, 3, 2, 2],
-    body: '#6fae52',
-    accent: '#3a2b1f',
-    accentPositions: [
-      [1, 1],
-      [6, 1],
-    ],
-    eye: '#f5c451',
-    eyePositions: [
-      [3, 2],
-      [4, 2],
-    ],
-  },
-  drake: {
-    widths: [1, 2, 3, 4, 3, 2, 1, 1],
-    body: '#3a6ea8',
-    accent: '#f5c451',
-    accentPositions: [
-      [0, 2],
-      [7, 2],
-      [3, 0],
-    ],
-    eye: '#e5484d',
-    eyePositions: [
-      [3, 2],
-      [4, 2],
-    ],
-  },
-  wraith: {
-    widths: [1, 2, 3, 3, 3, 2, 2, 1],
-    body: '#7b6cff',
-    eye: '#e8e6f0',
-    eyePositions: [
-      [3, 2],
-      [4, 2],
-    ],
-  },
-  vampire: {
-    widths: [0, 2, 2, 3, 3, 2, 3, 2],
-    body: '#8b1e2b',
-    accent: '#e8e6f0',
-    accentPositions: [
-      [2, 2],
-      [3, 2],
-      [4, 2],
-      [5, 2],
-    ],
-    eye: '#e5484d',
-    eyePositions: [
-      [3, 2],
-      [4, 2],
-    ],
-  },
-  scorpion: {
-    widths: [0, 0, 2, 3, 3, 2, 0, 0],
-    body: '#b8443a',
-    accent: '#5e1f1a',
-    accentPositions: [
-      [6, 1],
-      [7, 0],
-      [0, 3],
-    ],
-    eye: '#141414',
-    eyePositions: [
-      [3, 3],
-      [4, 3],
-    ],
-  },
-  blob: {
-    widths: [0, 2, 3, 4, 4, 3, 2, 0],
-    body: '#8f8ca8',
-    eye: '#141414',
-    eyePositions: [
-      [3, 3],
-      [4, 3],
-    ],
-  },
-};
-
-const MONSTER_KEYWORDS = [
-  'rat',
-  'bat',
-  'spider',
-  'snake',
-  'zombie',
-  'skeleton',
-  'ogre',
-  'goblin',
-  'drake',
-  'wraith',
-  'vampire',
-  'scorpion',
-] as const;
-
-function monsterSpriteKey(name: string): string {
-  const n = name.toLowerCase();
-  for (const k of MONSTER_KEYWORDS) if (n.includes(k)) return k;
-  return 'blob';
 }
 
 // ---------------------------------------------------------------------------
@@ -531,6 +267,7 @@ export class Renderer implements TileMapper {
     this.staticCanvas.height = h;
     const sctx = this.staticCanvas.getContext('2d');
     if (!sctx) return;
+    const pal = themeById(level.theme).palette;
     const img = sctx.createImageData(w, h);
     for (let ty = 0; ty < level.height; ty++) {
       const row = level.tiles[ty];
@@ -547,17 +284,17 @@ export class Renderer implements TileMapper {
               const withinBrickX = (lx + offset) % 8;
               const isMortarV = withinBrickX === 0;
               const isMortarH = ly % 4 === 0;
-              if (isMortarV || isMortarH) hex = WALL_MORTAR;
-              else if (ly % 4 === 1) hex = WALL_HI;
-              else hex = (tx + brickRow) % 2 === 0 ? WALL_A : WALL_B;
+              if (isMortarV || isMortarH) hex = pal.mortar;
+              else if (ly % 4 === 1) hex = pal.wallHi;
+              else hex = (tx + brickRow) % 2 === 0 ? pal.wallA : pal.wallB;
             } else {
               const hv = hash2(tx, ty);
               const slx = (hv >> 3) % SUB;
               const sly = (hv >> 6) % SUB;
               if (hv % 5 === 0 && lx === slx && ly === sly) {
-                hex = hv % 2 === 0 ? FLOOR_SPECK_LIGHT : FLOOR_SPECK_DARK;
+                hex = hv % 2 === 0 ? pal.speckLight : pal.speckDark;
               } else {
-                hex = FLOOR_COLOR;
+                hex = pal.floor;
               }
             }
             const [r, g, b] = hexToRgb(hex);
@@ -659,7 +396,7 @@ export class Renderer implements TileMapper {
     }
 
     // Trail highlight.
-    ctx.fillStyle = TRAIL_COLOR;
+    ctx.fillStyle = themeById(state.level.theme).palette.trail;
     for (const k of state.trail) {
       const p = parseKey(k);
       if (!this.inRange(p, startX, endX, startY, endY)) continue;
@@ -896,6 +633,7 @@ export class Renderer implements TileMapper {
     if (sprite) {
       ctx.save();
       if (spriteKey === 'wraith') ctx.globalAlpha = 0.72;
+      else if (spriteKey === 'ghost') ctx.globalAlpha = 0.8;
       ctx.drawImage(sprite, dx, dy, size, size);
       ctx.restore();
     }

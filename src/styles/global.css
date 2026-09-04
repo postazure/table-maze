@@ -725,3 +725,153 @@ button {
   background: var(--text);
   animation: chest-tap-blink 900ms steps(2) infinite;
 }
+
+/* ---- Help modal (the one place with words) ---- */
+
+.hud-buttons {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.hud-btn-help {
+  min-width: 34px;
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--gold);
+}
+
+.help-backdrop {
+  align-items: stretch;
+  padding: 12px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+.help-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  min-height: 0;
+  background: var(--panel);
+  border: 3px solid var(--border);
+  box-shadow: inset 2px 2px 0 var(--border-light), inset -3px -3px 0 var(--border-dark), 0 0 0 3px #050509;
+}
+
+.help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--border);
+}
+
+.help-title {
+  font-size: 10px;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.help-close {
+  min-width: 34px;
+  padding: 8px 0;
+}
+
+.help-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.help-gear {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px;
+  background: var(--panel-2);
+  border: 2px solid var(--border);
+  box-shadow: inset 1px 1px 0 var(--border-light), inset -2px -2px 0 var(--border-dark);
+}
+
+.help-gear-empty .help-gear-icon {
+  opacity: 0.35;
+}
+
+.help-gear-icon {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #050509;
+  border: 2px solid var(--border);
+}
+
+.help-gear-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.help-gear-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 8px;
+  line-height: 1.6;
+  margin-bottom: 2px;
+}
+
+.help-gear-slot {
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.help-gear-name {
+  color: var(--text);
+}
+
+.help-gear-level {
+  color: var(--gold);
+}
+
+.help-muted {
+  color: var(--muted);
+}
+
+.help-gear-desc,
+.help-list {
+  margin: 0;
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.help-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.help-list {
+  padding-left: 18px;
+}
+
+.help-list li {
+  margin: 3px 0;
+}
+
+.help-ok {
+  margin: 10px 12px 12px;
+  padding: 10px;
+}

@@ -232,3 +232,17 @@ test('generateShopLevel builds the pedestal room', () => {
     shop.offers.map((o) => o.item.kind),
   );
 });
+
+test('every item has a description that mentions its real numbers', async () => {
+  const { itemDescription, itemStats } = await import('../src/engine/items');
+  const { ITEM_KINDS } = await import('../src/engine/types');
+  for (const kind of ITEM_KINDS) {
+    for (const level of [1, 4, 9]) {
+      const text = itemDescription({ kind, level });
+      assert.ok(text.length > 20, `${kind} has a description`);
+      assert.ok(/\d/.test(text) || kind === 'keyCompass', `${kind} description carries a number`);
+    }
+  }
+  const lvl9 = itemStats({ kind: 'fireStaff', level: 9 });
+  assert.ok(itemDescription({ kind: 'fireStaff', level: 9 }).includes(String(lvl9.fireDmg)));
+});
