@@ -65,11 +65,11 @@ test('levelDims: odd, portrait, capped', () => {
     assert.equal(width % 2, 1);
     assert.equal(height % 2, 1);
     assert.ok(height > width, `depth ${d} should be portrait`);
-    assert.ok(width <= 21 && height <= 31);
-    assert.ok(width >= 11 && height >= 17);
+    assert.ok(width <= 41 && height <= 61);
+    assert.ok(width >= 21 && height >= 31);
   }
-  assert.deepEqual(levelDims(1), { width: 11, height: 17 });
-  assert.deepEqual(levelDims(50), { width: 21, height: 31 });
+  assert.deepEqual(levelDims(1), { width: 21, height: 31 });
+  assert.deepEqual(levelDims(50), { width: 41, height: 61 });
 });
 
 test('generateLevel: structure, entities and solvability', () => {
@@ -82,7 +82,7 @@ test('generateLevel: structure, entities and solvability', () => {
       assert.equal(lv.depth, depth, where);
       assert.equal(lv.width % 2, 1, where);
       assert.equal(lv.height % 2, 1, where);
-      assert.ok(lv.width <= 21 && lv.height <= 31, where);
+      assert.ok(lv.width <= 41 && lv.height <= 61, where);
       assert.equal(lv.tiles.length, lv.height, where);
       for (const row of lv.tiles) assert.equal(row.length, lv.width, where);
       // outer ring is solid wall
@@ -125,7 +125,7 @@ test('generateLevel: structure, entities and solvability', () => {
       for (const k of lv.keys) assert.equal(k.taken, false, where);
 
       // chests
-      assert.ok(lv.chests.length <= 6, where);
+      assert.ok(lv.chests.length <= 8, where);
       for (const c of lv.chests) {
         assert.equal(c.opened, false, where);
         assert.ok(c.loot.gold > 0 && c.loot.xp > 0, where);
@@ -133,7 +133,7 @@ test('generateLevel: structure, entities and solvability', () => {
 
       // monsters
       assert.ok(lv.monsters.length >= 3, `${where}: at least 3 monsters`);
-      assert.ok(lv.monsters.length <= 12, where);
+      assert.ok(lv.monsters.length <= 18, where);
       const open = bfsDistances(lv, lv.start);
       for (const m of lv.monsters) {
         const d = open.get(key(m.pos));

@@ -8,10 +8,10 @@ import type { Hero, Loot, LootItem, Monster, MonsterKind, Rng, Vec } from './typ
 // Level size
 // ---------------------------------------------------------------------------
 
-const BASE_W = 11;
-const BASE_H = 17;
-const MAX_W = 21;
-const MAX_H = 31;
+const BASE_W = 21;
+const BASE_H = 31;
+const MAX_W = 41;
+const MAX_H = 61;
 
 /** Odd tile counts, always portrait. Grows two tiles every other depth. */
 export function levelDims(depth: number): { width: number; height: number } {

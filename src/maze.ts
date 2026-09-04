@@ -197,7 +197,7 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
   }
 
   if (opts.chests) {
-    const chestCount = Math.min(6, 2 + Math.floor(depth / 2));
+    const chestCount = Math.min(8, 3 + Math.floor(depth / 2));
     const chestSpots = pickChestSpots(level, used, onMain, chestCount, rng);
     for (const pos of chestSpots) {
       const chest: Chest = {
@@ -384,7 +384,7 @@ function placeMonsters(
   dist: Map<string, number>,
   rng: Rng,
 ): void {
-  const count = Math.min(12, 3 + depth);
+  const count = Math.min(18, 5 + Math.floor(depth * 1.5));
   const kinds: MonsterKind[] = [];
   if (count >= 3) kinds.push('guard', 'patrol', 'lurker');
   while (kinds.length < count) {

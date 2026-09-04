@@ -35,7 +35,7 @@ export function bfsDistances(level: LevelData, from: Vec, opts?: { blocked?: (p:
 
 ## balance.ts
 ```ts
-export function levelDims(depth: number): { width: number; height: number }; // odd tile counts, portrait (height > width). depth 1 ≈ 11x17, grows to a cap ≈ 21x31.
+export function levelDims(depth: number): { width: number; height: number }; // odd tile counts, portrait (height > width). depth 1 ≈ 21x31 (bigger than a phone screen; the renderer scrolls), grows to a cap ≈ 41x61.
 export function newHero(): Hero;                     // level 1 starting stats
 export function xpForLevel(level: number): number;   // xp needed to go from `level` to `level+1`
 export function applyLevelUp(hero: Hero): void;      // called when hero.xp >= hero.xpToNext; bumps stats, restores hp, sets new xpToNext (may loop if enough xp for multiple levels)
@@ -58,11 +58,11 @@ Requirements:
   corridor tiles (both side neighbours are walls). Each door needs a matching
   door key placed somewhere reachable WITHOUT passing through that door (or
   any later door). Verify with BFS using `blocked` = closed doors.
-- Chests: 2 + floor(depth / 2) chests (cap 6) in dead ends / off-path branches,
+- Chests: 3 + floor(depth / 2) chests (cap 8) in dead ends / off-path branches,
   some may sit behind doors. One chest key per chest, placed reachable
   (respecting the door ordering above). Chest keys and door keys are distinct
   kinds.
-- Monsters: count scales with depth (≈ 3 + depth, cap 12). Mix:
+- Monsters: count scales with depth (≈ 5 + 1.5·depth, cap 18). Mix:
   guards on chokepoints near chests/doors/exit, patrols along straight-ish
   corridor runs (give them a `patrolPath` of 4-10 tiles walked via BFS),
   lurkers on side branches next to the main path (their `sightRange` should
