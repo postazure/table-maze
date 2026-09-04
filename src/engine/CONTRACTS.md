@@ -247,3 +247,124 @@ export const PEDESTAL_ART: { rows: string[]; palette: Record<string, string> }; 
 export const PODIUM_ART: { rows: string[]; palette: Record<string, string> };    // 16x16 map podium, 2x2 tiles, with a niche for the slot emblem
 export const PODIUM_NICHE: { x: number; y: number; size: number };               // where the emblem goes, as fractions of the block
 ```
+
+# Boss encounters (added later)
+
+Shared types: `RosterKind` (the three maze roles) vs `BossMonsterKind`
+(`minion | crystal | boss | minotaur | angel`); `MonsterKind` is the union.
+`Monster.invulnerable`, `Monster.roomId`, `LevelData.kind: 'boss'`,
+`LevelData.boss: BossData` (a union keyed on `BossKind`), `Rect`, `inRect`,
+`inFrontOf`, `BOSS_HIT_FRACTION`, `Modal` kinds `bossIntro | bossWon | gameOver`,
+`RunStats`, `GameState.over`, `stats.bosses`. See types.ts.
+
+## Level flow
+Maze depth 1, 2, 3 -> **boss (depth 3)** -> shop (depth 3) -> maze 4, 5, 6 ->
+boss (6) -> shop (6) -> ... `state.depth` still counts maze floors only. The
+boss for a depth comes from `bossKindForDepth(depth, runSeed)`: every block of
+three bosses contains each kind once, seed-shuffled.
+
+## engine/boss.ts (generation + factory; the per-tick rules live in game.ts)
+```ts
+export const BOSS_SALT: number;
+export const BOSS_EVERY: number; // 3
+export function bossName(kind: BossKind): string;                       // "The Necromancer"
+export function bossKindForDepth(depth: number, runSeed: number): BossKind;
+export function roomAt(rooms: readonly Rect[], p: Vec): number;        // index or -1
+export function makeBossMonster(kind: BossMonsterKind, depth: number, pos: Vec, id: string): Monster; // no rng
+export function generateBossLevel(depth: number, runSeed: number): LevelData; // kind 'boss', boss set
+```
+Layout requirements (odd dims, solid outer wall, portrait or square, no keys /
+doors / chests, deterministic for (depth, runSeed)):
+- **necromancer**: a large central chamber (about 7x7 to 9x9 of open floor)
+  with the `boss` monster ("Necromancer", invulnerable) on the exact centre
+  tile, which is also `level.exit` (hidden and blocked by him until he flees).
+  Five winding 1-wide corridors leave the chamber from five different points
+  on its edge and each ends in a dead end holding one `crystal` monster.
+  Corridors never touch each other or the chamber except at their own mouth
+  (so every crystal is a real trip). Each corridor is 10-24 tiles long with
+  several turns. `start` is a chamber-edge tile, at least 2 tiles from the
+  necromancer. `boss = { kind:'necromancer', defeated:false, spellMs, spellTotalMs,
+  spawnMs, spawnEveryMs, maxMinions, crystalsTotal: 5 }`. Suggested numbers:
+  spellTotalMs = 90000 + 3000·depth, spawnEveryMs = 5000, first spawnMs = 4000,
+  maxMinions = 8. Monster ids: `necro`, `crystal1..5`.
+- **minotaur**: a braided maze (open ~35% of dead ends so there are many
+  loops) of roughly levelDims(depth) capped around 31x41, with 3-5 open
+  chambers (3x3 to 5x5) carved into it. `start` in one corner region, `exit`
+  among the BFS-farthest tiles from start, the single `minotaur` monster
+  (id `minotaur`) placed at least 12 BFS tiles from start, roughly between
+  start and exit. `boss = { kind:'minotaur', defeated:false }`.
+- **angels**: a grid of rooms (3 columns x 4 rows, each room 4x4 to 7x6 of
+  floor, in a level around 29x41) joined by winding 1-wide corridors between
+  neighbouring rooms so the whole level is connected with loops (every room
+  has at least two corridors where possible). `boss.rooms` lists every room
+  rectangle (floor only). `start` in a room in the top row, `exit` in a room
+  in the bottom row far from start. 4-6 `angel` monsters (ids `angel1..n`),
+  each inside a room with `roomId` set to that room's index, never in the
+  start room, never in the exit room, at most one per room, at least 8 BFS
+  tiles from start. `boss = { kind:'angels', defeated:false, rooms }`.
+- Every level: `bfsPath(start, exit)` exists once the blocking monsters are
+  ignored, every monster on a unique floor tile, no monster within 2 tiles of
+  start, `level.theme = themeForDepth(depth).id`.
+
+## Per-tick rules (game.ts)
+- Entering a boss level sets `modal = { kind:'bossIntro', boss }`; nothing
+  runs until it is dismissed. Reloading a save mid-boss shows it again.
+- **necromancer**: while not defeated, `spellMs -= dt`; at 0 -> game over
+  ("The Necromancer finished his spell."). `spawnMs -= dt`; at 0 and fewer
+  than `maxMinions` live minions, a `minion` rises on a free floor tile next
+  to the necromancer (4-neighbours first, then diagonals; skip if none free),
+  `spawnMs = spawnEveryMs`. When every `crystal` is dead: `defeated = true`,
+  the necromancer's `alive = false` (he flees: ring + text), every live minion
+  crumbles (`alive = false`), `level.exit` = his tile, reward + `bossWon` modal.
+- **minotaur / angels**: stepping on `exit` while not defeated -> `defeated =
+  true`, reward + `bossWon` modal, then the normal descent.
+- **angels**: each tick, `roomAt(rooms, hero.pos)`; every idle angel whose
+  `roomId` equals it wakes (`state = 'chasing'`, never goes back to idle).
+- Reward: `upgradeRandomItem(hero, rng)` (items.ts): pick one of the filled
+  gear slots at random, bump `level` by one and re-apply its constant bonuses
+  (same maths as `equip`, timers untouched). Returns the item, or null when
+  the hero wears nothing, in which case the hero gains one heart (`maxHp +=
+  HEART`, `hp += HEART`). On any boss win the hero is healed to full and
+  `stats.bosses += 1`.
+- Game over: `gameOver(state, cause)` in combat.ts sets `state.over = true`,
+  clears the path, and sets `modal = { kind:'gameOver', cause, boss, stats }`
+  with a `RunStats` snapshot. In a boss level a knockdown (hp <= 0 after the
+  phoenix feather has had its chance) is a game over instead of a sleep:
+  minotaur -> "The Minotaur caught you.", angel -> "You were turned to stone.",
+  anything else -> "The skeletons wore you down." `Game.dismissModal()` on a
+  `gameOver` modal starts a new run. `saveGame` clears the save instead of
+  writing when `state.over`; `loadGame` returns null for an `over` save.
+- Boss hits: a `minotaur` or `angel` attack takes
+  `ceil(hero.maxHp * BOSS_HIT_FRACTION)` hp, ignoring defense. The shield
+  amulet still eats it. Knockback as for any non-patrol monster.
+- `damageMonster` on an `invulnerable` monster does nothing but a grey
+  "Immune" text; no on-hit procs, no combat clocks.
+- Crystals grant their xp on death but never attack or move.
+
+## Movement AI (monsters.ts)
+- `minion`: `chasing` from birth; BFS toward the hero with no distance limit
+  (normal `moveBlocked`), attack when adjacent. Never returns/idles.
+- `minotaur`: same as minion, never stops. Attack when adjacent.
+- `angel`: idle = never moves or attacks. `chasing`: if
+  `inFrontOf(hero.pos, hero.facing, angel.pos)` it is frozen: no move, no
+  attack. Otherwise BFS toward the hero with no limit and attack when adjacent.
+- `crystal`, `boss`: never move, never attack.
+- Nothing about sleeping heroes matters here (no sleeping in boss levels).
+
+## Renderer
+- Hero has four facing sprites (N back view, S front, E side, W = E flipped),
+  chosen from `hero.facing`, which only changes when the hero steps or swings.
+- Boss monsters have their own 8x8 sprites keyed by name: `necromancer`,
+  `crystal`, `minotaur`, `angel` (plus the existing `skeleton`). Crystals draw
+  with no ring and no level badge, just an hp bar when hurt. The necromancer
+  gets a pulsing purple channelling ring. Angels: idle = weeping pose,
+  chasing + frozen (in front of the hero) = grey ring, chasing + free = red
+  pulsing ring. Minotaur: red pulsing ring, slightly bigger sprite.
+- Necromancer spell clock: a screen-space bar across the top of the viewport
+  (purple, shrinking with `spellMs / spellTotalMs`, seconds left as text),
+  hidden once defeated. The exit is not drawn while the necromancer stands on it.
+
+## UI
+- `bossIntro`, `bossWon`, `gameOver` are button-dismissed modals (the backdrop
+  never closes them). `gameOver` shows the cause and `RunStats`, button
+  "New Game". HUD depth badge reads BOSS on boss levels.

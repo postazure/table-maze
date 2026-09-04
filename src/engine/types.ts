@@ -95,7 +95,26 @@ export interface Chest {
  *            This is the monster you bait: pull it away from the corridor it
  *            guards, then loop around it (levels contain a few loops).
  */
-export type MonsterKind = 'guard' | 'patrol' | 'lurker';
+export type RosterKind = 'guard' | 'patrol' | 'lurker';
+/**
+ * Boss-level monsters (see engine/boss.ts). None of them appear on maze floors.
+ *  - minion:     a trash skeleton raised by the necromancer. Chases the hero
+ *                anywhere on the floor (no sight limit, no leash), slowly.
+ *                Weak hits that shove the hero back. Solid, so it clogs paths.
+ *  - crystal:    a necromancer's spell crystal. Never moves, never attacks;
+ *                the hero smashes it like any monster. No xp/gold.
+ *  - boss:       the necromancer himself. Rooted in the middle of his
+ *                chamber, channelling. `invulnerable`; he flees when the last
+ *                crystal breaks and the stairs appear on his tile.
+ *  - minotaur:   `invulnerable`, chases the hero anywhere, slowly, forever.
+ *                Every hit takes a third of the hero's max hp.
+ *  - angel:      `invulnerable`. Idle (weeping) until the hero enters its room
+ *                (`roomId`), then it hunts the hero anywhere, fast, forever,
+ *                but ONLY while the hero is not facing it (see
+ *                `inFrontOf`). A touch (attack) takes a third of max hp.
+ */
+export type BossMonsterKind = 'minion' | 'crystal' | 'boss' | 'minotaur' | 'angel';
+export type MonsterKind = RosterKind | BossMonsterKind;
 export type MonsterState = 'idle' | 'chasing' | 'returning';
 
 export interface Monster {
@@ -135,17 +154,26 @@ export interface Monster {
   hitFlash: number; // ms remaining of "just got hit" flash (renderer reads, game decrements)
   lunge?: Vec; // unit vector of a short attack lunge animation, set by game when it attacks
   lungeT: number; // ms remaining of lunge
+  /** Takes no damage at all (bosses, angels). Hits show "Immune" instead. */
+  invulnerable?: boolean;
+  /** angel: index into `BossData.rooms` of the room it starts in. */
+  roomId?: number;
 }
 
 export interface LevelData {
   depth: number; // 1-based dungeon depth
   seed: number;
-  /** 'maze' is a normal floor. 'shop' is the small room visited after every third floor. */
-  kind: 'maze' | 'shop';
+  /**
+   * 'maze' is a normal floor. 'boss' is the boss chamber that follows every
+   * third floor, and 'shop' the small room that follows the boss.
+   */
+  kind: 'maze' | 'shop' | 'boss';
   /** Visual theme id (see engine/themes.ts); changes every three floors. */
   theme: string;
   /** Only on shop levels. */
   shop?: Shop;
+  /** Only on boss levels. */
+  boss?: BossData;
   width: number; // tiles, odd
   height: number; // tiles, odd
   tiles: Tile[][]; // tiles[y][x]
@@ -156,6 +184,78 @@ export interface LevelData {
   chests: Chest[];
   monsters: Monster[];
 }
+
+// ---------------------------------------------------------------------------
+// Boss chambers (after every third floor, right before the shop)
+// ---------------------------------------------------------------------------
+
+export type BossKind = 'necromancer' | 'minotaur' | 'angels';
+export const BOSS_KINDS: readonly BossKind[] = ['necromancer', 'minotaur', 'angels'];
+
+/** An axis-aligned rectangle of floor tiles, inclusive of `x..x+w-1`, `y..y+h-1`. */
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Per-boss objective state. `defeated` flips once the objective is met: the
+ * reward has been given and the stairs are live.
+ *
+ *  - necromancer: a large central chamber with the necromancer (a 'boss'
+ *    monster) channelling in the middle. Five winding corridors branch off
+ *    the chamber, each ending at a 'crystal' monster. Every `spawnEveryMs`
+ *    a 'minion' skeleton rises next to the necromancer (while fewer than
+ *    `maxMinions` are alive). `spellMs` counts down from `spellTotalMs`;
+ *    at 0 the spell completes and it is game over. Smash all five crystals
+ *    and the necromancer flees: his tile becomes the stairs. `level.exit` is
+ *    his tile from the start (hidden and blocked by him until then).
+ *  - minotaur: a braided maze with a few open chambers. One 'minotaur'
+ *    monster hunts the hero from the far side. Reach `level.exit` to win.
+ *  - angels: a grid of rooms (`rooms`) joined by winding corridors, several
+ *    holding an 'angel'. Reach `level.exit` to win.
+ */
+export type BossData =
+  | {
+      kind: 'necromancer';
+      defeated: boolean;
+      spellMs: number;
+      spellTotalMs: number;
+      /** ms until the next skeleton rises. */
+      spawnMs: number;
+      spawnEveryMs: number;
+      maxMinions: number;
+      crystalsTotal: number;
+    }
+  | { kind: 'minotaur'; defeated: boolean }
+  | { kind: 'angels'; defeated: boolean; rooms: Rect[] };
+
+/** Does `p` lie inside `r`? */
+export const inRect = (r: Rect, p: Vec): boolean =>
+  p.x >= r.x && p.y >= r.y && p.x < r.x + r.w && p.y < r.y + r.h;
+
+/**
+ * Is `target` in front of a hero standing on `from` and facing `facing`?
+ * A half-plane, not a cone: facing N means every tile with a smaller y.
+ * Angels freeze while they are in front of the hero.
+ */
+export function inFrontOf(from: Vec, facing: Dir, target: Vec): boolean {
+  switch (facing) {
+    case 'N':
+      return target.y < from.y;
+    case 'S':
+      return target.y > from.y;
+    case 'E':
+      return target.x > from.x;
+    case 'W':
+      return target.x < from.x;
+  }
+}
+
+/** Boss hits (minotaur, angel) take this fraction of the hero's max hp, ignoring defense. */
+export const BOSS_HIT_FRACTION = 1 / 3;
 
 // ---------------------------------------------------------------------------
 // Magic items (bought in shops, one per slot, all passive)
@@ -363,7 +463,34 @@ export type Modal =
   /** Bought a magic item. `replaced` is the item it pushed out of the slot, if any. */
   | { kind: 'item'; item: MagicItem; replaced: MagicItem | null }
   /** The help screen: current gear explained in words. Opened from the HUD. */
-  | { kind: 'help' };
+  | { kind: 'help' }
+  /**
+   * Entering a boss chamber: what the boss is and what the hero must do.
+   * Dismissed by its button only (never by tapping the backdrop). The
+   * world (and the necromancer's spell clock) waits until it is closed.
+   */
+  | { kind: 'bossIntro'; boss: BossKind }
+  /**
+   * The boss is beaten. `upgraded` is the magic item that gained a level
+   * (already at its new level), or null when the hero wore nothing, in
+   * which case they gained a heart (`heart` is true). Button to dismiss.
+   */
+  | { kind: 'bossWon'; boss: BossKind; upgraded: MagicItem | null; heart: boolean }
+  /**
+   * The run is over (only ever in a boss chamber). `cause` is one plain
+   * sentence ("The Minotaur caught you."). Dismissing it starts a new run.
+   */
+  | { kind: 'gameOver'; cause: string; boss: BossKind; stats: RunStats };
+
+/** Everything the game-over screen shows about the run that just ended. */
+export interface RunStats {
+  deepest: number;
+  heroLevel: number;
+  kills: number;
+  bosses: number;
+  gold: number;
+  playMs: number;
+}
 
 export interface GameState {
   version: number; // save format version
@@ -383,6 +510,8 @@ export interface GameState {
     kills: number;
     deepest: number;
     playMs: number;
+    /** Bosses beaten this run. */
+    bosses: number;
   };
   /** true once the hero steps on the exit; game handles the transition. */
   descending: number; // ms remaining of the descend animation, 0 when not descending
@@ -390,6 +519,11 @@ export interface GameState {
   modal: Modal | null;
   /** keyCompass: the tile the arrow over the hero points at, or null. Updated by the game. */
   compass: Vec | null;
+  /**
+   * The run ended (game over in a boss chamber). Persisted so a reload never
+   * resurrects a dead run: `saveGame` clears the save instead of writing it.
+   */
+  over: boolean;
 }
 
 /** JSON-serialisable form of GameState (Set -> array). */
@@ -417,7 +551,7 @@ export interface Rng {
   chance(p: number): boolean;
 }
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 /** Health is measured in quarter-hearts. One heart = 4 hp. */
 export const HEART = 4;

@@ -2,7 +2,7 @@
  * Tuning numbers: level size, hero progression, monster stats, loot, damage.
  * Nothing here touches the DOM and all randomness comes from an `Rng`.
  */
-import type { Hero, Loot, LootItem, Monster, MonsterKind, Rng, Vec } from './types';
+import type { Hero, Loot, LootItem, Monster, RosterKind, Rng, Vec } from './types';
 import { HEART } from './types';
 import { themeForDepth } from './themes';
 
@@ -88,7 +88,7 @@ function tierOf(depth: number): number {
 
 /** Fully-formed monster of `kind` sitting on `pos`, scaled to `depth`. */
 export function makeMonster(
-  kind: MonsterKind,
+  kind: RosterKind,
   depth: number,
   rng: Rng,
   pos: Vec,

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { THEMES, themeById, themeForDepth } from '../src/engine/themes';
+import type { RosterKind } from '../src/engine/types';
 import { makeMonster } from '../src/engine/balance';
 import { makeRng } from '../src/engine/rng';
 import { generateLevel } from '../src/engine/maze';
@@ -37,5 +38,5 @@ test('monsters take their look from the floor theme but keep role scaling', () =
   assert.ok(sewer.maxHp > crypt.maxHp, 'stats still scale with depth');
   const lv = generateLevel(5, 42);
   assert.equal(lv.theme, THEMES[1].id);
-  for (const m of lv.monsters) assert.ok(THEMES[1].roster[m.kind].some((l) => l.name === m.name), `${m.name} is not a sewer ${m.kind}`);
+  for (const m of lv.monsters) assert.ok(THEMES[1].roster[m.kind as RosterKind].some((l) => l.name === m.name), `${m.name} is not a sewer ${m.kind}`);
 });
