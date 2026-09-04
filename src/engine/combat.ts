@@ -16,9 +16,9 @@ import type {
   Rng,
   Vec,
 } from './types';
-import { eq, key, parseKey, HEART } from './types';
+import { eq, key, manhattan, parseKey } from './types';
 import { damage } from './balance';
-import { floorNeighbors, isFloor } from './pathfind';
+import { bfsDistances, floorNeighbors, isFloor } from './pathfind';
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -156,43 +156,59 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
   if (hero.hp <= 0) knockDown(state);
 }
 
-/** Heroes never die: they are knocked down and dragged back along their trail. */
+/**
+ * Heroes never die. At 0 hp they are carried back to a nearby tile they walked
+ * over recently and fall asleep there; the game hands control back once they
+ * have slept themselves back to full health.
+ */
 function knockDown(state: GameState): void {
   const hero = state.hero;
-  // Get back up with 40% of max health, rounded down to whole hearts (at least one).
-  hero.hp = Math.max(HEART, Math.floor((hero.maxHp * 0.4) / HEART) * HEART);
-  hero.stun = 900;
+  hero.hp = 1;
+  hero.stun = 0;
+  hero.sleeping = true;
   state.path.length = 0;
   const dest = retreatTile(state);
   if (dest) hero.pos = dest;
   state.trail.add(key(hero.pos));
-  pushText(state, hero.pos, 'Knocked down!', RED, 1300);
   pushShake(state, 12, 450);
   pushLog(state, 'Knocked down!');
 }
 
+/** How far a monster must be for a tile to count as a safe resting spot. */
+const SAFE_MONSTER_DIST = 3;
+/** Don't carry the hero further than this (BFS tiles) from where they fell. */
+const RETREAT_MAX_DIST = 10;
+
+function isSafeSpot(state: GameState, p: Vec): boolean {
+  if (!heroCanStand(state.level, p)) return false;
+  for (const m of state.level.monsters) {
+    if (m.alive && manhattan(m.pos, p) < SAFE_MONSTER_DIST) return false;
+  }
+  return true;
+}
+
 /**
- * Walk ~4 tiles back through the most recently visited trail tiles that are
- * still free floor. Falls back to the oldest usable trail tile, then to any
- * free adjacent tile, then to staying put.
+ * Pick the most recently walked tile that is safe (free floor, no live
+ * monster within 3 tiles) and close by (within 10 BFS tiles). Recently walked
+ * means the player already got there once, so it is a known-safe spot. Falls
+ * back to any safe trail tile, then any safe neighbour, then the level start.
  */
 function retreatTile(state: GameState): Vec | null {
   const hero = state.hero;
   const level = state.level;
   const trail = Array.from(state.trail);
-  let seen = 0;
-  let last: Vec | null = null;
+  const near = bfsDistances(level, hero.pos, { maxDist: RETREAT_MAX_DIST });
+  let fallback: Vec | null = null;
   for (let i = trail.length - 1; i >= 0; i--) {
     const p = parseKey(trail[i]);
     if (eq(p, hero.pos)) continue;
-    if (!heroCanStand(level, p)) continue;
-    last = p;
-    seen += 1;
-    if (seen >= 4) return p;
+    if (!isSafeSpot(state, p)) continue;
+    if (near.has(trail[i])) return p;
+    if (!fallback) fallback = p;
   }
-  if (last) return last;
+  if (fallback) return fallback;
   for (const n of floorNeighbors(level, hero.pos)) {
-    if (heroCanStand(level, n)) return n;
+    if (isSafeSpot(state, n)) return n;
   }
-  return null;
+  return heroCanStand(level, level.start) ? { x: level.start.x, y: level.start.y } : null;
 }

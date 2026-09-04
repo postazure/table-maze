@@ -160,7 +160,12 @@ export interface Hero {
   keys: Record<KeyKind, number>; // how many of each key kind the hero carries
   items: LootItem[]; // permanent items picked up (bonuses already applied to stats)
   hitFlash: number; // ms remaining
-  stun: number; // ms the hero cannot move (after being knocked down)
+  stun: number; // ms the hero cannot move (short staggers)
+  /**
+   * Knocked-down rest. While true the hero sleeps ("zzz"), ignores input,
+   * is ignored by monsters, and heals quickly; control returns at full hp.
+   */
+  sleeping: boolean;
   lunge?: Vec;
   lungeT: number;
   /** ms since the hero was last in combat; used for out-of-combat regen. */

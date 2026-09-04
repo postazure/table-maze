@@ -50,6 +50,7 @@ export function newHero(): Hero {
     items: [],
     hitFlash: 0,
     stun: 0,
+    sleeping: false,
     lungeT: 0,
     sinceCombat: 99999,
   };

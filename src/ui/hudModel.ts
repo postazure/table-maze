@@ -34,7 +34,7 @@ export function deriveHudModel(state: GameState): HudModel {
     doorKeys: hero.keys.door ?? 0,
     chestKeys: hero.keys.chest ?? 0,
     kills: state.stats.kills,
-    stunned: hero.stun > 0,
+    stunned: hero.sleeping || hero.stun > 0,
     modal: state.modal,
     log: state.log.slice(-3).map((m) => m.text),
   };

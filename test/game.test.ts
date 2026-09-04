@@ -284,24 +284,60 @@ test('monsterAttack knocks the hero down without ever killing them', () => {
   monsterAttack(st, m, makeRng(3));
 
   assert.ok(st.hero.hp >= 1, 'hero hp never drops below 1');
-  assert.equal(st.hero.hp, Math.ceil(20 * 0.4));
-  assert.equal(st.hero.stun, 900);
+  assert.equal(st.hero.hp, 1, 'wakes up from a quarter heart');
+  assert.equal(st.hero.sleeping, true);
   assert.equal(st.path.length, 0);
-  // Knocked back one tile, then dragged ~4 tiles further along the trail.
-  assert.deepEqual(st.hero.pos, { x: 1, y: 1 });
+  // Carried to the most recently walked tile that is 3+ tiles from the monster.
+  assert.deepEqual(st.hero.pos, { x: 3, y: 1 });
   assert.ok(st.log.some((l) => l.text === 'Knocked down!'));
   assert.ok(st.fx.some((f) => f.kind === 'shake'));
 });
 
-test('a stunned hero does not walk until the stun expires', () => {
+test('retreat picks a nearby recently walked tile, not a far one', () => {
   const g = corridorGame();
-  g.state.hero.stun = 400;
+  const st = g.state;
+  st.trail = new Set(['1,1', '2,1', '3,1', '4,1', '5,1', '6,1']);
+  st.hero.pos = { x: 6, y: 1 };
+  st.hero.hp = 1;
+  const m = mkMonster({ pos: { x: 7, y: 1 }, atk: 50 });
+  st.level.monsters.push(m);
+  monsterAttack(st, m, makeRng(3));
+  // Knocked back to 5,1 then carried to 4,1 (3 tiles from the monster), not to 1,1.
+  assert.deepEqual(st.hero.pos, { x: 4, y: 1 });
+});
+
+test('a sleeping hero ignores input, heals to full, then wakes', () => {
+  const g = corridorGame();
+  const hero = g.state.hero;
+  hero.maxHp = 12;
+  hero.hp = 1;
+  hero.sleeping = true;
+  g.pointerAt({ x: 2, y: 1 });
+  assert.equal(g.state.path.length, 0, 'no path while asleep');
+  g.tick(300);
+  assert.deepEqual(hero.pos, { x: 1, y: 1 });
+  assert.ok(hero.hp > 1, 'sleep heals fast');
+  assert.equal(hero.sleeping, true);
+  for (let i = 0; i < 40 && hero.sleeping; i++) g.tick(100);
+  assert.equal(hero.sleeping, false, 'awake within ~4s');
+  assert.equal(hero.hp, hero.maxHp, 'woke at full health');
+  assert.ok(g.state.fx.some((f) => f.kind === 'flash'), 'wake-up flash');
   g.pointerAt({ x: 2, y: 1 });
   g.tick(150);
-  assert.deepEqual(g.state.hero.pos, { x: 1, y: 1 });
-  g.tick(300); // stun over
-  g.tick(150);
-  assert.deepEqual(g.state.hero.pos, { x: 2, y: 1 });
+  assert.deepEqual(hero.pos, { x: 2, y: 1 }, 'control is back');
+});
+
+test('monsters leave a sleeping hero alone', () => {
+  const m = mkMonster({ pos: { x: 2, y: 1 }, kind: 'lurker', state: 'chasing', sightRange: 5, leash: 9, home: { x: 6, y: 1 } });
+  const g = corridorGame({ monsters: [m] });
+  const hero = g.state.hero;
+  hero.maxHp = 40;
+  hero.hp = 1;
+  hero.sleeping = true;
+  const rng = makeRng(2);
+  for (let i = 0; i < 20; i++) updateMonsters(g.state, 100, rng);
+  assert.ok(hero.hp >= 1 && hero.hitFlash === 0, 'never attacked while asleep');
+  assert.notEqual(m.state, 'chasing', 'the lurker gives up the chase and heads home');
 });
 
 test('out-of-combat regen ticks 1hp every 600ms', () => {
