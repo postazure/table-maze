@@ -31,18 +31,54 @@ const BASE_ICONS: Record<BaseIconName, { rows: Rows; palette: Palette }> = {
     rows: ['..GGGG..', '.GGYYGG.', 'GGYGGYGG', 'GGYGGGGG', 'GGYGGGGG', 'GGYGGYGG', '.GGYYGG.', '..GGGG..'],
     palette: { G: '#f5c451', Y: '#8a6a2a' },
   },
-  // Magic key: purple/magenta with two tiny devil horns off the bow — matches
-  // the horned doors it opens. Same rows/palette as the map sprite in
-  // renderer.ts (DOOR_KEY_ROWS) so the HUD icon matches the map exactly.
+  // Magic key: bold 16x16 bow-and-shaft silhouette, purple/magenta with two
+  // devil horns off the bow — matches the horned doors it opens. Same
+  // rows/palette as the map sprite in renderer.ts (DOOR_KEY_ROWS) so the HUD
+  // icon matches the map exactly.
   doorKey: {
-    rows: ['.H.H....', '.WPP....', 'P...P...', 'P..PPPPP', '.PPP...D', '......D.', '........', '........'],
-    palette: { P: '#b56cff', D: '#6d2fb0', H: '#ff5c8a', W: '#ffffff' },
+    rows: [
+      '..DTD......DTD..',
+      '..DHHD....DHHD..',
+      '...DHHDDDDHHD...',
+      '...DHHWPPPHHD...',
+      '....DWPPPPPD....',
+      '...DPPDDDDPPD...',
+      '...DPPD..DPPD...',
+      '...DPPD..DPPD...',
+      '...DPPDDDDPPD...',
+      '....DPPPPPPD....',
+      '.....DPPPPD.....',
+      '......DPPDDDDD..',
+      '......DPPPPPPPD.',
+      '......DPPDDDPPD.',
+      '......DPPD..DD..',
+      '.......DD.......',
+    ],
+    palette: { P: '#b56cff', D: '#5a2596', H: '#ff5c8a', T: '#ffd0dc', W: '#ffffff' },
   },
-  // Plain gold classic key (opens chests). Same rows/palette as the map
-  // sprite in renderer.ts (CHEST_KEY_ROWS).
+  // Plain gold classic key (opens chests) — same 16x16 bow/shaft/teeth
+  // skeleton as the door key, no horns. Same rows/palette as the map sprite
+  // in renderer.ts (CHEST_KEY_ROWS).
   chestKey: {
-    rows: ['........', '.GGG....', 'G...G...', 'G..GGGGG', '.GGD...D', '......D.', '........', '........'],
-    palette: { G: '#f5c451', D: '#c9931e' },
+    rows: [
+      '................',
+      '................',
+      '......DDDD......',
+      '.....DWPPPD.....',
+      '....DWPPPPPD....',
+      '...DPPDDDDPPD...',
+      '...DPPD..DPPD...',
+      '...DPPD..DPPD...',
+      '...DPPDDDDPPD...',
+      '....DPPPPPPD....',
+      '.....DPPPPD.....',
+      '......DPPDDDDD..',
+      '......DPPPPPPPD.',
+      '......DPPDDDPPD.',
+      '......DPPD..DD..',
+      '.......DD.......',
+    ],
+    palette: { P: '#f5c451', D: '#8a5a10', W: '#ffffff' },
   },
   heart: {
     rows: ['.DD..DD.', 'DRRDDRRD', 'DRRRRRRD', 'DRRRRRRD', '.DRRRRD.', '..DRRD..', '...DD...', '........'],
@@ -67,6 +103,8 @@ export interface PixelIconProps {
 
 export function PixelIcon({ name, size = 16, title }: PixelIconProps) {
   const { rows, palette } = ICONS[name];
+  const w = rows[0]?.length ?? 0;
+  const h = rows.length;
   const rects: ReactElement[] = [];
   rows.forEach((row, y) => {
     for (let x = 0; x < row.length; x++) {
@@ -82,7 +120,7 @@ export function PixelIcon({ name, size = 16, title }: PixelIconProps) {
       className="pixel-icon"
       width={size}
       height={size}
-      viewBox="0 0 8 8"
+      viewBox={`0 0 ${w} ${h}`}
       shapeRendering="crispEdges"
       role={title ? 'img' : 'presentation'}
       aria-label={title}
