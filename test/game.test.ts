@@ -9,7 +9,7 @@ import { heroAttack, monsterAttack } from '../src/engine/combat';
 import { updateMonsters } from '../src/engine/monsters';
 import { clearSave, loadGame, saveGame } from '../src/engine/save';
 import { equip, heroMoveMs } from '../src/engine/items';
-import { generateShopLevel } from '../src/engine/shop';
+import { generateShopLevel, offerAt } from '../src/engine/shop';
 
 // ---------------------------------------------------------------------------
 // Test fixtures: hand-drawn levels so nothing depends on the generator.
@@ -604,8 +604,11 @@ test('monsters carry a level and combat resets their regen clock', () => {
 // Shops and magic items
 // ---------------------------------------------------------------------------
 
-/** A game standing in a shop, `at` tiles, with `gold` in the purse. */
-function shopGame(gold: number, at: Vec = { x: 3, y: 5 }): Game {
+/**
+ * A game standing in a shop, `at` tiles, with `gold` in the purse. The default
+ * spot is the floor tile just under the first podium's bottom-left corner.
+ */
+function shopGame(gold: number, at: Vec = { x: 3, y: 7 }): Game {
   const g = Game.forTest(2024);
   g.state.depth = 3;
   install(g, generateShopLevel(3, g.state.seed, g.state.hero), at);
@@ -631,9 +634,10 @@ test('a shop follows every third floor and leads on to the next depth', () => {
   assert.ok(st.log.some((l) => l.text === 'Shop'));
 
   // Out through the stairs at the top of the shop: on to depth 4.
-  st.hero.pos = { x: 5, y: 2 };
-  st.hero.rpos = { x: 5, y: 2 };
-  g.pointerAt({ x: 5, y: 1 });
+  const stairs = st.level.exit;
+  st.hero.pos = { x: stairs.x, y: stairs.y + 1 };
+  st.hero.rpos = { x: stairs.x, y: stairs.y + 1 };
+  g.pointerAt(stairs);
   g.tick(150);
   g.tick(800);
   assert.equal(st.level.kind, 'maze');
@@ -642,17 +646,53 @@ test('a shop follows every third floor and leads on to the next depth', () => {
   assert.ok(st.log.some((l) => l.text === 'Depth 4'));
 });
 
-test('walking into a pedestal buys the item and freezes the game', () => {
+test('a podium fills four tiles and any of them opens the offer', () => {
   const g = shopGame(9999);
   const st = g.state;
   const shop = st.level.shop as NonNullable<LevelData['shop']>;
   const offer = shop.offers[0];
 
-  g.pointerAt(offer.pos);
-  assert.equal(st.path.length, 1, 'a pedestal is a legal drag target');
+  // All four tiles of the block belong to the same podium and are solid.
+  for (const d of [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 1, y: 1 },
+  ]) {
+    const tile = { x: offer.pos.x + d.x, y: offer.pos.y + d.y };
+    assert.equal(offerAt(st.level, tile)?.id, offer.id);
+  }
+  assert.equal(offerAt(st.level, { x: offer.pos.x - 1, y: offer.pos.y }), null);
+  assert.equal(offerAt(st.level, { x: offer.pos.x, y: offer.pos.y + 2 }), null);
+
+  // Walking into the bottom-left tile of the block opens the offer popup.
+  const front = { x: offer.pos.x, y: offer.pos.y + 1 };
+  g.pointerAt(front);
+  assert.equal(st.path.length, 1, 'a podium is a legal drag target');
   g.tick(150);
 
-  assert.deepEqual(st.hero.pos, { x: 3, y: 5 }, 'pedestals are solid');
+  assert.deepEqual(st.hero.pos, { x: 3, y: 7 }, 'podiums are solid');
+  const modal = st.modal as { kind: string; offerId: string; price: number; gold: number; soldOut: boolean } | null;
+  assert.ok(modal, 'the offer popup is up');
+  assert.equal(modal.kind, 'shopOffer');
+  assert.equal(modal.offerId, offer.id);
+  assert.equal(modal.price, offer.price);
+  assert.equal(modal.gold, 9999);
+  assert.equal(modal.soldOut, false);
+  assert.equal(st.hero.gold, 9999, 'looking is free');
+  assert.equal(shop.bought, false);
+});
+
+test('buying from the offer popup pays, equips and shows the prize', () => {
+  const g = shopGame(9999);
+  const st = g.state;
+  const shop = st.level.shop as NonNullable<LevelData['shop']>;
+  const offer = shop.offers[0];
+
+  g.pointerAt({ x: offer.pos.x, y: offer.pos.y + 1 });
+  g.tick(150);
+  g.buyOffer(offer.id);
+
   assert.equal(st.hero.gold, 9999 - offer.price, 'the gold is spent');
   assert.equal(shop.bought, true);
   assert.equal(st.hero.gear[ITEM_SLOT[offer.item.kind]]?.kind, offer.item.kind);
@@ -663,33 +703,56 @@ test('walking into a pedestal buys the item and freezes the game', () => {
   assert.equal(modal.replaced, null);
   assert.ok(st.fx.some((f) => f.kind === 'ring'));
 
-  // The other pedestals are sold out: they only blink.
+  // The other podiums are sold out: the popup says so and buying is refused.
   g.dismissModal();
   const other = shop.offers[1];
-  st.hero.pos = { x: other.pos.x, y: other.pos.y + 1 };
-  st.fx.length = 0;
+  st.hero.pos = { x: other.pos.x, y: other.pos.y + 2 };
   const goldLeft = st.hero.gold;
-  g.pointerAt(other.pos);
+  g.pointerAt({ x: other.pos.x, y: other.pos.y + 1 });
   g.tick(150);
+  const sold = st.modal as { kind: string; soldOut: boolean } | null;
+  assert.ok(sold);
+  assert.equal(sold.kind, 'shopOffer');
+  assert.equal(sold.soldOut, true);
+  g.buyOffer(other.id);
   assert.equal(st.hero.gear[ITEM_SLOT[other.item.kind]], null, 'only one item per shop');
   assert.equal(st.hero.gold, goldLeft);
-  assert.equal(st.modal, null);
-  assert.ok(st.fx.some((f) => f.kind === 'flash'), 'sold out is a blink, not words');
 });
 
-test('a pedestal the hero cannot afford just blinks', () => {
+test('a podium the hero cannot afford opens but will not sell', () => {
   const g = shopGame(0);
   const st = g.state;
   const shop = st.level.shop as NonNullable<LevelData['shop']>;
   const offer = shop.offers[0];
 
-  g.pointerAt(offer.pos);
+  g.pointerAt({ x: offer.pos.x, y: offer.pos.y + 1 });
   g.tick(150);
+  const modal = st.modal as { kind: string; gold: number; price: number } | null;
+  assert.ok(modal);
+  assert.equal(modal.kind, 'shopOffer');
+  assert.equal(modal.gold, 0);
+  assert.ok(modal.price > 0);
+
+  g.buyOffer(offer.id);
   assert.equal(st.hero.gold, 0);
   assert.equal(shop.bought, false);
-  assert.equal(st.modal, null);
   assert.equal(st.hero.gear.offense, null);
-  assert.ok(st.fx.some((f) => f.kind === 'flash'));
+  assert.equal((st.modal as { kind: string }).kind, 'shopOffer', 'the popup stays up');
+});
+
+test('the offer popup names the item it would replace', () => {
+  const g = shopGame(9999);
+  const st = g.state;
+  const shop = st.level.shop as NonNullable<LevelData['shop']>;
+  const offer = shop.offers[0];
+  const worn: MagicItem = { kind: offer.item.kind === 'longSword' ? 'frostBlade' : 'longSword', level: 2 };
+  equip(st.hero, worn);
+
+  g.pointerAt({ x: offer.pos.x, y: offer.pos.y + 1 });
+  g.tick(150);
+  const modal = st.modal as { kind: string; replaces: MagicItem | null } | null;
+  assert.ok(modal);
+  assert.equal(modal.replaces?.kind, worn.kind);
 });
 
 test('the long sword swings two tiles down a straight corridor', () => {

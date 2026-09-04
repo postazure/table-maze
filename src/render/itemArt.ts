@@ -146,10 +146,45 @@ export const SLOT_ART: Record<ItemSlot, ArtSpec> = {
 // Shop pedestal — a stone column an item icon is drawn hovering above.
 // ---------------------------------------------------------------------------
 
+/** Small 8x8 column, used by the purchase popup. */
 export const PEDESTAL_ART: ArtSpec = {
   rows: ['PPPPPPPP', 'LLLLLLLL', '.PPPPPP.', '..PPPP..', '..PPPP..', '..PPPP..', '.PPPPPP.', 'PPPPPPPP'],
   palette: { P: '#6b6b7a', L: '#9a97ad' },
 };
+
+/**
+ * The podium as it stands on the map: 16x16, i.e. one sub-pixel per pixel of
+ * a 2x2 tile block. The middle is a sunken 8x8 niche (rows 4-11, columns
+ * 4-11) the renderer paints the slot emblem into, so every podium says
+ * "offense", "defense" or "spirit" without a word on it.
+ */
+export const PODIUM_ART: ArtSpec = {
+  rows: [
+    '................',
+    '..LLLLLLLLLLLL..',
+    '..PPPPPPPPPPPP..',
+    '..DDDDDDDDDDDD..',
+    '...PNNNNNNNNP...',
+    '...PNNNNNNNNP...',
+    '...PNNNNNNNNP...',
+    '...PNNNNNNNNP...',
+    '...PNNNNNNNNP...',
+    '...PNNNNNNNNP...',
+    '...PNNNNNNNNP...',
+    '...PNNNNNNNNP...',
+    '..LLLLLLLLLLLL..',
+    '..PPPPPPPPPPPP..',
+    '..DDDDDDDDDDDD..',
+    '................',
+  ],
+  palette: { P: '#6b6b7a', L: '#9a97ad', D: '#3f3f4d', N: '#26263a' },
+};
+
+/**
+ * Where the slot emblem goes inside `PODIUM_ART`, as fractions of the 2x2
+ * block: the niche is the middle 8 of 16 sub-pixels each way.
+ */
+export const PODIUM_NICHE = { x: 4 / 16, y: 4 / 16, size: 8 / 16 };
 
 // ---------------------------------------------------------------------------
 // DOM helper: turn an ArtSpec into a flat list of unit rects a React/SVG

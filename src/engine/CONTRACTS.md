@@ -124,10 +124,19 @@ export class Game {
   /** Finger is over `tile` (or null when off the maze). Extends the walking path. */
   pointerAt(tile: Vec | null): void;
   pointerEnd(): void;
+  /** Buy the shop offer the 'shopOffer' popup is showing. No-op if sold out or too dear. */
+  buyOffer(offerId: string): void;
+  /** Open the help screen (no-op while another popup is up). */
+  openHelp(): void;
+  /** Close whatever popup is up and let the simulation run again. */
+  dismissModal(): void;
   /** Called after any state change worth persisting (hero moved, loot, etc). Set by main.ts. */
   onChange?: (state: GameState) => void;
 }
 ```
+Walking into a shop podium does not buy anything: it opens the `'shopOffer'`
+popup (item, what it does, price, what it would replace) and freezes the game.
+The UI calls `buyOffer` or `dismissModal`.
 Path building rule (in `pointerAt`): let `tail` = last tile of `state.path`
 (or hero.pos if empty). If `tile` is 4-adjacent to `tail` and is walkable, push
 it. Else if it is walkable and within `bfsPath(level, tail, tile, {maxLen: 8})`,
@@ -189,11 +198,16 @@ Rules:
   after depth 3, 6, 9, ... The shop is generated with the depth just finished
   and its items have `level = that depth`. Leaving the shop by its stairs goes
   to the next maze depth. `state.depth` counts maze floors only.
-- A shop has three pedestals, one item per slot, prices scaling with depth.
-  Walking into a pedestal buys it if the hero has the gold (gold is spent,
-  item equipped, `modal = {kind:'item', ...}` freezes the game). Otherwise the
-  pedestal blinks red. After one purchase `shop.bought = true` and the other
-  pedestals are dark and just blink. Pedestals are solid like chests.
+- A shop has three podiums, one item per slot, prices scaling with depth. Each
+  podium is a 2x2 block of solid tiles (like a chest) with its slot emblem on
+  its face, the item floating above it and the price on a tag beneath.
+- Walking into any tile of a podium opens `modal = {kind:'shopOffer', ...}`,
+  which freezes the game and tells the player what the item is, what it does,
+  what it costs and what it would replace. `Game.buyOffer(offerId)` spends the
+  gold, equips the item and swaps the popup for `{kind:'item', ...}`;
+  `Game.dismissModal()` walks away. Buying is refused (and the popup's buy
+  button greys out) when the hero is short of gold or `shop.bought` is already
+  true. After one purchase `shop.bought = true` and the other podiums go dark.
 - No monsters, keys, doors or chests in a shop.
 
 ## engine/items.ts
@@ -209,15 +223,27 @@ export function hasItem(hero: Hero, kind: ItemKind): MagicItem | null;
 
 ## engine/shop.ts
 ```ts
-export function generateShopLevel(depth: number, runSeed: number, hero: Hero): LevelData;  // kind 'shop', small room, 3 pedestals, start at the bottom, exit at the top
+export const SHOP_WIDTH: number;   // 16
+export const SHOP_HEIGHT: number;  // 15
+export const PEDESTAL_SIZE: number;             // 2 — podiums are 2x2 tiles
+export const PEDESTAL_TILES: readonly Vec[];    // top-left tile of each podium
+export function generateShopLevel(depth: number, runSeed: number, hero: Hero): LevelData;  // kind 'shop', one room, 3 podiums, start at the bottom, exit at the top
+export function offerCovers(offer: ShopOffer, p: Vec): boolean;  // is `p` one of the podium's four tiles?
+export function offerTiles(offer: ShopOffer): Vec[];             // the four tiles it stands on
+export function offerCenter(offer: ShopOffer): Vec;              // middle of the block, fractional tiles
+export function offerAt(level: LevelData, p: Vec): ShopOffer | null;
 ```
-Layout: 11 wide x 13 tall tiles, walls around a 9x11 room, start bottom-centre,
-exit top-centre, pedestals at (3,4), (5,4), (7,4) (x, y) — a row across the
-upper part of the room, offense / defense / spirit left to right.
+Layout: 16 wide x 15 tall tiles, walls around a 14x13 room, start bottom-centre
+(7, 13), exit top-centre (7, 1). Podiums are 2x2 blocks with their top-left at
+(3, 5), (7, 5), (11, 5) — offense / defense / spirit left to right, two clear
+tiles between neighbours so the hero can walk between them. All four tiles of a
+podium are solid; walking into any of them opens the offer popup.
 
 ## render/itemArt.ts (shared pixel art; both canvas and DOM use it)
 ```ts
 export const ITEM_ART: Record<ItemKind, { rows: string[]; palette: Record<string, string> }>; // 8x8 each
 export const SLOT_ART: Record<ItemSlot, { rows: string[]; palette: Record<string, string> }>; // small slot glyphs (sword / shield / star)
-export const PEDESTAL_ART: { rows: string[]; palette: Record<string, string> };
+export const PEDESTAL_ART: { rows: string[]; palette: Record<string, string> };  // 8x8 column, used by the purchase popup
+export const PODIUM_ART: { rows: string[]; palette: Record<string, string> };    // 16x16 map podium, 2x2 tiles, with a niche for the slot emblem
+export const PODIUM_NICHE: { x: number; y: number; size: number };               // where the emblem goes, as fractions of the block
 ```

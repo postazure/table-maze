@@ -5,7 +5,7 @@
  * `pointerEnd`, and `onChange` is the "worth persisting" signal for save.ts.
  */
 import type { Chest, Dir, GameState, Hero, Monster, Rng, ShopOffer, Vec } from './types';
-import { SAVE_VERSION, eq, key, manhattan } from './types';
+import { ITEM_SLOT, SAVE_VERSION, eq, key, manhattan } from './types';
 import { hashSeed, makeRng } from './rng';
 import { bfsDistances, bfsPath } from './pathfind';
 import { generateLevel } from './maze';
@@ -39,7 +39,7 @@ import {
   itemName,
   reviveGear,
 } from './items';
-import { generateShopLevel, offerAt } from './shop';
+import { generateShopLevel, offerAt, offerCenter } from './shop';
 
 /** ms between hero steps (~7 tiles/s) without speed boots. */
 const MOVE_MS = DEFAULT_MOVE_MS;
@@ -62,7 +62,7 @@ const REGEN_DELAY = 3000;
 const REGEN_MS = 600;
 /** salt so the per-level rng differs from the generator's stream. */
 const RNG_SALT = 7919;
-/** Red blink for "you cannot do that" (locked door / chest / pedestal). */
+/** Red blink for "you cannot do that" (locked door / chest). */
 const BLINK_RED = '#e53b3b';
 /** Speed-boots dust colour. */
 const DUST = '#8f8ca8';
@@ -413,7 +413,7 @@ export class Game {
         this.dirty = true;
       } else {
         // Wordless cue: the door blinks red.
-        st.fx.push({ kind: 'flash', pos: { x: next.x, y: next.y }, color: '#e53b3b', t: 0, ttl: 320 });
+        st.fx.push({ kind: 'flash', pos: { x: next.x, y: next.y }, color: BLINK_RED, t: 0, ttl: 320 });
         st.path.length = 0;
         return;
       }
@@ -445,7 +445,7 @@ export class Game {
     if (chest.opened) return;
     if (hero.keys.chest <= 0) {
       // No words: a red blink on the chest says "locked".
-      st.fx.push({ kind: 'flash', pos: { x: chest.pos.x, y: chest.pos.y }, color: '#e53b3b', t: 0, ttl: 320 });
+      st.fx.push({ kind: 'flash', pos: { x: chest.pos.x, y: chest.pos.y }, color: BLINK_RED, t: 0, ttl: 320 });
       return;
     }
     hero.keys.chest -= 1;
@@ -475,38 +475,52 @@ export class Game {
 
   /**
    * The hero walked into a shop pedestal. Pedestals are solid, so the hero
-   * stays put: with enough gold (and nothing bought yet) the item is paid for
-   * and equipped at once, otherwise the pedestal just blinks red.
+   * stays put and the offer popup opens instead: what the item is, what it
+   * does, what it costs. Buying happens from there, via `buyOffer`.
    */
   private bumpOffer(offer: ShopOffer): void {
     const st = this.state;
     const hero = st.hero;
     st.path.length = 0;
     this.holdTimer = 0;
-    const face = dirFromVec(unitToward(hero.pos, offer.pos));
+    const face = dirFromVec(unitToward(hero.pos, offerCenter(offer)));
     if (face) hero.facing = face;
 
+    st.modal = {
+      kind: 'shopOffer',
+      offerId: offer.id,
+      item: offer.item,
+      price: offer.price,
+      gold: hero.gold,
+      replaces: hero.gear?.[ITEM_SLOT[offer.item.kind]] ?? null,
+      soldOut: st.level.shop?.bought ?? false,
+    };
+    this.dirty = true;
+  }
+
+  /**
+   * Buy the offer the popup is showing. Silently does nothing when the shop
+   * has already sold its one item or the hero cannot pay — the popup greys
+   * its own buy button out in those cases, so this is only belt and braces.
+   * On success the offer popup gives way to the "you got it" popup.
+   */
+  buyOffer(offerId: string): void {
+    const st = this.state;
+    const hero = st.hero;
     const shop = st.level.shop;
-    if (!shop || shop.bought || hero.gold < offer.price) {
-      // Wordless cue: sold out / too dear.
-      st.fx.push({ kind: 'flash', pos: { x: offer.pos.x, y: offer.pos.y }, color: BLINK_RED, t: 0, ttl: 320 });
-      return;
-    }
+    if (!shop || shop.bought) return;
+    const offer = shop.offers.find((o) => o.id === offerId);
+    if (!offer || hero.gold < offer.price) return;
 
     hero.gold -= offer.price;
     const replaced = equip(hero, offer.item);
     shop.bought = true;
-    st.fx.push({
-      kind: 'ring',
-      pos: { x: offer.pos.x, y: offer.pos.y },
-      radius: 1.2,
-      color: GOLD,
-      t: 0,
-      ttl: 420,
-    });
+    const c = offerCenter(offer);
+    st.fx.push({ kind: 'ring', pos: c, radius: 1.8, color: GOLD, t: 0, ttl: 420 });
     st.modal = { kind: 'item', item: offer.item, replaced };
     pushLog(st, `Bought the ${itemName(offer.item.kind)}`);
     this.dirty = true;
+    this.emit();
   }
 
   /** Pause the game behind the help screen (no-op if another popup is up). */
