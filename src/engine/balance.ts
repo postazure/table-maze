@@ -96,9 +96,10 @@ export function makeMonster(
 ): Monster {
   const depthN = Math.max(1, Math.floor(depth));
   const look = rng.pick(themeForDepth(depthN).roster[kind]);
-  // Guards and lurkers are a level above the dungeon depth; patrols match it.
-  // Every level, a few monsters roll one level higher to stand out.
-  const level = depthN + (kind === 'patrol' ? 0 : 1) + (rng.chance(0.2) ? 1 : 0);
+  // Patrols match the dungeon depth, guards sit a level above it, lurkers
+  // two above. Every level, a few monsters roll one level higher to stand out.
+  const lift = kind === 'patrol' ? 0 : kind === 'guard' ? 1 : 2;
+  const level = depthN + lift + (rng.chance(0.2) ? 1 : 0);
   const d = level;
 
   let hp: number;
@@ -111,42 +112,51 @@ export function makeMonster(
   let xp: number;
   let gold: number;
 
+  // The three roles are tuned against a hero whose level matches the depth
+  // (see the head-on fight simulation in the PR that set these numbers):
+  //  - patrol: a speed bump. Three swings to kill, a quarter heart or so lost.
+  //  - guard:  a real fight. Won at parity, but for roughly half the hearts;
+  //            a hero a couple of levels under gets knocked down.
+  //  - lurker: not a fight to pick. At parity it knocks the hero down before
+  //            it dies; two or three levels over it is winnable and costly.
+  //            The intended answer is to bait it away and loop around.
   switch (kind) {
     case 'guard':
       // Rooted, tanky, hits hard but slowly.
-      hp = 6 + 3 * d;
-      atk = 1 + Math.floor(d / 2); // half a heart from level 2
-      def = Math.floor(d / 2);
+      hp = 10 + 5 * d;
+      atk = d;
+      def = Math.floor((d - 1) / 2);
       moveInterval = 100000; // never moves
       attackInterval = 900;
       sightRange = 2;
       leash = 0;
-      xp = 6 + 3 * d;
-      gold = rng.int(1, 4 + d);
+      xp = 8 + 4 * d;
+      gold = rng.int(2, 5 + d);
       break;
     case 'patrol':
-      // Walks its beat; squishy.
+      // Walks its beat; squishy trash.
       hp = 4 + 2 * d;
-      atk = Math.max(1, Math.floor(d / 2)); // a quarter heart for the first few levels
-      def = Math.floor((d - 1) / 3);
+      atk = Math.max(1, Math.floor(d / 3));
+      def = Math.floor((d - 1) / 4);
       moveInterval = 450;
       attackInterval = 800;
       sightRange = 3;
       leash = 0;
-      xp = 4 + 2 * d;
+      xp = 3 + 2 * d;
       gold = rng.int(0, 2 + d);
       break;
     default:
-      // Lurker: fast enough to punish a careless hero, slower than a running one.
-      hp = 5 + 2 * d;
-      atk = 1 + Math.floor((d - 1) / 2);
-      def = Math.floor(d / 3);
+      // Lurker: fast enough to punish a careless hero, slower than a running
+      // one, and far too strong to trade blows with at level.
+      hp = 8 + 7 * d;
+      atk = 1 + Math.floor(1.2 * d);
+      def = Math.floor(d / 2);
       moveInterval = 260;
       attackInterval = 700;
       sightRange = 4;
       leash = 7;
-      xp = 5 + 3 * d;
-      gold = rng.int(1, 3 + d);
+      xp = 12 + 6 * d;
+      gold = rng.int(3, 6 + 2 * d);
       break;
   }
 
