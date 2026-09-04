@@ -182,12 +182,18 @@ button {
   transition: none;
 }
 
-.hud-bar-fill.hud-hp {
-  background: var(--hp);
+.hud-hearts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-height: 14px;
+  align-items: center;
 }
 
-.hud-bar-fill.hud-hp.hud-stunned {
-  background: var(--muted);
+.hud-heart {
+  display: block;
+  image-rendering: pixelated;
 }
 
 .hud-bar-fill.hud-xp {

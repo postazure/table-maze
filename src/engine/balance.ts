@@ -3,6 +3,7 @@
  * Nothing here touches the DOM and all randomness comes from an `Rng`.
  */
 import type { Hero, Loot, LootItem, Monster, MonsterKind, Rng, Vec } from './types';
+import { HEART } from './types';
 
 // ---------------------------------------------------------------------------
 // Level size
@@ -37,9 +38,9 @@ export function newHero(): Hero {
     pos: { x: 1, y: 1 },
     rpos: { x: 1, y: 1 },
     facing: 'S',
-    hp: 20,
-    maxHp: 20,
-    atk: 3,
+    hp: 3 * HEART,
+    maxHp: 3 * HEART,
+    atk: 2,
     def: 0,
     level: 1,
     xp: 0,
@@ -60,7 +61,7 @@ export function applyLevelUp(hero: Hero): void {
   while (hero.xp >= hero.xpToNext && guard++ < 200) {
     hero.xp -= hero.xpToNext;
     hero.level += 1;
-    hero.maxHp += 4;
+    hero.maxHp += HEART; // one more heart
     hero.atk += 1;
     if (hero.level % 2 === 0) hero.def += 1;
     hero.hp = hero.maxHp;
@@ -181,7 +182,7 @@ export function makeMonster(
     case 'guard':
       // Rooted, tanky, hits hard but slowly.
       hp = 6 + 3 * d;
-      atk = 2 + d;
+      atk = 1 + Math.floor(d / 2); // half a heart from level 2
       def = Math.floor(d / 2);
       moveInterval = 100000; // never moves
       attackInterval = 900;
@@ -193,7 +194,7 @@ export function makeMonster(
     case 'patrol':
       // Walks its beat; squishy.
       hp = 4 + 2 * d;
-      atk = 1 + d;
+      atk = Math.max(1, Math.floor(d / 2)); // a quarter heart for the first few levels
       def = Math.floor((d - 1) / 3);
       moveInterval = 450;
       attackInterval = 800;
@@ -205,7 +206,7 @@ export function makeMonster(
     default:
       // Lurker: fast enough to punish a careless hero, slower than a running one.
       hp = 5 + 2 * d;
-      atk = 2 + d;
+      atk = 1 + Math.floor((d - 1) / 2);
       def = Math.floor(d / 3);
       moveInterval = 260;
       attackInterval = 700;
@@ -266,8 +267,8 @@ export function rollChestLoot(depth: number, rng: Rng): Loot {
     let item: LootItem;
     if (roll === 0) item = { name: SWORDS[tier], atk: 1 + Math.floor(d / 5) };
     else if (roll === 1) item = { name: SHIELDS[tier], def: 1 + Math.floor(d / 7) };
-    else if (roll === 2) item = { name: AMULETS[tier], maxHp: 4 + 2 * Math.floor(d / 4) };
-    else item = { name: RINGS[tier], maxHp: 3 + Math.floor(d / 3) };
+    else if (roll === 2) item = { name: AMULETS[tier], maxHp: HEART * (1 + Math.floor(d / 4)) }; // whole hearts
+    else item = { name: RINGS[tier], maxHp: HEART * (1 + Math.floor(d / 6)) };
     loot.item = item;
   }
   return loot;
@@ -278,6 +279,11 @@ export function rollChestLoot(depth: number, rng: Rng): Loot {
 // ---------------------------------------------------------------------------
 
 /** Damage of one hit; always at least 1 so fights cannot stall. */
+/**
+ * Damage in quarter-hearts. A plain hit is attack minus defense (at least a
+ * quarter heart); one hit in five is a crit for one extra quarter.
+ */
 export function damage(attackerAtk: number, defenderDef: number, rng: Rng): number {
-  return Math.max(1, attackerAtk - defenderDef + rng.int(-1, 1));
+  const base = Math.max(1, attackerAtk - defenderDef);
+  return base + (rng.chance(0.2) ? 1 : 0);
 }

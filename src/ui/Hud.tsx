@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { HudModel } from './hudModel';
 import { PixelIcon, type IconName } from './icons';
+import { Hearts } from './Hearts';
 
 export interface HudProps {
   model: HudModel;
@@ -24,7 +25,6 @@ function Stat({ icon, title, value }: { icon: IconName; title: string; value: nu
 }
 
 function HudInner({ model, onNewGame }: HudProps) {
-  const hpPct = steppedPct(model.hp, model.maxHp);
   const xpPct = steppedPct(model.xp, model.xpToNext);
 
   const handleNewGame = () => {
@@ -52,12 +52,7 @@ function HudInner({ model, onNewGame }: HudProps) {
       <div className="hud-bars">
         <div className="hud-bar-row">
           <span className="hud-bar-label">HP</span>
-          <div className="hud-bar-track">
-            <div className={`hud-bar-fill hud-hp${model.stunned ? ' hud-stunned' : ''}`} style={{ width: `${hpPct}%` }} />
-          </div>
-          <span className="hud-bar-text">
-            {Math.max(0, Math.round(model.hp))}/{Math.round(model.maxHp)}
-          </span>
+          <Hearts hp={model.hp} maxHp={model.maxHp} dim={model.stunned} />
         </div>
         <div className="hud-bar-row">
           <span className="hud-bar-label">XP</span>

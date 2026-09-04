@@ -230,4 +230,7 @@ export interface Rng {
   chance(p: number): boolean;
 }
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
+
+/** Health is measured in quarter-hearts. One heart = 4 hp. */
+export const HEART = 4;

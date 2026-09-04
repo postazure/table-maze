@@ -15,9 +15,10 @@ Play it at **https://postazure.github.io/table-maze/**
   up when you do. The two kinds are not interchangeable, and keys don't carry over
   to the next level.
 - Drag into a monster to attack it. Hold your finger on it to keep swinging.
-- Monsters hit back and shove you away. If your HP hits zero you don't die: you're
-  knocked down, pushed back along your trail, and get up with some HP.
-  HP slowly regenerates when you're out of combat. Monsters heal too, so finish
+- Health is hearts. A weak monster takes a quarter heart per hit, and you gain a
+  heart every level. Monsters hit back and shove you away. If you run out of
+  hearts you don't die: you're knocked down, pushed back along your trail, and
+  get up with some hearts back. Hearts slowly refill when you're out of combat. Monsters heal too, so finish
   a fight or walk away and expect them at full strength.
 - Every monster wears a level tag. Red means it's above your level, green below.
 - Monster types:

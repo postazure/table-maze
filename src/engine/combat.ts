@@ -16,7 +16,7 @@ import type {
   Rng,
   Vec,
 } from './types';
-import { eq, key, parseKey } from './types';
+import { eq, key, parseKey, HEART } from './types';
 import { damage } from './balance';
 import { floorNeighbors, isFloor } from './pathfind';
 
@@ -157,7 +157,8 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
 /** Heroes never die: they are knocked down and dragged back along their trail. */
 function knockDown(state: GameState): void {
   const hero = state.hero;
-  hero.hp = Math.max(1, Math.ceil(hero.maxHp * 0.4));
+  // Get back up with 40% of max health, rounded down to whole hearts (at least one).
+  hero.hp = Math.max(HEART, Math.floor((hero.maxHp * 0.4) / HEART) * HEART);
   hero.stun = 900;
   state.path.length = 0;
   const dest = retreatTile(state);

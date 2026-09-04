@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Tile, key } from '../src/engine/types';
+import { HEART, Tile, key } from '../src/engine/types';
 import type { LevelData, Vec } from '../src/engine/types';
 import { generateLevel } from '../src/engine/maze';
 import { bfsDistances, bfsPath, floorNeighbors, isFloor } from '../src/engine/pathfind';
@@ -252,9 +252,9 @@ test('rng is deterministic and in range', () => {
 
 test('hero progression', () => {
   const h = newHero();
-  assert.equal(h.hp, 20);
-  assert.equal(h.maxHp, 20);
-  assert.equal(h.atk, 3);
+  assert.equal(h.hp, 3 * HEART, 'starts with three hearts');
+  assert.equal(h.maxHp, 3 * HEART);
+  assert.equal(h.atk, 2);
   assert.equal(h.def, 0);
   assert.equal(h.level, 1);
   assert.equal(h.xpToNext, xpForLevel(1));
@@ -263,9 +263,9 @@ test('hero progression', () => {
   h.xp = xpForLevel(1) + xpForLevel(2);
   applyLevelUp(h);
   assert.equal(h.level, 3);
-  assert.equal(h.maxHp, 28);
-  assert.equal(h.hp, 28);
-  assert.equal(h.atk, 5);
+  assert.equal(h.maxHp, 5 * HEART, 'one heart per level');
+  assert.equal(h.hp, 5 * HEART);
+  assert.equal(h.atk, 4);
   assert.equal(h.def, 1); // gained at level 2 only
   assert.ok(h.xp < h.xpToNext);
 
@@ -279,8 +279,23 @@ test('damage is never below 1', () => {
   for (let i = 0; i < 200; i++) {
     assert.ok(damage(1, 99, rng) >= 1);
     const d = damage(10, 3, rng);
-    assert.ok(d >= 6 && d <= 8);
+    assert.ok(d >= 7 && d <= 8, 'flat damage plus an occasional crit');
   }
+});
+
+test('low-level monsters hit for a quarter heart', () => {
+  const rng = makeRng(9);
+  for (const kind of ['guard', 'patrol', 'lurker'] as const) {
+    const m = makeMonster(kind, 1, rng, { x: 1, y: 1 }, 'm');
+    assert.ok(m.atk <= 2, `${kind} level ${m.level} atk ${m.atk}`);
+    if (m.level === 1) assert.equal(m.atk, 1);
+  }
+  const hero = newHero();
+  assert.equal(hero.def, 0);
+  // A plain (non-crit) hit from a level-1 patrol is exactly one quarter heart.
+  const hits = new Set<number>();
+  for (let i = 0; i < 50; i++) hits.add(damage(1, hero.def, rng));
+  assert.ok(hits.has(1) && !hits.has(3), 'quarter-heart baseline, crit at most a half');
 });
 
 test('monster stats scale with depth', () => {
