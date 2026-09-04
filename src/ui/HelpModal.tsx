@@ -66,7 +66,7 @@ export function HelpModal({ model, onClose }: HelpModalProps) {
               <li>Roaming monsters are weak. Cut them down and move on.</li>
               <li>Guards stand still and only fight back if you hit them. Beating one costs real hearts.</li>
               <li>Hunters chase you when you get close and hit far too hard to fight at your level. Lead them away, then loop around.</li>
-              <li>Out of hearts? You sleep somewhere safe until they refill.</li>
+              <li>Out of hearts? You sleep somewhere safe until they refill, and every monster heals to full.</li>
               <li>Every third floor has a shop. You can buy one item there.</li>
             </ul>
           </div>
