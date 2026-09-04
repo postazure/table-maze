@@ -1137,3 +1137,50 @@ test('the help screen pauses the game and dismisses like any modal', () => {
   g.tick(150);
   assert.deepEqual(g.state.hero.pos, { x: 2, y: 1 });
 });
+
+test('once engaged, the hero keeps swinging without input while the monster is in reach', () => {
+  const m = mkMonster({ pos: { x: 3, y: 1 }, kind: 'guard', hp: 40, maxHp: 40, atk: 0 });
+  const g = corridorGame({ monsters: [m] });
+  g.pointerAt({ x: 3, y: 1 });
+  g.tick(150); // step to 2,1
+  g.state.pointer = null;
+  g.tick(150); // first swing (walk-into)
+  const afterFirst = m.hp;
+  assert.ok(afterFirst < 40);
+  g.pointerEnd();
+  // No finger, no path: the hero keeps attacking on the swing cadence.
+  g.tick(320);
+  g.tick(320);
+  assert.ok(m.hp < afterFirst - 1, 'kept swinging without a held finger');
+  assert.equal(g.state.hero.pos.x, 2, 'never stepped onto the monster');
+});
+
+test('engagement ends when the monster dies or the player drags elsewhere', () => {
+  const m = mkMonster({ pos: { x: 3, y: 1 }, kind: 'guard', hp: 3, maxHp: 3, atk: 0, xp: 0 });
+  const g = corridorGame({ monsters: [m] });
+  g.state.hero.atk = 2;
+  g.pointerAt({ x: 3, y: 1 });
+  g.tick(150);
+  g.state.pointer = null;
+  g.tick(150);
+  for (let i = 0; i < 6 && m.alive; i++) g.tick(320);
+  assert.equal(m.alive, false, 'auto-attack finishes the fight');
+
+  // A fresh drag away breaks engagement with a healthy monster.
+  const m2 = mkMonster({ pos: { x: 4, y: 1 }, kind: 'guard', hp: 40, maxHp: 40, atk: 0 });
+  g.state.level.monsters.push(m2);
+  g.state.hero.pos = { x: 3, y: 1 };
+  g.state.hero.rpos = { x: 3, y: 1 };
+  g.pointerAt({ x: 4, y: 1 });
+  g.tick(150);
+  g.state.pointer = null;
+  const hp = m2.hp;
+  assert.ok(hp < 40, 'engaged');
+  g.pointerAt({ x: 2, y: 1 }); // walk away
+  g.tick(150);
+  g.tick(320);
+  assert.deepEqual(g.state.hero.pos, { x: 2, y: 1 });
+  assert.equal(m2.hp, hp, 'walking away disengages');
+  g.tick(320);
+  assert.equal(m2.hp, hp, 'and stays disengaged');
+});
