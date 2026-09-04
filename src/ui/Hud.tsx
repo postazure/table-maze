@@ -9,6 +9,7 @@ const GEAR_SLOTS: readonly ItemSlot[] = ['offense', 'defense', 'spirit'];
 export interface HudProps {
   model: HudModel;
   onNewGame: () => void;
+  onHelp: () => void;
 }
 
 /** Round a percentage down to a multiple of 4 for a chunky, "stepped" bar fill. */
@@ -27,7 +28,7 @@ function Stat({ icon, title, value }: { icon: IconName; title: string; value: nu
   );
 }
 
-function HudInner({ model, onNewGame }: HudProps) {
+function HudInner({ model, onNewGame, onHelp }: HudProps) {
   const xpPct = steppedPct(model.xp, model.xpToNext);
 
   const handleNewGame = () => {
@@ -53,9 +54,14 @@ function HudInner({ model, onNewGame }: HudProps) {
             LV <b>{model.level}</b>
           </span>
         </div>
-        <button type="button" className="hud-btn-newgame" onClick={handleNewGame}>
-          New Game
-        </button>
+        <div className="hud-buttons">
+          <button type="button" className="hud-btn-newgame hud-btn-help" onClick={onHelp} aria-label="Help">
+            ?
+          </button>
+          <button type="button" className="hud-btn-newgame" onClick={handleNewGame}>
+            New Game
+          </button>
+        </div>
       </div>
 
       <div className="hud-bars">

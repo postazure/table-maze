@@ -1121,3 +1121,19 @@ test('a patrol never chases the hero off its route', () => {
   assert.deepEqual(seen, ['9,1', '8,1', '9,1', '8,1'], 'it just walks its beat');
   assert.notEqual(p.state, 'chasing');
 });
+
+test('the help screen pauses the game and dismisses like any modal', () => {
+  const g = corridorGame();
+  g.openHelp();
+  assert.equal(g.state.modal?.kind, 'help');
+  const t0 = g.state.stats.playMs;
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(300);
+  assert.equal(g.state.stats.playMs, t0, 'paused');
+  assert.equal(g.state.path.length, 0);
+  g.dismissModal();
+  assert.equal(g.state.modal, null);
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(150);
+  assert.deepEqual(g.state.hero.pos, { x: 2, y: 1 });
+});

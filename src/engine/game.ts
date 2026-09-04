@@ -508,6 +508,15 @@ export class Game {
     this.dirty = true;
   }
 
+  /** Pause the game behind the help screen (no-op if another popup is up). */
+  openHelp(): void {
+    const st = this.state;
+    if (st.modal) return;
+    st.modal = { kind: 'help' };
+    st.path.length = 0;
+    st.pointer = null;
+  }
+
   /** Close the current popup and let the simulation run again. */
   dismissModal(): void {
     const st = this.state;

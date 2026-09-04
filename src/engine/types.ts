@@ -343,7 +343,9 @@ export interface Message {
 export type Modal =
   | { kind: 'chest'; loot: Loot }
   /** Bought a magic item. `replaced` is the item it pushed out of the slot, if any. */
-  | { kind: 'item'; item: MagicItem; replaced: MagicItem | null };
+  | { kind: 'item'; item: MagicItem; replaced: MagicItem | null }
+  /** The help screen: current gear explained in words. Opened from the HUD. */
+  | { kind: 'help' };
 
 export interface GameState {
   version: number; // save format version

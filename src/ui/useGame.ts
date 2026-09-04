@@ -63,6 +63,7 @@ export function useGame() {
   }, [game]);
 
   const dismissModal = useCallback(() => game.dismissModal(), [game]);
+  const openHelp = useCallback(() => game.openHelp(), [game]);
 
-  return { game, hud, newGame, dismissModal };
+  return { game, hud, newGame, dismissModal, openHelp };
 }

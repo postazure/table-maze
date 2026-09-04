@@ -349,3 +349,56 @@ export function reviveGear(hero: Hero): void {
     bane: t?.bane ?? 0,
   };
 }
+
+const sec = (ms: number): string => `${Math.round(ms / 100) / 10}s`;
+const pct = (p: number): string => `${Math.round(p * 100)}%`;
+const hearts = (hp: number): string => {
+  const h = hp / HEART;
+  return `${Number.isInteger(h) ? h : h.toFixed(2)} heart${h === 1 ? '' : 's'}`;
+};
+
+/**
+ * Plain-words explanation of what an item does, with the real numbers for
+ * its level. Shown on the help screen.
+ */
+export function itemDescription(item: MagicItem): string {
+  const s = itemStats(item);
+  switch (item.kind) {
+    case 'longSword':
+      return `Your swings reach 2 tiles in a straight line, so you hit first.${s.atkBonus ? ` +${s.atkBonus} attack.` : ''}`;
+    case 'fireStaff':
+      return `Every ${sec(s.fireIntervalMs)} a fireball flies at the nearest monster within ${s.fireRange} tiles for ${s.fireDmg} damage. Monsters next to it take half.`;
+    case 'lightningWand':
+      return `${pct(s.chainChance)} of your hits chain lightning to up to ${s.chainTargets} nearby monsters for ${s.chainDmg} damage each.`;
+    case 'poisonDagger':
+      return `Your hits poison monsters: ${s.poisonDmg} damage every second for ${sec(s.poisonMs)}.`;
+    case 'frostBlade':
+      return `Your hits slow monsters for ${sec(s.slowMs)}. Slowed monsters move and attack at half speed.`;
+    case 'berserkerAxe':
+      return `While you are at half hearts or less, +${s.berserkAtk} attack.`;
+    case 'shieldAmulet':
+      return `A bubble blocks one hit completely. It comes back ${sec(s.shieldRechargeMs)} after it pops.`;
+    case 'speedBoots':
+      return `You walk faster: a step takes ${s.moveMs}ms instead of ${DEFAULT_MOVE_MS}ms.`;
+    case 'thornMail':
+      return `Any monster that hits you takes ${s.thornDmg} damage back.`;
+    case 'phoenixFeather':
+      return `When you would be knocked down, you burst back up with half your hearts instead of sleeping. Works once every ${sec(s.phoenixCooldownMs)}.`;
+    case 'regenRing':
+      return `Hearts refill ${s.regenMult}x faster out of combat, and sleep heals twice as fast.`;
+    case 'stoneRing':
+      return `+${s.defBonus} defense, and monsters can no longer shove you back.`;
+    case 'goldCharm':
+      return `You get ${pct(s.goldMult - 1)} more gold from monsters and chests.`;
+    case 'xpTome':
+      return `You get ${pct(s.xpMult - 1)} more XP from monsters and chests.`;
+    case 'lifeAmulet':
+      return `+${hearts(s.maxHpBonus)}, and a quarter heart refills every ${sec(s.lifePulseMs)} even while fighting.`;
+    case 'keyCompass':
+      return `An arrow above you points to the nearest key, or to the stairs when there are no keys left.`;
+    case 'vampireFang':
+      return `Each kill heals ${s.vampKillHeal} quarter heart${s.vampKillHeal === 1 ? '' : 's'}, and ${pct(s.vampHitChance)} of your hits heal a quarter heart.`;
+    case 'baneTotem':
+      return `Monsters within ${s.baneRadius} tiles move and attack ${pct(s.baneSlowMult - 1)} slower, and lurkers see ${s.baneSightPenalty} tiles less far.`;
+  }
+}
