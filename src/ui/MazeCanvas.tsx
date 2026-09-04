@@ -19,6 +19,8 @@ export function MazeCanvas({ game }: MazeCanvasProps) {
     if (!canvas) return;
     const renderer = new Renderer(canvas);
     const detachInput = attachInput(canvas, renderer, game);
+    // Debug/testing hook (harmless in production).
+    (window as unknown as { __renderer?: Renderer }).__renderer = renderer;
 
     let level = game.state.level;
     const resize = () => renderer.resize(game.state.level);

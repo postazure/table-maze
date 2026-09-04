@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Tile, key } from '../src/types';
-import type { LevelData, Vec } from '../src/types';
-import { bfsDistances, bfsPath, floorNeighbors, inBounds, isFloor } from '../src/pathfind';
+import { Tile, key } from '../src/engine/types';
+import type { LevelData, Vec } from '../src/engine/types';
+import { bfsDistances, bfsPath, floorNeighbors, inBounds, isFloor } from '../src/engine/pathfind';
 
 /** Build a tiny level from an ASCII map ('#' wall, '.' floor). */
 function lvl(rows: string[]): LevelData {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { key, parseKey, manhattan } from '../src/types';
+import { key, parseKey, manhattan } from '../src/engine/types';
 
 test('type helpers', () => {
   assert.equal(key({ x: 3, y: 4 }), '3,4');

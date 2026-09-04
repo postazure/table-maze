@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Tile, key } from '../src/types';
-import type { GameState, LevelData, Monster, Vec } from '../src/types';
-import { makeRng } from '../src/rng';
-import { Game } from '../src/game';
-import { heroAttack, monsterAttack } from '../src/combat';
-import { updateMonsters } from '../src/monsters';
-import { clearSave, loadGame, saveGame } from '../src/save';
+import { Tile, key } from '../src/engine/types';
+import type { GameState, LevelData, Monster, Vec } from '../src/engine/types';
+import { makeRng } from '../src/engine/rng';
+import { Game } from '../src/engine/game';
+import { heroAttack, monsterAttack } from '../src/engine/combat';
+import { updateMonsters } from '../src/engine/monsters';
+import { clearSave, loadGame, saveGame } from '../src/engine/save';
 
 // ---------------------------------------------------------------------------
 // Test fixtures: hand-drawn levels so nothing depends on the generator.

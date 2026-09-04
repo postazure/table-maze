@@ -1,12 +1,14 @@
 # Module contracts
 
+Layout: `src/engine/` (pure logic, no DOM), `src/render/` (canvas renderer + pointer input), `src/ui/` (React components and hooks), `src/styles/` (global CSS), `test/` (engine tests).
+
 All shared types live in `src/types.ts`. Each module below must export exactly
 the listed API (extra internal helpers are fine). Modules only import from
 `./types` and from the modules listed under "depends on".
 
 Rules for everyone:
 - Vanilla TypeScript, no runtime dependencies, strict mode, must pass `tsc --noEmit`.
-- No DOM access except in `render.ts`, `hud.ts`, `input.ts`, `save.ts`, `main.ts`.
+- No DOM access in `src/engine/` except `save.ts` (localStorage). DOM lives in `src/render/` and `src/ui/`.
 - Pure functions where possible; never mutate `LevelData.tiles` after generation.
 - Deterministic: all randomness goes through an `Rng` (see `rng.ts`).
 
@@ -161,7 +163,7 @@ HP bars above damaged monsters and the hero. `hitFlash` = white overlay.
 `lunge` = offset draw. Effects: floating text rising and fading, flash, screen shake.
 Respect devicePixelRatio. Never scroll the page.
 
-## hud.ts
+## ui/Hud.tsx + ui/hudModel.ts (React; supersedes the old hud.ts class)
 ```ts
 export class Hud {
   constructor(root: HTMLElement, actions: { onNewGame: () => void });

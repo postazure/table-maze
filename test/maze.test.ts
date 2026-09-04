@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Tile, key } from '../src/types';
-import type { LevelData, Vec } from '../src/types';
-import { generateLevel } from '../src/maze';
-import { bfsDistances, bfsPath, floorNeighbors, isFloor } from '../src/pathfind';
+import { Tile, key } from '../src/engine/types';
+import type { LevelData, Vec } from '../src/engine/types';
+import { generateLevel } from '../src/engine/maze';
+import { bfsDistances, bfsPath, floorNeighbors, isFloor } from '../src/engine/pathfind';
 import {
   applyLevelUp,
   damage,
@@ -12,8 +12,8 @@ import {
   newHero,
   rollChestLoot,
   xpForLevel,
-} from '../src/balance';
-import { hashSeed, makeRng } from '../src/rng';
+} from '../src/engine/balance';
+import { hashSeed, makeRng } from '../src/engine/rng';
 
 const DEPTHS = Array.from({ length: 20 }, (_, i) => i + 1);
 const SEEDS = [1, 2, 3, 42, 999];

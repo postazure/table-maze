@@ -299,7 +299,7 @@ export class Game {
         this.dirty = true;
       } else {
         st.path.length = 0;
-        pushLog(st, 'Locked. Find a 🗝️');
+        pushLog(st, 'Locked. Find a door key');
         return;
       }
     }
@@ -354,9 +354,8 @@ export class Game {
     if (k) {
       k.taken = true;
       hero.keys[k.kind] += 1;
-      const glyph = k.kind === 'door' ? '🗝️' : '🔑';
-      pushText(st, tile, `+${glyph}`, GOLD, 1000);
-      pushLog(st, k.kind === 'door' ? 'Picked up a door key 🗝️' : 'Picked up a chest key 🔑');
+      pushText(st, tile, k.kind === 'door' ? 'DOOR KEY' : 'CHEST KEY', GOLD, 1000);
+      pushLog(st, k.kind === 'door' ? 'Picked up a door key' : 'Picked up a chest key');
       this.dirty = true;
     }
 
@@ -382,7 +381,7 @@ export class Game {
         pushLog(st, item ? `Found ${item.name}!` : `Found ${c.loot.gold} gold`);
         this.dirty = true;
       } else {
-        pushLog(st, 'Chest is locked. Find a 🔑');
+        pushLog(st, 'Chest is locked. Find a chest key');
       }
     }
 

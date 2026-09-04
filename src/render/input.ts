@@ -2,8 +2,8 @@
  * Finger-drag input. Pointer Events only, with touch scrolling suppressed so a
  * drag across the maze never pans the page or triggers pull-to-refresh.
  */
-import type { TileMapper, Vec } from './types';
-import type { Game } from './game';
+import type { TileMapper, Vec } from '../engine/types';
+import type { Game } from '../engine/game';
 
 export function attachInput(canvas: HTMLElement, mapper: TileMapper, game: Game): () => void {
   /** pointerId of the finger currently dragging, or null. */
