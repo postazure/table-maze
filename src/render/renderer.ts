@@ -113,7 +113,28 @@ const HERO_PALETTE: Record<string, string> = {
   B: '#3a2b1f',
 };
 
-const KEY_ROWS = ['........', '.GGG....', 'G...G...', 'G..GGGGG', '.GGG...G', '......G.', '........', '........'];
+// Chest key: a plain gold classic key (loop bow + toothed shaft), with a
+// darker-gold shade on the lower arc and teeth for a little depth.
+const CHEST_KEY_ROWS = ['........', '.GGG....', 'G...G...', 'G..GGGGG', '.GGD...D', '......D.', '........', '........'];
+const CHEST_KEY_GOLD = '#f5c451';
+const CHEST_KEY_GOLD_DARK = '#c9931e';
+const CHEST_KEY_PALETTE: Record<string, string> = { G: CHEST_KEY_GOLD, D: CHEST_KEY_GOLD_DARK };
+
+// Door key: the same classic bow-and-shaft silhouette, recolored purple/
+// magenta and topped with two tiny devil horns rising off the bow — the
+// "magic" counterpart to the plain gold chest key. Same rows/palette are
+// reused for the HUD icon (icons.tsx) so the two read as a matched pair.
+const DOOR_KEY_BODY = '#b56cff';
+const DOOR_KEY_DARK = '#6d2fb0';
+const DOOR_KEY_HORN = '#ff5c8a';
+const DOOR_KEY_HILITE = '#ffffff';
+const DOOR_KEY_ROWS = ['.H.H....', '.WPP....', 'P...P...', 'P..PPPPP', '.PPP...D', '......D.', '........', '........'];
+const DOOR_KEY_PALETTE: Record<string, string> = {
+  P: DOOR_KEY_BODY,
+  D: DOOR_KEY_DARK,
+  H: DOOR_KEY_HORN,
+  W: DOOR_KEY_HILITE,
+};
 
 const CHEST_CLOSED_ROWS = ['........', '.WWWWWW.', 'WWWWWWWW', 'WGGGGGGW', 'WW.LL.WW', 'WWWWWWWW', 'WWWWWWWW', '........'];
 const CHEST_CLOSED_PALETTE: Record<string, string> = { W: '#8b5a2b', G: '#f5c451', L: '#2a2016' };
@@ -124,8 +145,23 @@ const CHEST_OPEN_PALETTE: Record<string, string> = { W: '#8b5a2b', g: '#f5c451' 
 const EXIT_ROWS = ['WWWWWWWW', 'W......W', 'W.dddd.W', 'W.dddd.W', 'W.dddd.W', 'W.ssss.W', 'W......W', 'WWWWWWWW'];
 const EXIT_PALETTE: Record<string, string> = { W: '#4a4863', d: '#08070d', s: '#3a3852' };
 
-const DOOR_CLOSED_ROWS = ['PPMPPMPP', 'PPMPPMPP', 'BBBBBBBB', 'PPMPPMPP', 'PPMGGMPP', 'PPMPPMPP', 'BBBBBBBB', 'PPMPPMPP'];
-const DOOR_CLOSED_PALETTE: Record<string, string> = { P: '#8b5a2b', M: '#5a3a1c', B: '#4a2f18', G: '#f5c451' };
+// Closed door: wood-plank frame with a small horned-ring emblem (matching the
+// door key) set into the middle, poking up through the top beam.
+const DOOR_CLOSED_ROWS = ['PPMPPMPP', 'PPMPPMPP', 'BBBBBBBB', 'PPPHPHPP', 'PPRRRRPP', 'PPRPPRPP', 'BBRRRRBB', 'PPMPPMPP'];
+const DOOR_CLOSED_PALETTE: Record<string, string> = {
+  P: '#8b5a2b',
+  M: '#5a3a1c',
+  B: '#4a2f18',
+  H: DOOR_KEY_HORN,
+  R: DOOR_KEY_BODY,
+};
+// Open door frame keeps the wood-brown hue but tints it slightly purple so it
+// still reads as "that kind of door" even without the emblem visible.
+const DOOR_OPEN_FRAME = 'rgba(160,108,200,0.55)';
+
+/** Colors used by the door key's pulsing map-tile aura (see drawKeyAura). */
+const KEY_AURA_COLOR = DOOR_KEY_BODY;
+const KEY_AURA_SPARKLE_COLORS = [DOOR_KEY_HORN, DOOR_KEY_HILITE, DOOR_KEY_HORN] as const;
 
 const SHIELD_BADGE_ROWS = ['.SSSS.', 'SSSSSS', 'SSSSSS', '.SSSS.', '..SS..', '..SS..'];
 
@@ -194,8 +230,8 @@ export class Renderer implements TileMapper {
     this.ctx = ctx;
 
     this.heroSprite = buildIcon(HERO_ROWS, HERO_PALETTE);
-    this.doorKeySprite = buildIcon(KEY_ROWS, { G: '#f5c451' });
-    this.chestKeySprite = buildIcon(KEY_ROWS, { G: '#5aa9ff' });
+    this.doorKeySprite = buildIcon(DOOR_KEY_ROWS, DOOR_KEY_PALETTE);
+    this.chestKeySprite = buildIcon(CHEST_KEY_ROWS, CHEST_KEY_PALETTE);
     this.chestClosedSprite = buildIcon(CHEST_CLOSED_ROWS, CHEST_CLOSED_PALETTE);
     this.chestOpenSprite = buildIcon(CHEST_OPEN_ROWS, CHEST_OPEN_PALETTE);
     this.doorClosedSprite = buildIcon(DOOR_CLOSED_ROWS, DOOR_CLOSED_PALETTE);
@@ -517,7 +553,7 @@ export class Renderer implements TileMapper {
       ctx.drawImage(this.doorClosedSprite, x, y, t, t);
     } else {
       const inset = Math.round(t * 0.12);
-      ctx.strokeStyle = 'rgba(139,90,43,0.55)';
+      ctx.strokeStyle = DOOR_OPEN_FRAME;
       ctx.lineWidth = 1;
       ctx.strokeRect(x + inset + 0.5, y + inset + 0.5, t - inset * 2 - 1, t - inset * 2 - 1);
     }
@@ -528,13 +564,54 @@ export class Renderer implements TileMapper {
     const bsize = Math.round(t * 0.78);
     const bgx = Math.round(k.pos.x * t + (t - bsize) / 2);
     const bgy = Math.round(k.pos.y * t + (t - bsize) / 2);
-    ctx.fillStyle = isDoor ? 'rgba(245,196,81,0.22)' : 'rgba(90,169,255,0.22)';
+    ctx.fillStyle = isDoor ? 'rgba(181,108,255,0.22)' : 'rgba(245,196,81,0.22)';
     ctx.fillRect(bgx, bgy, bsize, bsize);
+
+    // Door keys are magical: a soft pulsing purple ring + orbiting sparkles.
+    // Chest keys just get the plain disk above.
+    if (isDoor) this.drawKeyAura(ctx, k.pos, t);
 
     const size = Math.round(t * 0.6);
     const bx = Math.round(k.pos.x * t + (t - size) / 2);
     const by = Math.round(k.pos.y * t + (t - size) / 2);
     ctx.drawImage(isDoor ? this.doorKeySprite : this.chestKeySprite, bx, by, size, size);
+  }
+
+  /**
+   * Animated aura for an untaken door key: a square ring pulsing 0.3-0.9
+   * alpha over ~1.2s, plus three tiny sparkles orbiting the key at staggered
+   * phases in pink/white. Everything snaps to the SUB sub-pixel grid, same
+   * as the other drifting effects (drawZzz, poison bubbles, ...).
+   */
+  private drawKeyAura(ctx: CanvasRenderingContext2D, pos: Vec, t: number): void {
+    const sub = Math.max(1, t / SUB);
+    const now = performance.now();
+    const cx = pos.x * t + t / 2;
+    const cy = pos.y * t + t / 2;
+
+    const ringAlpha = 0.6 + 0.3 * Math.sin((now / 1200) * Math.PI * 2);
+    const ringSize = Math.round((t * 0.92) / sub) * sub;
+    const rx = Math.round((cx - ringSize / 2) / sub) * sub;
+    const ry = Math.round((cy - ringSize / 2) / sub) * sub;
+    ctx.save();
+    ctx.globalAlpha = ringAlpha;
+    ctx.strokeStyle = KEY_AURA_COLOR;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(rx + 0.5, ry + 0.5, ringSize - 1, ringSize - 1);
+    ctx.restore();
+
+    const orbitR = t * 0.55;
+    ctx.save();
+    for (let i = 0; i < 3; i++) {
+      const phase = (((now / 1100 + i / 3) % 1) + 1) % 1;
+      const ang = phase * Math.PI * 2;
+      const sx = Math.round((cx + Math.cos(ang) * orbitR) / sub) * sub;
+      const sy = Math.round((cy + Math.sin(ang) * orbitR) / sub) * sub;
+      ctx.globalAlpha = 0.4 + 0.5 * (0.5 + 0.5 * Math.sin(phase * Math.PI * 2 + i));
+      ctx.fillStyle = KEY_AURA_SPARKLE_COLORS[i];
+      ctx.fillRect(sx, sy, sub, sub);
+    }
+    ctx.restore();
   }
 
   private drawChest(ctx: CanvasRenderingContext2D, c: Chest, t: number): void {

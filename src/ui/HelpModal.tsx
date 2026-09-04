@@ -61,7 +61,7 @@ export function HelpModal({ model, onClose }: HelpModalProps) {
             <ul className="help-list">
               <li>Drag your finger to walk. The hero follows your line.</li>
               <li>Walk into a monster to fight it. The hero keeps swinging on their own until it's beaten or you walk away.</li>
-              <li>Gold keys open doors. Blue keys open chests. Keys stay on their floor.</li>
+              <li>Purple horned keys open horned doors. Gold keys open chests. Keys stay on their floor.</li>
               <li>Guards stand still and only fight back if you hit them.</li>
               <li>Roaming monsters slow you down but never block you.</li>
               <li>Hunters chase you when you get close. Lead them away, then loop around.</li>

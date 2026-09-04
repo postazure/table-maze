@@ -31,13 +31,18 @@ const BASE_ICONS: Record<BaseIconName, { rows: Rows; palette: Palette }> = {
     rows: ['..GGGG..', '.GGYYGG.', 'GGYGGYGG', 'GGYGGGGG', 'GGYGGGGG', 'GGYGGYGG', '.GGYYGG.', '..GGGG..'],
     palette: { G: '#f5c451', Y: '#8a6a2a' },
   },
+  // Magic key: purple/magenta with two tiny devil horns off the bow — matches
+  // the horned doors it opens. Same rows/palette as the map sprite in
+  // renderer.ts (DOOR_KEY_ROWS) so the HUD icon matches the map exactly.
   doorKey: {
-    rows: ['........', '.GGG....', 'G...G...', 'G..GGGGG', '.GGG...G', '......G.', '........', '........'],
-    palette: { G: '#f5c451' },
+    rows: ['.H.H....', '.WPP....', 'P...P...', 'P..PPPPP', '.PPP...D', '......D.', '........', '........'],
+    palette: { P: '#b56cff', D: '#6d2fb0', H: '#ff5c8a', W: '#ffffff' },
   },
+  // Plain gold classic key (opens chests). Same rows/palette as the map
+  // sprite in renderer.ts (CHEST_KEY_ROWS).
   chestKey: {
-    rows: ['........', '.GGG....', 'G...G...', 'G..GGGGG', '.GGG...G', '......G.', '........', '........'],
-    palette: { G: '#5aa9ff' },
+    rows: ['........', '.GGG....', 'G...G...', 'G..GGGGG', '.GGD...D', '......D.', '........', '........'],
+    palette: { G: '#f5c451', D: '#c9931e' },
   },
   heart: {
     rows: ['.DD..DD.', 'DRRDDRRD', 'DRRRRRRD', 'DRRRRRRD', '.DRRRRD.', '..DRRD..', '...DD...', '........'],

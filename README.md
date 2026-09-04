@@ -11,9 +11,10 @@ Play it at **https://postazure.github.io/table-maze/**
 - **Drag** your finger on the maze. The hero follows the trail your finger draws.
   Lift your finger and the hero keeps walking the queued path.
 - The light highlight shows every tile you've stepped on this level.
-- **Door keys** (gold) open doors. **Chest keys** (blue) open any chest and are used
-  up when you do. The two kinds are not interchangeable, and keys don't carry over
-  to the next level.
+- **Door keys** (purple, with devil horns) open doors, which carry the same horned
+  emblem so you can match them at a glance. **Chest keys** (gold) open any chest and
+  are used up when you do. The two kinds are not interchangeable, and keys don't
+  carry over to the next level.
 - Chests are solid. Walk into one with a chest key and the game pauses while the
   chest opens and your prize floats out: a sword, a shield, a heart, or coins.
   Tap to keep playing. Without a key the chest just blinks red.
