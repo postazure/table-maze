@@ -605,7 +605,7 @@ function placeMonsters(
   if (count >= 3) kinds.push('guard', 'patrol', lurkers ? 'lurker' : 'patrol');
   while (kinds.length < count) {
     const r = rng.next();
-    kinds.push(r < 0.35 ? 'guard' : r < 0.65 || !lurkers ? 'patrol' : 'lurker');
+    kinds.push(r < 0.35 ? 'guard' : r < 0.85 || !lurkers ? 'patrol' : 'lurker');
   }
   rng.shuffle(kinds);
 
@@ -977,7 +977,7 @@ function stockWarrens(
     for (let i = 0; i < want && i < spots.length; i++) {
       const spot = spots[i];
       const roll = rng.next();
-      const kind: RosterKind = roll < 0.45 ? 'guard' : roll < 0.85 || !lurkers ? 'patrol' : 'lurker';
+      const kind: RosterKind = roll < 0.45 ? 'guard' : roll < 0.9 || !lurkers ? 'patrol' : 'lurker';
       const m = makeMonster(kind, depth, rng, spot, `w${++n}`, spawn);
       if (kind === 'patrol') {
         const beat = warrenBeat(level, spot, inWarren, rng);
