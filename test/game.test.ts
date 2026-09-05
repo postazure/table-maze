@@ -1164,6 +1164,10 @@ test('a health potion bursts the hero back up instead of a knockdown', () => {
   assert.equal(hero.hp, 12, 'half the hearts, rounded up to whole ones');
   assert.equal(hero.potions, 1, 'one charge spent');
   assert.ok(st.fx.some((f) => f.kind === 'ring'));
+  assert.ok(
+    st.fx.some((f) => f.kind === 'text' && f.text === 'Potion!'),
+    'a floating cue over the hero says a potion was used',
+  );
   assert.ok(st.log.some((l) => l.text.includes('potion')));
 });
 
@@ -1185,6 +1189,7 @@ test('the phoenix feather is spent before a health potion', () => {
   assert.equal(hero.sleeping, false);
   assert.equal(hero.potions, 1, 'the free feather went first, the potion is untouched');
   assert.ok(st.log.some((l) => l.text.includes('feather')));
+  assert.ok(!st.fx.some((f) => f.kind === 'text' && f.text === 'Potion!'), 'no potion cue when the feather did it');
 });
 
 test('speed boots quicken every step', () => {

@@ -441,9 +441,10 @@ function causeOfDeath(m: Monster | null): string {
  * Heal to half max hp (rounded up to a whole heart), hop to a nearby safe
  * tile and stay on your feet instead of napping. The shared shape of a
  * phoenix feather's burst and a health potion's swig — only the cause, the
- * colour, the sound and the log line differ.
+ * colour, the sound, the log line and (optionally) the word floating up over
+ * the hero's head differ.
  */
-function burstBackUp(state: GameState, color: string, sfx: SfxId, log: string): void {
+function burstBackUp(state: GameState, color: string, sfx: SfxId, log: string, floatText?: string): void {
   const hero = state.hero;
   const half = Math.ceil(hero.maxHp / 2);
   hero.hp = Math.min(hero.maxHp, Math.ceil(half / HEART) * HEART);
@@ -451,6 +452,7 @@ function burstBackUp(state: GameState, color: string, sfx: SfxId, log: string): 
   hero.sleeping = false;
   state.path.length = 0;
   state.fx.push({ kind: 'ring', pos: { x: hero.pos.x, y: hero.pos.y }, radius: 1.5, color, t: 0, ttl: 500 });
+  if (floatText) pushText(state, hero.pos, floatText, color, 1100);
   pushShake(state, 10, 420);
   pushSfx(state, sfx);
   const spot = retreatTile(state);
@@ -475,7 +477,7 @@ function knockDown(state: GameState, attacker: Monster | null = null): void {
   // spends the free one first and saves the potion for when it is on cooldown.
   if (hero.potions > 0) {
     hero.potions -= 1;
-    burstBackUp(state, GOLD, 'potion', 'A health potion saves you!');
+    burstBackUp(state, GOLD, 'potion', 'A health potion saves you!', 'Potion!');
     return;
   }
 
