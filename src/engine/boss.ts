@@ -146,13 +146,13 @@ export function makeBossMonster(kind: BossMonsterKind, depth: number, pos: Vec, 
       base.state = 'chasing';
       break;
     case 'angel':
-      // Fast while unwatched, frozen while watched. Touch = a third of max hp.
+      // Not on the monster clock: it moves once per hero step and on the
+      // creep clock (game.ts / `angelsFollow`), so NEVER for both intervals.
+      // Touch = a third of max hp.
       base.name = 'Angel';
       base.glyph = '🗿';
       base.level = d + 3;
       base.invulnerable = true;
-      base.moveInterval = 170;
-      base.attackInterval = 500;
       base.sightRange = 999;
       base.state = 'idle';
       break;

@@ -3,14 +3,12 @@ import {
   parseKey,
   ITEM_KINDS,
   ITEM_SLOT,
-  inFrontOf,
   type GameState,
   type LevelData,
   type Vec,
   type TileMapper,
   type Monster,
   type Hero,
-  type Dir,
   type Effect,
   type Door,
   type Chest,
@@ -42,7 +40,6 @@ const RING_RETURNING = '#f5d451';
 // Boss-only rings/auras.
 const RING_NECROMANCER = '#b56cff';
 const RING_ANGEL_IDLE = '#5a5a66';
-const RING_ANGEL_WATCH = '#c7c7d1';
 const CRYSTAL_GLOW_COLOR = '#c13fe0';
 const NECRO_SPARK_COLORS = ['#b56cff', '#ff8ce8', '#e8d9ff'] as const;
 const SPELL_BAR_COLOR = '#b56cff';
@@ -356,9 +353,6 @@ export class Renderer implements TileMapper {
   private podiumSprite: HTMLCanvasElement;
   /** Hero level captured at the start of each draw, used to color monster level badges. */
   private heroLevel = 1;
-  /** Hero pos/facing captured at the start of each draw: angels need to know if they're being watched. */
-  private heroPos: Vec = { x: 0, y: 0 };
-  private heroFacing: Dir = 'S';
   /** necromancer boss level only: spellMs / spellTotalMs, 1 elsewhere. Speeds up his ring's pulse. */
   private necroSpellFrac = 1;
   private monsterSprites: Map<string, HTMLCanvasElement> = new Map();
@@ -516,8 +510,6 @@ export class Renderer implements TileMapper {
 
   draw(state: GameState, dt: number): void {
     this.heroLevel = state.hero.level;
-    this.heroPos = state.hero.pos;
-    this.heroFacing = state.hero.facing;
     this.necroSpellFrac =
       state.level.kind === 'boss' && state.level.boss?.kind === 'necromancer'
         ? state.level.boss.spellMs / state.level.boss.spellTotalMs
@@ -895,10 +887,9 @@ export class Renderer implements TileMapper {
    * Ring color/pulse for every monster kind, including the boss ones, so
    * nothing new falls through to the generic lurker color by accident.
    * `crystal` deliberately isn't handled here — it draws no ring at all
-   * (see drawMonster) — and `frozen` is angel-only, read by drawMonster to
-   * add the "being watched" eye glint.
+   * (see drawMonster).
    */
-  private ringColorFor(m: Monster): { color: string; pulse: boolean; pulseDivisor?: number; frozen?: boolean } {
+  private ringColorFor(m: Monster): { color: string; pulse: boolean; pulseDivisor?: number } {
     if (m.kind === 'boss') {
       // Purple channelling ring; pulses faster as the spell nears completion.
       const frac = Math.max(0, Math.min(1, this.necroSpellFrac));
@@ -906,9 +897,8 @@ export class Renderer implements TileMapper {
     }
     if (m.kind === 'minotaur') return { color: RING_CHASING, pulse: true }; // always hunting
     if (m.kind === 'angel') {
+      // Weeping = dim grey. Awake = red: it answers every step you take.
       if (m.state === 'idle') return { color: RING_ANGEL_IDLE, pulse: false };
-      const frozen = inFrontOf(this.heroPos, this.heroFacing, m.pos);
-      if (frozen) return { color: RING_ANGEL_WATCH, pulse: false, frozen: true };
       return { color: RING_CHASING, pulse: true };
     }
     if (m.state === 'chasing') return { color: RING_CHASING, pulse: true };
@@ -991,11 +981,10 @@ export class Renderer implements TileMapper {
 
     // Crystal gets a glow instead of a ring; everyone else gets ringColorFor's
     // ring, plus the necromancer's extra orbiting sparks.
-    let ring: { color: string; pulse: boolean; pulseDivisor?: number; frozen?: boolean } | null = null;
     if (m.kind === 'crystal') {
       this.drawCrystalGlow(ctx, cx, cy, size);
     } else {
-      ring = this.ringColorFor(m);
+      const ring = this.ringColorFor(m);
       this.drawRing(ctx, cx, cy, size, ring.color, ring.pulse, ring.pulseDivisor);
       if (m.kind === 'boss') this.drawNecroSparks(ctx, cx, cy, size, t);
     }
@@ -1006,18 +995,6 @@ export class Renderer implements TileMapper {
       else if (spriteKey === 'ghost') ctx.globalAlpha = 0.8;
       ctx.drawImage(sprite, dx, dy, size, size);
       ctx.restore();
-    }
-
-    // angel, chasing + frozen (in front of the hero): a small pale glint at
-    // the eye line to show it's watching, even though the sprite itself has
-    // no visible eyes.
-    if (ring?.frozen) {
-      const gy = Math.round((dy + size * 0.32) / sub) * sub;
-      const gx1 = Math.round((dx + size * 0.34) / sub) * sub;
-      const gx2 = Math.round((dx + size * 0.62) / sub) * sub;
-      ctx.fillStyle = '#f5f0ff';
-      ctx.fillRect(gx1, gy, sub, sub);
-      ctx.fillRect(gx2, gy, sub, sub);
     }
 
     // poisonDagger: green tint + one or two bubbles rising on a time cycle.

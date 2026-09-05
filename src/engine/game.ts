@@ -5,13 +5,13 @@
  * `pointerEnd`, and `onChange` is the "worth persisting" signal for save.ts.
  */
 import type { BossData, Chest, Dir, GameState, Hero, Monster, Rng, ShopOffer, Vec } from './types';
-import { HEART, ITEM_SLOT, SAVE_VERSION, eq, key, manhattan } from './types';
+import { ANGEL_CREEP_MS, HEART, ITEM_SLOT, SAVE_VERSION, eq, key, manhattan } from './types';
 import { hashSeed, makeRng } from './rng';
 import { bfsDistances, bfsPath } from './pathfind';
 import { generateLevel } from './maze';
 import { themeForDepth } from './themes';
 import { newHero, applyLevelUp } from './balance';
-import { updateMonsters } from './monsters';
+import { angelsFollow, updateMonsters } from './monsters';
 import {
   GOLD,
   GREEN,
@@ -91,6 +91,8 @@ export class Game {
   private rng!: Rng;
   private moveTimer = 0;
   private holdTimer = 0;
+  /** angels boss: ms toward the next creep step (see creepAngels). */
+  private creepTimer = 0;
   /** Monster the hero last swung at; auto-attacked while it stays in reach. */
   private engagedId: string | null = null;
   private regenTimer = 0;
@@ -233,7 +235,11 @@ export class Game {
       while (st.path.length > 0 && this.moveTimer >= moveMs && guard < 8) {
         guard += 1;
         this.moveTimer -= moveMs;
+        const from = hero.pos;
         this.stepOnce(stats);
+        if (st.descending > 0 || st.modal) break;
+        // Every real step the hero takes, the angels take one back.
+        if (!eq(hero.pos, from)) this.angelsFollow();
         if (st.descending > 0 || st.modal || hero.stun > 0) break;
       }
       if (st.path.length === 0) this.moveTimer = Math.min(this.moveTimer, moveMs);
@@ -755,7 +761,10 @@ export class Game {
     const boss = st.level.boss;
     if (st.level.kind !== 'boss' || !boss || boss.defeated) return;
     if (boss.kind === 'necromancer') this.tickNecromancer(dt, boss);
-    else if (boss.kind === 'angels') this.wakeAngels(boss);
+    else if (boss.kind === 'angels') {
+      this.creepAngels(dt);
+      this.wakeAngels(boss);
+    }
     // The minotaur has no clock at all: he just follows you (monsters.ts).
   }
 
@@ -854,6 +863,45 @@ export class Game {
       st.fx.push({ kind: 'flash', pos: { x: m.pos.x, y: m.pos.y }, color: GREY, t: 0, ttl: 320 });
     }
     this.winBoss();
+  }
+
+  /**
+   * One angel move for every one of the hero's: a step toward them, or a
+   * touch if the angel is already at their side. Called right after each
+   * hero step (before `wakeAngels`, so an angel woken by this very step
+   * stirs but does not move until the next one) and on the creep clock.
+   */
+  private angelsFollow(): void {
+    const st = this.state;
+    const boss = st.level.boss;
+    if (st.level.kind !== 'boss' || !boss || boss.kind !== 'angels' || boss.defeated) return;
+    const hpBefore = st.hero.hp;
+    angelsFollow(st, this.rng);
+    if (st.hero.hp !== hpBefore) this.dirty = true;
+  }
+
+  /**
+   * The slow, inevitable part of the march: while any angel is awake, every
+   * `ANGEL_CREEP_MS` they all take a step (or a touch) even if the hero has
+   * not moved. Hero steps do not reset this clock, so running only buys
+   * distance, never time. Nothing to creep toward while they all still weep.
+   */
+  private creepAngels(dt: number): void {
+    const st = this.state;
+    if (!st.level.monsters.some((m) => m.alive && m.kind === 'angel' && m.state === 'chasing')) {
+      this.creepTimer = 0;
+      return;
+    }
+    this.creepTimer += dt;
+    let guard = 0;
+    while (this.creepTimer >= ANGEL_CREEP_MS && guard < 4) {
+      guard += 1;
+      this.creepTimer -= ANGEL_CREEP_MS;
+      this.angelsFollow();
+      this.dirty = true;
+      if (st.modal) break;
+    }
+    if (guard >= 4) this.creepTimer = 0; // a huge dt (tab hidden) is not a massacre
   }
 
   /** Every idle angel in the room the hero just walked into opens its eyes. */

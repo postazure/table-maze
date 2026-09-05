@@ -109,9 +109,11 @@ export type RosterKind = 'guard' | 'patrol' | 'lurker';
  *  - minotaur:   `invulnerable`, chases the hero anywhere, slowly, forever.
  *                Every hit takes a third of the hero's max hp.
  *  - angel:      `invulnerable`. Idle (weeping) until the hero enters its room
- *                (`roomId`), then it hunts the hero anywhere, fast, forever,
- *                but ONLY while the hero is not facing it (see
- *                `inFrontOf`). A touch (attack) takes a third of max hp.
+ *                (`roomId`), then it hunts the hero anywhere, forever, but
+ *                mostly in lock-step with the hero: one hero step, one angel
+ *                step, plus a slow creep of one tile every `ANGEL_CREEP_MS`
+ *                so waiting only delays it. A touch (attack) takes a third
+ *                of max hp.
  */
 export type BossMonsterKind = 'minion' | 'crystal' | 'boss' | 'minotaur' | 'angel';
 export type MonsterKind = RosterKind | BossMonsterKind;
@@ -236,26 +238,15 @@ export type BossData =
 export const inRect = (r: Rect, p: Vec): boolean =>
   p.x >= r.x && p.y >= r.y && p.x < r.x + r.w && p.y < r.y + r.h;
 
-/**
- * Is `target` in front of a hero standing on `from` and facing `facing`?
- * A half-plane, not a cone: facing N means every tile with a smaller y.
- * Angels freeze while they are in front of the hero.
- */
-export function inFrontOf(from: Vec, facing: Dir, target: Vec): boolean {
-  switch (facing) {
-    case 'N':
-      return target.y < from.y;
-    case 'S':
-      return target.y > from.y;
-    case 'E':
-      return target.x > from.x;
-    case 'W':
-      return target.x < from.x;
-  }
-}
-
 /** Boss hits (minotaur, angel) take this fraction of the hero's max hp, ignoring defense. */
 export const BOSS_HIT_FRACTION = 1 / 3;
+
+/**
+ * Awake angels answer every hero step with one of their own, and on top of
+ * that creep one tile closer every this many ms whether the hero moves or
+ * not. Slow enough to plan around, but standing still never saves you.
+ */
+export const ANGEL_CREEP_MS = 2200;
 
 // ---------------------------------------------------------------------------
 // Magic items (bought in shops, one per slot, all passive)
