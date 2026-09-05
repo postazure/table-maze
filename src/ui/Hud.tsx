@@ -10,6 +10,9 @@ export interface HudProps {
   model: HudModel;
   onNewGame: () => void;
   onHelp: () => void;
+  /** Sound and music on? Drives the speaker button. */
+  soundOn: boolean;
+  onToggleSound: () => void;
 }
 
 /** Round a percentage down to a multiple of 4 for a chunky, "stepped" bar fill. */
@@ -28,7 +31,7 @@ function Stat({ icon, title, value }: { icon: IconName; title: string; value: nu
   );
 }
 
-function HudInner({ model, onNewGame, onHelp }: HudProps) {
+function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound }: HudProps) {
   const xpPct = steppedPct(model.xp, model.xpToNext);
 
   const handleNewGame = () => {
@@ -57,6 +60,15 @@ function HudInner({ model, onNewGame, onHelp }: HudProps) {
           </span>
         </div>
         <div className="hud-buttons">
+          <button
+            type="button"
+            className="hud-btn-newgame hud-btn-help"
+            onClick={onToggleSound}
+            aria-label={soundOn ? 'Turn sound off' : 'Turn sound on'}
+            aria-pressed={soundOn}
+          >
+            <PixelIcon name={soundOn ? 'sound' : 'soundOff'} size={14} />
+          </button>
           <button type="button" className="hud-btn-newgame hud-btn-help" onClick={onHelp} aria-label="Help">
             ?
           </button>

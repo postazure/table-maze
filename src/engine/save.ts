@@ -107,6 +107,7 @@ export function loadGame(): GameState | null {
       path: [],
       pointer: null,
       fx: [],
+      sfx: [],
       log: [],
       stats: {
         kills: d.stats?.kills ?? 0,

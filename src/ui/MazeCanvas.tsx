@@ -1,17 +1,19 @@
 import { useEffect, useRef } from 'react';
+import type { GameAudio } from '../audio/audio';
 import type { Game } from '../engine/game';
 import { Renderer } from '../render/renderer';
 import { attachInput } from '../render/input';
 
 export interface MazeCanvasProps {
   game: Game;
+  audio: GameAudio;
 }
 
 /**
  * The maze viewport. Hosts the canvas, the renderer, the pointer input and
  * the requestAnimationFrame loop that advances the simulation.
  */
-export function MazeCanvas({ game }: MazeCanvasProps) {
+export function MazeCanvas({ game, audio }: MazeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -40,6 +42,8 @@ export function MazeCanvas({ game }: MazeCanvasProps) {
       const dt = Math.min(50, now - last);
       last = now;
       game.tick(dt);
+      // Right after the tick, so this frame's sounds are this frame's events.
+      audio.update(game.state);
       if (game.state.level !== level) {
         level = game.state.level;
         renderer.resize(level);
@@ -56,7 +60,7 @@ export function MazeCanvas({ game }: MazeCanvasProps) {
       window.removeEventListener('orientationchange', resize);
       detachInput();
     };
-  }, [game]);
+  }, [game, audio]);
 
   return (
     <div className="maze-wrap">

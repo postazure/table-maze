@@ -26,6 +26,7 @@ import {
   keyAt,
   liveMonsterAt,
   pushLog,
+  pushSfx,
   pushShake,
   pushText,
   unitToward,
@@ -304,6 +305,7 @@ export class Game {
       path: [],
       pointer: null,
       fx: [],
+      sfx: [],
       log: [],
       stats: { kills: 0, deepest: depth, playMs: 0, bosses: 0 },
       descending: 0,
@@ -355,6 +357,7 @@ export class Game {
     st.trail = new Set<string>([key(st.level.start)]);
     st.path = [];
     st.fx = [];
+    st.sfx = [];
     st.pointer = null;
     st.descending = 0;
     st.compass = null;
@@ -453,10 +456,12 @@ export class Game {
         door.open = true;
         pushText(st, next, 'Unlocked!', GOLD, 1000);
         pushLog(st, 'Unlocked the door');
+        pushSfx(st, 'doorOpen');
         this.dirty = true;
       } else {
         // Wordless cue: the door blinks red.
         st.fx.push({ kind: 'flash', pos: { x: next.x, y: next.y }, color: BLINK_RED, t: 0, ttl: 320 });
+        pushSfx(st, 'locked');
         st.path.length = 0;
         return;
       }
@@ -471,6 +476,7 @@ export class Game {
     }
     hero.pos = { x: next.x, y: next.y };
     st.trail.add(key(hero.pos));
+    pushSfx(st, 'step');
     this.dirty = true;
     this.onEnter(hero.pos);
   }
@@ -489,6 +495,7 @@ export class Game {
     if (hero.keys.chest <= 0) {
       // No words: a red blink on the chest says "locked".
       st.fx.push({ kind: 'flash', pos: { x: chest.pos.x, y: chest.pos.y }, color: BLINK_RED, t: 0, ttl: 320 });
+      pushSfx(st, 'locked');
       return;
     }
     hero.keys.chest -= 1;
@@ -521,6 +528,7 @@ export class Game {
     const face = dirFromVec(unitToward(hero.pos, chest.pos));
     if (face) hero.facing = face;
     st.modal = { kind: 'chest', loot: chest.loot };
+    pushSfx(st, 'chestOpen');
     this.dirty = true;
   }
 
@@ -570,6 +578,7 @@ export class Game {
     st.fx.push({ kind: 'ring', pos: c, radius: 1.8, color: GOLD, t: 0, ttl: 420 });
     st.modal = { kind: 'item', item: offer.item, replaced };
     pushLog(st, `Bought the ${itemName(offer.item.kind)}`);
+    pushSfx(st, 'buy');
     this.dirty = true;
     this.emit();
   }
@@ -610,6 +619,7 @@ export class Game {
     hero.lungeT = 120;
     const d = dirFromVec(u);
     if (d) hero.facing = d;
+    pushSfx(st, 'swing');
     heroAttack(st, m, this.rng);
     // The swing clears the queue; from here on the hero keeps attacking on
     // their own while the monster stays in reach (see autoAttack).
@@ -740,6 +750,7 @@ export class Game {
       hero.keys[k.kind] += 1;
       pushText(st, tile, k.kind === 'door' ? 'DOOR KEY' : 'CHEST KEY', GOLD, 1000);
       pushLog(st, k.kind === 'door' ? 'Picked up a door key' : 'Picked up a chest key');
+      pushSfx(st, k.kind === 'door' ? 'keyDoor' : 'keyChest');
       this.dirty = true;
     }
 
@@ -751,6 +762,7 @@ export class Game {
       st.path.length = 0;
       pushText(st, tile, 'Descending...', GREEN, 1200);
       pushLog(st, 'Stairs down!');
+      pushSfx(st, 'stairs');
       this.dirty = true;
     }
   }
@@ -819,6 +831,7 @@ export class Game {
     level.monsters.push(minion);
     st.fx.push({ kind: 'flash', pos: { x: tile.x, y: tile.y }, color: PURPLE, t: 0, ttl: 360 });
     pushText(st, tile, 'rises', PURPLE, 900);
+    pushSfx(st, 'rise');
     this.dirty = true;
   }
 
@@ -928,6 +941,7 @@ export class Game {
     if (woke) {
       pushLog(st, 'An angel stirs...');
       pushShake(st, 6, 260);
+      pushSfx(st, 'angel');
       this.dirty = true;
     }
   }
@@ -966,6 +980,7 @@ export class Game {
     });
     st.modal = { kind: 'bossWon', boss: boss.kind, upgraded, heart };
     pushLog(st, `${bossName(boss.kind)} is beaten!`);
+    pushSfx(st, 'bossWin');
     this.dirty = true;
   }
 
@@ -1020,6 +1035,7 @@ export class Game {
             t: 0,
             ttl: 350,
           });
+          pushSfx(st, 'shieldUp');
           this.dirty = true;
         }
       }
@@ -1109,6 +1125,7 @@ export class Game {
     // Both land when the fireball arrives (negative t = delayed).
     st.fx.push({ kind: 'flash', pos: { x: to.x, y: to.y }, color: ORANGE, t: -260, ttl: 260 });
     st.fx.push({ kind: 'ring', pos: { x: to.x, y: to.y }, radius: 1.2, color: ORANGE, t: -260, ttl: 300 });
+    pushSfx(st, 'fireball');
 
     const splash = Math.floor(stats.fireDmg / 2);
     const around = [
@@ -1175,6 +1192,7 @@ export class Game {
       hero.sinceCombat = 0;
       this.sleepTimer = 0;
       this.state.fx.push({ kind: 'flash', pos: { x: hero.pos.x, y: hero.pos.y }, color: '#f5c451', t: 0, ttl: 260 });
+      pushSfx(this.state, 'wake');
       this.dirty = true;
     }
   }
@@ -1189,6 +1207,7 @@ export class Game {
       applyLevelUp(hero);
       pushText(st, hero.pos, 'LEVEL UP!', GOLD, 1300);
       pushShake(st, 6, 260);
+      pushSfx(st, 'levelUp');
       pushLog(st, `Level ${hero.level}!`);
       this.dirty = true;
       if (hero.level === before) break; // defensive: no progress
@@ -1238,6 +1257,7 @@ function reviveState(saved: GameState): GameState {
   const raw: unknown = s.trail;
   s.trail = raw instanceof Set ? raw : new Set<string>(Array.isArray(raw) ? (raw as string[]) : []);
   s.fx = [];
+  s.sfx = [];
   s.path = [];
   s.pointer = null;
   s.log = Array.isArray(s.log) ? s.log : [];
