@@ -84,11 +84,21 @@ Play it at **https://postazure.github.io/table-maze/**
   every couple of seconds and freezes whatever it hits solid — no step, no swing —
   for a moment. **Mending** refills a quarter heart on a fast beat, fighting or not.
   **Time Bubble** drops every monster within six tiles to a crawl. What is running
-  shows twice over: a row of chips under your hearts, and a row of pips floating
-  above the hero. Neither counts down in numbers. The bar drains, and the last ten
-  seconds blink — the last five twice as fast. Get knocked down and every shrine
-  effect goes with it. They do survive the stairs, so a shrine near the way down is
-  a way to walk into the next floor, or a boss chamber, already buffed.
+  shows as a row of pips floating above the hero. They never count down in numbers:
+  a pip is solid while there is time on it, blinks for the last ten seconds, and
+  blinks twice as fast for the last five. For the actual seconds, open the help
+  screen: its Hero tab lists exactly what you have running and how long is left on
+  each, and nothing else — it is a read on your hero, not a catalogue. Get knocked down and
+  every shrine effect goes with it. They do survive the stairs, so a shrine near the
+  way down is a way to walk into the next floor, or a boss chamber, already buffed.
+- **Spirit** is your third stat, next to attack and defense, and the only thing it
+  does is make shrines go further. Every point is ten percent more, up to double.
+  The timed shrines run longer; the ward, which has no clock, hands out more hearts
+  instead — each one gets more of the only currency it has, so nothing is made both
+  longer and stronger. Spirit creeps up a point every third hero level, and
+  *anything* you wear in the spirit slot adds to it, whatever else that item does.
+  So the star podium in the shop is not only a gold charm or an XP tome: it is also
+  a standing bet on the alcoves of every floor after it.
 - After every third floor you face a **boss** before you reach the shop. An intro card
   explains the fight, then the game is on: **The Necromancer** channels a spell in a
   central chamber while raising skeletons — smash all five crystals down his corridors
@@ -148,6 +158,11 @@ Play it at **https://postazure.github.io/table-maze/**
   all, is different every time. About a third of bars hold nothing but the
   drone, which is what keeps the music somewhere behind you rather than in
   front.
+- The **help button** (`?`) pauses the game and opens three tabs: **Hero** (what you
+  are wearing and what you have running), **Log** (everything that has happened this
+  run, newest first) and **How to play**. The panel under the maze deliberately
+  keeps none of that — it is hearts, XP, seven numbers and your three gear slots,
+  and the only things on it that look pressable are the three buttons that are.
 - Progress is saved in your browser's local storage automatically.
 
 ## Development

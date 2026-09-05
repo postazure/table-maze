@@ -29,6 +29,7 @@ import {
   GREEN,
   GREY,
   ICE,
+  LOG_MAX,
   ORANGE,
   RED,
   chestAt,
@@ -93,7 +94,6 @@ const DESCEND_MS = 700;
 const MAX_PATH = 40;
 /** how far a single drag jump may be auto-pathed. */
 const DRAG_PATH_MAX = 8;
-const LOG_TTL = 6000;
 const REGEN_DELAY = 3000;
 const REGEN_MS = 600;
 /** salt so the per-level rng differs from the generator's stream. */
@@ -1037,7 +1037,7 @@ export class Game {
     if (shrine.kind === 'ward') {
       // Temporary hearts do not stack into a bigger pool than one ward's
       // worth: a second ward tops the first back up.
-      const pool = Math.max(hero.tempHp ?? 0, wardTempHp(shrine.level));
+      const pool = Math.max(hero.tempHp ?? 0, wardTempHp(shrine.level, hero.spirit));
       hero.tempHp = pool;
       hero.tempHpMax = Math.max(hero.tempHpMax ?? 0, pool);
     } else {
@@ -1426,15 +1426,16 @@ export class Game {
     }
   }
 
+  /**
+   * Lines no longer fade out: the log is read on a tab of the help screen,
+   * where a line that deleted itself after six seconds would almost never
+   * still be there. `t` is still aged, because `pushLog` reads it to decide
+   * whether a repeat is the same event or a new one.
+   */
   private ageLog(dt: number): void {
     const log = this.state.log;
     for (const msg of log) msg.t += dt;
-    let i = 0;
-    while (i < log.length) {
-      if (log[i].t > LOG_TTL) log.splice(i, 1);
-      else i += 1;
-    }
-    if (log.length > 5) log.splice(0, log.length - 5);
+    if (log.length > LOG_MAX) log.splice(0, log.length - LOG_MAX);
   }
 
   private emit(): void {

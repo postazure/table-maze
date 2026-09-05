@@ -16,7 +16,7 @@ import type {
 } from '../src/engine/types';
 import { makeRng } from '../src/engine/rng';
 import { Game } from '../src/engine/game';
-import { damageMonster, heroAttack, heroAttackValue, monsterAttack, pushSfx } from '../src/engine/combat';
+import { LOG_MAX, damageMonster, heroAttack, heroAttackValue, monsterAttack, pushLog, pushSfx } from '../src/engine/combat';
 import { updateMonsters } from '../src/engine/monsters';
 import { clearSave, loadGame, saveGame } from '../src/engine/save';
 import { equip, heroMoveMs, upgradeRandomItem } from '../src/engine/items';
@@ -30,9 +30,12 @@ import {
   FREEZE_MS,
   addBuff,
   buffPhase,
+  SPIRIT_MAX_MULT,
   buffDef,
   frostIntervalMs,
   furyAtk,
+  shrineDurationMs,
+  spiritMult,
   stoneDef,
   wardTempHp,
 } from '../src/engine/shrines';
@@ -2277,4 +2280,94 @@ test('save/load keeps running shrine effects and temporary hearts', () => {
   assert.equal(loaded.hero.buffs[0].level, 3);
   assert.equal(loaded.hero.tempHp, 6);
   assert.equal(loaded.hero.tempHpMax, 8);
+});
+
+
+test('spirit stretches a timed shrine and fattens the ward', () => {
+  // Duration is the currency of a timed shrine, hearts the currency of the
+  // ward, and spirit buys more of whichever one the shrine has.
+  assert.ok(shrineDurationMs('fury', 5) > shrineDurationMs('fury', 0));
+  assert.ok(wardTempHp(1, 5) > wardTempHp(1, 0));
+  // ...and never both at once for the same shrine: the ward has no clock to
+  // stretch, and a timed shrine's potency takes no spirit argument at all.
+  assert.equal(shrineDurationMs('ward', 99), 0);
+
+  const plain = corridorGame();
+  plain.state.hero.spirit = 0;
+  const weak = addBuff(plain.state.hero, 'frost', 1);
+
+  const blessed = corridorGame();
+  blessed.state.hero.spirit = 6;
+  const strong = addBuff(blessed.state.hero, 'frost', 1);
+
+  assert.ok(strong.totalMs > weak.totalMs, 'a high-spirit hero holds it longer');
+  assert.equal(strong.ms, strong.totalMs, 'and starts full');
+});
+
+test('spirit never gives more than double, however high it climbs', () => {
+  assert.equal(spiritMult(0), 1);
+  assert.equal(spiritMult(1000), SPIRIT_MAX_MULT);
+  assert.equal(shrineDurationMs('time', 1000), shrineDurationMs('time', 0) * SPIRIT_MAX_MULT);
+  assert.equal(wardTempHp(1, 1000), wardTempHp(1, 0) * SPIRIT_MAX_MULT);
+});
+
+test('a buff keeps the length it was lit with when the hero levels up', () => {
+  const g = corridorGame();
+  g.state.hero.spirit = 2;
+  const buff = addBuff(g.state.hero, 'fury', 1);
+  const lit = buff.totalMs;
+
+  // Levelling mid-effect must not move the bar the player is watching.
+  g.state.hero.spirit = 20;
+  g.tick(1000);
+  assert.equal(buff.totalMs, lit);
+  assert.equal(buff.ms, lit - 1000);
+});
+
+test('a ward lit at high spirit hands out more hearts', () => {
+  const { g } = shrineGame('ward');
+  g.state.hero.spirit = 8;
+  stepEast(g);
+  assert.equal(g.state.hero.tempHp, wardTempHp(1, 8));
+  assert.ok(g.state.hero.tempHp > wardTempHp(1, 0));
+});
+
+
+// ---------------------------------------------------------------------------
+// The run log
+// ---------------------------------------------------------------------------
+
+test('log lines no longer expire: the log is a history, not a set of toasts', () => {
+  const g = corridorGame();
+  pushLog(g.state, 'Picked up a chest key');
+  // Far longer than the six seconds the HUD used to fade a line out over.
+  for (let i = 0; i < 60; i++) g.tick(1000);
+  assert.ok(
+    g.state.log.some((l) => l.text === 'Picked up a chest key'),
+    'a line the player opens the log to find must still be there',
+  );
+});
+
+test('the log keeps the newest LOG_MAX lines and no more', () => {
+  const g = corridorGame();
+  g.state.log.length = 0;
+  for (let i = 0; i < LOG_MAX * 2; i++) {
+    pushLog(g.state, `line ${i}`);
+    g.tick(500); // clears the de-duplication window between pushes
+  }
+  assert.equal(g.state.log.length, LOG_MAX);
+  assert.equal(g.state.log[g.state.log.length - 1].text, `line ${LOG_MAX * 2 - 1}`, 'newest last');
+  assert.ok(!g.state.log.some((l) => l.text === 'line 0'), 'the oldest fell off');
+});
+
+test('the same event twice in a row is one line, but not forever', () => {
+  const g = corridorGame();
+  g.state.log.length = 0;
+  pushLog(g.state, 'Slew the Slime');
+  pushLog(g.state, 'Slew the Slime');
+  assert.equal(g.state.log.length, 1, 'one event, one line');
+
+  g.tick(1000);
+  pushLog(g.state, 'Slew the Slime');
+  assert.equal(g.state.log.length, 2, 'the same thing a second later really happened twice');
 });

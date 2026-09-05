@@ -87,6 +87,19 @@ const LEVEL_GROWTH = 1.2;
 export const HERO_ATK_BASE = 2;
 export const HERO_HP_BASE = 16; // quarter hearts: four hearts at level one
 
+/**
+ * The hero's own spirit at `level`, before any spirit-slot item adds to it.
+ *
+ * Flat and slow on purpose. Spirit is not a third combat stat racing atk and
+ * hp up the `levelCurve`; it is a dial on how much a shrine gives, and the
+ * point of a shrine is that it runs out. One point to start with and one more
+ * every third level keeps a deep hero's alcoves better than a shallow hero's
+ * without ever making them the plan.
+ */
+export function spiritForLevel(level: number): number {
+  return 1 + Math.floor(Math.max(1, Math.floor(level)) / 3);
+}
+
 /** Base attack or HP a combatant of `level` carries before role and gear. */
 export function levelCurve(base: number, level: number): number {
   const l = Math.max(1, Math.floor(level));
@@ -102,6 +115,7 @@ export function newHero(): Hero {
     maxHp: levelCurve(HERO_HP_BASE, 1),
     atk: levelCurve(HERO_ATK_BASE, 1),
     def: 0,
+    spirit: spiritForLevel(1),
     level: 1,
     xp: 0,
     xpToNext: xpForLevel(1),
@@ -137,6 +151,9 @@ export function applyLevelUp(hero: Hero): void {
     hero.level += 1;
     hero.atk += levelCurve(HERO_ATK_BASE, hero.level) - levelCurve(HERO_ATK_BASE, from);
     hero.maxHp += levelCurve(HERO_HP_BASE, hero.level) - levelCurve(HERO_HP_BASE, from);
+    // Added as a delta, not assigned: whatever a spirit item contributed to
+    // the stat has to survive the level up.
+    hero.spirit += spiritForLevel(hero.level) - spiritForLevel(from);
     hero.hp = hero.maxHp;
     hero.xpToNext = xpForLevel(hero.level);
   }

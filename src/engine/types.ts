@@ -463,6 +463,13 @@ export interface Hero {
   maxHp: number;
   atk: number;
   def: number;
+  /**
+   * Spirit: the hero's hold on the dungeon's magic. It creeps up with their
+   * level and every spirit-slot item adds to it, the way the stone ring adds
+   * defense. Nothing in a fight reads it — what it buys is shrines: every
+   * point makes a shrine's gift bigger (see `engine/shrines.ts`).
+   */
+  spirit: number;
   level: number;
   xp: number;
   xpToNext: number;

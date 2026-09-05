@@ -12,6 +12,7 @@
  */
 import type { Hero, ItemKind, ItemSlot, MagicItem, Rng } from './types';
 import { HEART, ITEM_KINDS, ITEM_SLOT } from './types';
+import { spiritForLevel } from './balance';
 
 /** Slots in display / roll order. */
 export const ITEM_SLOTS: readonly ItemSlot[] = ['offense', 'defense', 'spirit'];
@@ -24,9 +25,11 @@ export const DEFAULT_MOVE_MS = 140;
  * "this item does not do that": 0, 1 for multipliers, false for flags.
  */
 export interface ItemStats {
-  /** Constant bonuses, applied to hero.atk / def / maxHp on equip. */
+  /** Constant bonuses, applied to hero.atk / def / spirit / maxHp on equip. */
   atkBonus: number;
   defBonus: number;
+  /** Every spirit-slot item carries one; see `SPIRIT_SLOT_BONUS`. */
+  spiritBonus: number;
   maxHpBonus: number;
   /** Melee reach in tiles (1 = adjacent only, 2 = long sword). */
   reach: number;
@@ -77,6 +80,7 @@ export interface ItemStats {
 export const NEUTRAL: ItemStats = {
   atkBonus: 0,
   defBonus: 0,
+  spiritBonus: 0,
   maxHpBonus: 0,
   reach: 1,
   fireIntervalMs: 0,
@@ -136,10 +140,20 @@ export function kindsForSlot(slot: ItemSlot): ItemKind[] {
   return ITEM_KINDS.filter((k) => ITEM_SLOT[k] === slot);
 }
 
+/**
+ * Spirit a spirit-slot item carries, whatever else it does. The slot is the
+ * hero's channel to the dungeon's magic, so wearing anything in it makes the
+ * floor's shrines go further; which item it is only decides what else you get.
+ */
+export function spiritSlotBonus(level: number): number {
+  return 1 + Math.floor(Math.max(1, Math.floor(level || 1)) / 3);
+}
+
 /** Full stat bag of one item at its own level. */
 export function itemStats(item: MagicItem): ItemStats {
   const L = Math.max(1, Math.floor(item.level || 1));
   const s: ItemStats = { ...NEUTRAL };
+  if (ITEM_SLOT[item.kind] === 'spirit') s.spiritBonus = spiritSlotBonus(L);
   switch (item.kind) {
     // --- offense ---------------------------------------------------------
     case 'longSword':
@@ -299,6 +313,7 @@ export function equip(hero: Hero, item: MagicItem): MagicItem | null {
     const s = itemStats(old);
     hero.atk -= s.atkBonus;
     hero.def -= s.defBonus;
+    hero.spirit -= s.spiritBonus;
     if (s.maxHpBonus) {
       hero.maxHp = Math.max(1, hero.maxHp - s.maxHpBonus);
       hero.hp = Math.max(1, Math.min(hero.hp, hero.maxHp));
@@ -309,6 +324,7 @@ export function equip(hero: Hero, item: MagicItem): MagicItem | null {
   const n = itemStats(item);
   hero.atk += n.atkBonus;
   hero.def += n.defBonus;
+  hero.spirit += n.spiritBonus;
   if (n.maxHpBonus) {
     hero.maxHp += n.maxHpBonus;
     hero.hp += n.maxHpBonus;
@@ -350,6 +366,7 @@ export function upgradeRandomItem(hero: Hero, rng: Rng): MagicItem | null {
 
   hero.atk += after.atkBonus - before.atkBonus;
   hero.def += after.defBonus - before.defBonus;
+  hero.spirit += after.spiritBonus - before.spiritBonus;
   const dHp = after.maxHpBonus - before.maxHpBonus;
   if (dHp !== 0) {
     // Extra hearts arrive full: hp moves with maxHp, then is clamped either way.
@@ -370,6 +387,12 @@ export function reviveGear(hero: Hero): void {
     defense: g?.defense ?? null,
     spirit: g?.spirit ?? null,
   };
+  // Spirit is exactly the level curve plus the worn item, so a save written
+  // before the stat existed rebuilds rather than being thrown away.
+  if (typeof hero.spirit !== 'number') {
+    const worn = hero.gear.spirit;
+    hero.spirit = spiritForLevel(hero.level) + (worn ? itemStats(worn).spiritBonus : 0);
+  }
   if (typeof hero.shieldReady !== 'boolean') hero.shieldReady = false;
   const t = hero.timers as Partial<Hero['timers']> | undefined;
   hero.timers = {
@@ -394,6 +417,13 @@ const hearts = (hp: number): string => {
  */
 export function itemDescription(item: MagicItem): string {
   const s = itemStats(item);
+  // Everything in the spirit slot raises Spirit, so that half of the sentence
+  // is written once here rather than six times below.
+  const spirit = s.spiritBonus > 0 ? ` +${s.spiritBonus} spirit, so shrines give more.` : '';
+  return `${itemEffect(item, s)}${spirit}`;
+}
+
+function itemEffect(item: MagicItem, s: ItemStats): string {
   switch (item.kind) {
     case 'longSword':
       return `Your swings reach 2 tiles in a straight line, so you hit first.${s.atkBonus ? ` +${s.atkBonus} attack.` : ''}`;
