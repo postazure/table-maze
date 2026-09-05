@@ -574,6 +574,151 @@ export const MONSTER_CFGS: Record<string, CreatureCfg> = {
       [4, 3],
     ],
   },
+
+  // -- boss encounters --------------------------------------------------------
+
+  // A hooded robe (asymmetric so a staff can lean off the right shoulder,
+  // hence bodyPositions rather than symmetric widths). Pale face patch (Y)
+  // sits inside the hood; tiny green eyes (E) glow beneath it, and the same
+  // green reappears as a glowing orb atop the staff.
+  necromancer: {
+    bodyPositions: [
+      [3, 0],
+      [4, 0],
+      [2, 1],
+      [3, 1],
+      [4, 1],
+      [5, 1],
+      [7, 1],
+      [1, 2],
+      [2, 2],
+      [3, 2],
+      [4, 2],
+      [5, 2],
+      [6, 2],
+      [7, 2],
+      [1, 3],
+      [2, 3],
+      [3, 3],
+      [4, 3],
+      [5, 3],
+      [6, 3],
+      [7, 3],
+      [1, 4],
+      [2, 4],
+      [3, 4],
+      [4, 4],
+      [5, 4],
+      [6, 4],
+      [7, 4],
+      [1, 5],
+      [2, 5],
+      [3, 5],
+      [4, 5],
+      [5, 5],
+      [6, 5],
+      [7, 5],
+      [1, 6],
+      [2, 6],
+      [3, 6],
+      [4, 6],
+      [5, 6],
+      [6, 6],
+      [7, 6],
+      [0, 7],
+      [1, 7],
+      [2, 7],
+      [3, 7],
+      [4, 7],
+      [5, 7],
+      [6, 7],
+    ],
+    body: '#3a1f52',
+    accent: '#d8c9b8',
+    accentPositions: [
+      [3, 2],
+      [4, 2],
+    ],
+    eye: '#3aff6e',
+    eyePositions: [
+      [3, 3],
+      [4, 3],
+      [7, 0],
+    ],
+  },
+  // A faceted gem, symmetric, so bodyPositions draws the diamond directly.
+  // Dark stone base (Y) underneath, one white facet highlight (E) up top.
+  crystal: {
+    bodyPositions: [
+      [3, 0],
+      [4, 0],
+      [2, 1],
+      [3, 1],
+      [4, 1],
+      [5, 1],
+      [1, 2],
+      [2, 2],
+      [3, 2],
+      [4, 2],
+      [5, 2],
+      [6, 2],
+      [1, 3],
+      [2, 3],
+      [3, 3],
+      [4, 3],
+      [5, 3],
+      [6, 3],
+      [2, 4],
+      [3, 4],
+      [4, 4],
+      [5, 4],
+      [3, 5],
+      [4, 5],
+    ],
+    body: '#c13fe0',
+    accent: '#241a30',
+    accentPositions: [
+      [2, 6],
+      [3, 6],
+      [4, 6],
+      [5, 6],
+      [2, 7],
+      [3, 7],
+      [4, 7],
+      [5, 7],
+    ],
+    eye: '#ffffff',
+    eyePositions: [[3, 1]],
+  },
+  // Big and wide (widths hits the full 8px row through the shoulders), bone
+  // horns curling off the top corners, red eyes.
+  minotaur: {
+    widths: [2, 3, 4, 4, 4, 4, 4, 3],
+    body: '#6b4226',
+    accent: '#e8dcc0',
+    accentPositions: [
+      [1, 0],
+      [6, 0],
+    ],
+    eye: '#ff2a2a',
+    eyePositions: [
+      [2, 2],
+      [5, 2],
+    ],
+  },
+  // A weeping angel statue: pale stone, hands (the lighter accent) covering
+  // the whole eye line so no eye color is ever needed.
+  angel: {
+    widths: [0, 2, 3, 3, 3, 3, 3, 3],
+    body: '#9a9aa4',
+    accent: '#c7c7d1',
+    accentPositions: [
+      [2, 2],
+      [3, 2],
+      [4, 2],
+      [5, 2],
+    ],
+  },
 };
 
 export const MONSTER_KEYWORDS = [
@@ -609,6 +754,10 @@ export const MONSTER_KEYWORDS = [
   'bee',
   'wasp',
   'demon',
+  'necromancer',
+  'crystal',
+  'minotaur',
+  'angel',
 ] as const;
 
 const MONSTER_KEYWORD_SET: ReadonlySet<string> = new Set(MONSTER_KEYWORDS);

@@ -1,15 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ITEM_SLOT, Tile, key } from '../src/engine/types';
-import type { GameState, LevelData, MagicItem, Monster, Vec } from '../src/engine/types';
+import { HEART, ITEM_SLOT, Tile, key } from '../src/engine/types';
+import type { BossData, GameState, LevelData, MagicItem, Monster, Rect, RunStats, Vec } from '../src/engine/types';
 import { makeRng } from '../src/engine/rng';
 import { Game } from '../src/engine/game';
-import { heroAttack, monsterAttack } from '../src/engine/combat';
+import { damageMonster, heroAttack, monsterAttack } from '../src/engine/combat';
 import { updateMonsters } from '../src/engine/monsters';
 import { clearSave, loadGame, saveGame } from '../src/engine/save';
-import { equip, heroMoveMs } from '../src/engine/items';
+import { equip, heroMoveMs, upgradeRandomItem } from '../src/engine/items';
 import { generateShopLevel, offerAt } from '../src/engine/shop';
+import { makeBossMonster } from '../src/engine/boss';
+import { newHero } from '../src/engine/balance';
 
 // ---------------------------------------------------------------------------
 // Test fixtures: hand-drawn levels so nothing depends on the generator.
@@ -97,10 +99,36 @@ function install(g: Game, level: LevelData, at: Vec): void {
   st.descending = 0;
 }
 
+/**
+ * A hand-made boss chamber. Same map syntax as `mkLevel`, plus the `BossData`
+ * the per-tick rules read. The real generators live behind `generateBossLevel`
+ * and nothing here depends on their layouts.
+ */
+function mkBossLevel(rows: string[], boss: BossData, over: Partial<LevelData> = {}): LevelData {
+  return mkLevel(rows, { kind: 'boss', depth: 3, boss, ...over });
+}
+
+/** Necromancer state with the shipped numbers, overridable per test. */
+function necroData(over: Partial<Extract<BossData, { kind: 'necromancer' }>> = {}): BossData {
+  return {
+    kind: 'necromancer',
+    defeated: false,
+    spellMs: 90000,
+    spellTotalMs: 90000,
+    spawnMs: 4000,
+    spawnEveryMs: 5000,
+    maxMinions: 8,
+    crystalsTotal: 2,
+    ...over,
+  };
+}
+
 /** A 9x3 straight corridor along y = 1. */
 const CORRIDOR = ['#########', '#.......#', '#########'];
 /** A 15x3 corridor for tests that need room to run away. */
 const LONG_CORRIDOR = ['#'.repeat(15), `#${'.'.repeat(13)}#`, '#'.repeat(15)];
+/** A 7x7 chamber (floor at 1..5 both ways) for the necromancer's tests. */
+const CHAMBER = ['#######', '#.....#', '#.....#', '#.....#', '#.....#', '#.....#', '#######'];
 
 /** Trail keys "1,1" .. "n,1". */
 function trailTo(n: number): Set<string> {
@@ -616,7 +644,7 @@ function shopGame(gold: number, at: Vec = { x: 3, y: 7 }): Game {
   return g;
 }
 
-test('a shop follows every third floor and leads on to the next depth', () => {
+test('a boss follows every third floor, then the shop, then the next depth', () => {
   const g = corridorGame();
   const st = g.state;
   st.depth = 3;
@@ -626,9 +654,30 @@ test('a shop follows every third floor and leads on to the next depth', () => {
   g.pointerAt({ x: 2, y: 1 });
   g.tick(150);
   g.tick(800);
-  assert.equal(st.level.kind, 'shop', 'depth 3 is followed by the shop');
-  assert.equal(st.depth, 3, 'a shop is not a new floor');
+  assert.equal(st.level.kind, 'boss', 'depth 3 leads into the boss chamber');
+  assert.equal(st.depth, 3, 'a boss chamber is not a new floor');
   assert.equal(st.stats.deepest, 3);
+  assert.deepEqual(st.hero.pos, st.level.start);
+  assert.equal(st.modal?.kind, 'bossIntro', 'and it opens with the briefing');
+
+  // Nothing moves until the player has read who is down there.
+  const frozen = st.stats.playMs;
+  g.tick(500);
+  assert.equal(st.stats.playMs, frozen, 'the world waits behind the intro');
+  g.dismissModal();
+  g.tick(16);
+  assert.ok(st.stats.playMs > frozen, 'and runs once it is dismissed');
+
+  // Out of a beaten chamber by its stairs: the shop, at the same depth.
+  install(g, mkBossLevel(CORRIDOR, { kind: 'minotaur', defeated: true }, { exit: { x: 2, y: 1 } }), {
+    x: 1,
+    y: 1,
+  });
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(150);
+  g.tick(800);
+  assert.equal(st.level.kind, 'shop', 'the boss is followed by the shop');
+  assert.equal(st.depth, 3, 'a shop is not a new floor either');
   assert.deepEqual(st.hero.pos, st.level.start);
   assert.equal(st.level.shop?.offers.length, 3);
   assert.ok(st.log.some((l) => l.text === 'Shop'));
@@ -1392,4 +1441,296 @@ test('engagement ends when the monster dies or the player drags elsewhere', () =
   assert.equal(m2.hp, hp, 'walking away disengages');
   g.tick(320);
   assert.equal(m2.hp, hp, 'and stays disengaged');
+});
+
+// ---------------------------------------------------------------------------
+// Boss chambers
+// ---------------------------------------------------------------------------
+
+test('the necromancer finishing his spell ends the run', () => {
+  const g = Game.forTest(31);
+  const level = mkBossLevel(CORRIDOR, necroData({ spellMs: 50, crystalsTotal: 1 }));
+  level.monsters.push(makeBossMonster('boss', 3, { x: 7, y: 1 }, 'necro'));
+  level.monsters.push(makeBossMonster('crystal', 3, { x: 5, y: 1 }, 'crystal1'));
+  install(g, level, { x: 1, y: 1 });
+  const st = g.state;
+  st.depth = 3;
+  st.stats.deepest = 3;
+
+  g.tick(40);
+  assert.equal(st.over, false, 'still time on the clock');
+
+  g.tick(40);
+  assert.equal(st.over, true, 'and then there is not');
+  const modal = st.modal as { kind: string; cause: string; boss: string; stats: RunStats } | null;
+  assert.ok(modal, 'the game-over screen is up');
+  assert.equal(modal.kind, 'gameOver');
+  assert.equal(modal.cause, 'The Necromancer finished his spell.');
+  assert.equal(modal.boss, 'necromancer');
+  assert.equal(modal.stats.deepest, 3);
+  assert.equal(modal.stats.bosses, 0);
+  assert.ok(st.log.some((l) => l.text === 'The Necromancer finished his spell.'));
+});
+
+test('the necromancer raises a skeleton on his clock, up to his limit', () => {
+  const g = Game.forTest(37);
+  const level = mkBossLevel(CHAMBER, necroData({ spawnMs: 100, spawnEveryMs: 1000, maxMinions: 1 }), {
+    exit: { x: 3, y: 3 },
+  });
+  const necro = makeBossMonster('boss', 3, { x: 3, y: 3 }, 'necro');
+  level.monsters.push(necro, makeBossMonster('crystal', 3, { x: 5, y: 5 }, 'crystal1'));
+  install(g, level, { x: 1, y: 1 });
+  g.state.depth = 3;
+  const minions = (): Monster[] => level.monsters.filter((m) => m.kind === 'minion' && m.alive);
+
+  g.tick(50);
+  assert.equal(minions().length, 0, 'not yet');
+
+  g.tick(100);
+  assert.equal(minions().length, 1, 'one rises beside him');
+  const first = minions()[0];
+  assert.equal(Math.abs(first.pos.x - 3) + Math.abs(first.pos.y - 3), 1, 'right next to him');
+  assert.equal(first.state, 'chasing', 'and it comes for the hero at once');
+
+  g.tick(1000);
+  assert.equal(minions().length, 1, 'his limit holds');
+
+  first.alive = false;
+  g.tick(1000);
+  const alive = minions();
+  assert.equal(alive.length, 1, 'a fallen skeleton makes room for the next');
+  assert.notEqual(alive[0].id, first.id, 'ids stay unique');
+});
+
+test('smashing every crystal sends the necromancer packing and wins the floor', () => {
+  const g = Game.forTest(77);
+  const level = mkBossLevel(CHAMBER, necroData({ crystalsTotal: 2 }), { exit: { x: 3, y: 3 } });
+  const necro = makeBossMonster('boss', 3, { x: 3, y: 3 }, 'necro');
+  const first = makeBossMonster('crystal', 3, { x: 1, y: 5 }, 'crystal1');
+  const last = makeBossMonster('crystal', 3, { x: 5, y: 5 }, 'crystal2');
+  const minion = makeBossMonster('minion', 3, { x: 2, y: 3 }, 'minion0');
+  level.monsters.push(necro, first, last, minion);
+  install(g, level, { x: 5, y: 4 });
+  const st = g.state;
+  st.depth = 3;
+  first.alive = false;
+  first.hp = 0;
+  last.hp = 1;
+  st.hero.xpToNext = 9999; // keep the crystal's xp from muddying the reward
+  const maxHp0 = st.hero.maxHp;
+
+  heroAttack(st, last, makeRng(5));
+  assert.equal(last.alive, false, 'the last crystal is dust');
+
+  g.tick(16);
+  assert.equal(level.boss?.defeated, true);
+  assert.equal(necro.alive, false, 'he does not stay to argue');
+  assert.equal(minion.alive, false, 'and his skeletons crumble with him');
+  assert.deepEqual(level.exit, { x: 3, y: 3 }, 'the stairs were under him');
+  assert.ok(st.fx.some((f) => f.kind === 'text' && f.text.includes('flees')));
+
+  const modal = st.modal as { kind: string; boss: string; upgraded: MagicItem | null; heart: boolean } | null;
+  assert.ok(modal, 'the win popup is up');
+  assert.equal(modal.kind, 'bossWon');
+  assert.equal(modal.boss, 'necromancer');
+  assert.equal(modal.upgraded, null, 'a hero with no gear gets no upgrade');
+  assert.equal(modal.heart, true);
+  assert.equal(st.stats.bosses, 1);
+  assert.equal(st.hero.maxHp, maxHp0 + HEART, 'they get a heart instead');
+  assert.equal(st.hero.hp, st.hero.maxHp, 'and are patched up');
+});
+
+test('a minotaur hit takes a third of the hearts and three of them end the run', () => {
+  const g = Game.forTest(11);
+  const level = mkBossLevel(LONG_CORRIDOR, { kind: 'minotaur', defeated: false });
+  const bull = makeBossMonster('minotaur', 3, { x: 6, y: 1 }, 'minotaur');
+  level.monsters.push(bull);
+  install(g, level, { x: 7, y: 1 });
+  const st = g.state;
+  const hero = st.hero;
+  hero.maxHp = 12;
+  hero.hp = 12;
+  hero.def = 99; // armour is no help at all
+
+  monsterAttack(st, bull, makeRng(3));
+  assert.equal(hero.hp, 8, 'a third of max hp, defense ignored');
+  assert.deepEqual(hero.pos, { x: 8, y: 1 }, 'and a shove with it');
+  assert.ok(st.fx.some((f) => f.kind === 'shake'));
+
+  monsterAttack(st, bull, makeRng(3));
+  assert.equal(hero.hp, 4);
+  assert.equal(st.over, false, 'still standing');
+
+  monsterAttack(st, bull, makeRng(3));
+  assert.equal(hero.hp, 0, 'left on the floor at zero');
+  assert.equal(hero.sleeping, false, 'nobody naps in a boss chamber');
+  assert.equal(st.over, true);
+  const modal = st.modal as { kind: string; cause: string; boss: string } | null;
+  assert.ok(modal);
+  assert.equal(modal.kind, 'gameOver');
+  assert.equal(modal.cause, 'The Minotaur caught you.');
+  assert.equal(modal.boss, 'minotaur');
+});
+
+test('an angel is stone while the hero looks at it', () => {
+  const g = Game.forTest(13);
+  const level = mkBossLevel(LONG_CORRIDOR, { kind: 'angels', defeated: false, rooms: [] });
+  const angel = makeBossMonster('angel', 3, { x: 7, y: 1 }, 'angel1');
+  angel.state = 'chasing';
+  level.monsters.push(angel);
+  install(g, level, { x: 5, y: 1 });
+  const hero = g.state.hero;
+  hero.maxHp = 12;
+  hero.hp = 12;
+  hero.facing = 'E'; // straight at it
+  const rng = makeRng(4);
+
+  for (let i = 0; i < 5; i++) updateMonsters(g.state, 200, rng);
+  assert.deepEqual(angel.pos, { x: 7, y: 1 }, 'watched, it cannot move');
+  assert.equal(hero.hp, 12, 'nor touch you');
+
+  hero.facing = 'W'; // back turned
+  updateMonsters(g.state, 200, rng);
+  assert.deepEqual(angel.pos, { x: 6, y: 1 }, 'look away and it closes in');
+
+  updateMonsters(g.state, 200, rng);
+  assert.equal(hero.hp, 8, 'its touch takes a third of the hearts');
+  assert.ok(g.state.fx.some((f) => f.kind === 'flash'), 'and greys the tile');
+});
+
+test('an idle angel wakes when the hero walks into its room', () => {
+  const g = Game.forTest(17);
+  const rooms: Rect[] = [
+    { x: 1, y: 1, w: 3, h: 1 },
+    { x: 9, y: 1, w: 5, h: 1 },
+  ];
+  const level = mkBossLevel(LONG_CORRIDOR, { kind: 'angels', defeated: false, rooms });
+  const angel = makeBossMonster('angel', 3, { x: 11, y: 1 }, 'angel1');
+  angel.roomId = 1;
+  level.monsters.push(angel);
+  install(g, level, { x: 1, y: 1 });
+  const st = g.state;
+  st.depth = 3;
+  st.hero.facing = 'W';
+
+  g.tick(16);
+  assert.equal(angel.state, 'idle', 'another room is none of its business');
+  assert.deepEqual(angel.pos, { x: 11, y: 1 });
+
+  st.hero.pos = { x: 9, y: 1 };
+  st.hero.rpos = { x: 9, y: 1 };
+  g.tick(16);
+  assert.equal(angel.state, 'chasing', 'walk in and it opens its eyes');
+  assert.ok(st.fx.some((f) => f.kind === 'text' && f.text === '!'));
+  assert.ok(st.log.some((l) => l.text === 'An angel stirs...'));
+});
+
+test('reaching the stairs beats the minotaur, then the shop follows', () => {
+  const g = Game.forTest(23);
+  const level = mkBossLevel(CORRIDOR, { kind: 'minotaur', defeated: false }, { exit: { x: 2, y: 1 } });
+  install(g, level, { x: 1, y: 1 });
+  const st = g.state;
+  st.depth = 3;
+  equip(st.hero, { kind: 'stoneRing', level: 2 });
+
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(150);
+  const modal = st.modal as { kind: string; boss: string; upgraded: MagicItem | null; heart: boolean } | null;
+  assert.ok(modal, 'the stairs are the win');
+  assert.equal(modal.kind, 'bossWon');
+  assert.equal(modal.boss, 'minotaur');
+  assert.equal(modal.upgraded?.kind, 'stoneRing');
+  assert.equal(modal.upgraded?.level, 3, 'the worn item gained a level');
+  assert.equal(modal.heart, false);
+  assert.equal(st.hero.gear.defense?.level, 3, 'in place, so the hero wears the upgrade');
+  assert.equal(st.stats.bosses, 1);
+  assert.equal(level.boss?.defeated, true);
+  assert.ok(st.descending > 0, 'the descent is queued up behind the popup');
+
+  g.tick(800);
+  assert.equal(st.level.kind, 'boss', 'which holds it back');
+  g.dismissModal();
+  g.tick(800);
+  assert.equal(st.level.kind, 'shop', 'and lets it run');
+  assert.equal(st.depth, 3);
+});
+
+test('upgradeRandomItem bumps a worn item and re-applies its bonuses', () => {
+  const hero = newHero();
+  equip(hero, { kind: 'stoneRing', level: 3 }); // +1 def
+  const def0 = hero.def;
+  const up = upgradeRandomItem(hero, makeRng(1));
+  assert.equal(up?.kind, 'stoneRing');
+  assert.equal(up?.level, 4);
+  assert.equal(hero.gear.defense, up, 'the same object, bumped in place');
+  assert.equal(hero.def, def0 + 1, 'and its defense re-applied at the new level');
+
+  const other = newHero();
+  equip(other, { kind: 'lifeAmulet', level: 3 }); // +1 heart
+  const maxHp0 = other.maxHp;
+  other.hp = 5;
+  const grew = upgradeRandomItem(other, makeRng(2));
+  assert.equal(grew?.level, 4);
+  assert.equal(other.maxHp, maxHp0 + HEART, 'another heart at level 4');
+  assert.equal(other.hp, 5 + HEART, 'and it arrives full');
+
+  assert.equal(upgradeRandomItem(newHero(), makeRng(3)), null, 'a bare hero has nothing to bump');
+});
+
+test('an invulnerable monster shrugs off every hit', () => {
+  const g = corridorGame();
+  const bull = makeBossMonster('minotaur', 3, { x: 3, y: 1 }, 'minotaur');
+  bull.hp = bull.maxHp = 10;
+  g.state.level.monsters.push(bull);
+
+  damageMonster(g.state, bull, 99, makeRng(1));
+  assert.equal(bull.hp, 10, 'not a scratch');
+  assert.equal(bull.alive, true);
+  assert.equal(bull.hitFlash, 0, 'not even a flinch');
+  assert.equal(g.state.stats.kills, 0);
+  assert.ok(g.state.fx.some((f) => f.kind === 'text' && f.text === 'Immune'));
+
+  heroAttack(g.state, bull, makeRng(2));
+  assert.equal(bull.hp, 10, 'swinging at it is just as pointless');
+});
+
+test('a finished run is wiped from the save and its button starts a new one', () => {
+  useMemStorage();
+  const g = Game.forTest(4321);
+  const level = mkBossLevel(CORRIDOR, { kind: 'minotaur', defeated: false });
+  install(g, level, { x: 1, y: 1 });
+  const st = g.state;
+  st.depth = 3;
+  st.stats.deepest = 3;
+
+  saveGame(st);
+  const live = loadGame() as GameState;
+  assert.ok(live, 'a run in progress saves');
+
+  // Reloading mid-boss lands back in the briefing, with the clock still held.
+  const resumed = new Game(live);
+  assert.equal(resumed.state.modal?.kind, 'bossIntro');
+
+  const bull = makeBossMonster('minotaur', 3, { x: 2, y: 1 }, 'minotaur');
+  level.monsters.push(bull);
+  st.hero.maxHp = 9;
+  st.hero.hp = 1;
+  monsterAttack(st, bull, makeRng(3));
+  assert.equal(st.over, true);
+
+  saveGame(st);
+  assert.equal(loadGame(), null, 'a dead run wipes the save instead of writing it');
+
+  // A saved state that did end never comes back either.
+  const dead = new Game({ ...live, over: true });
+  assert.equal(dead.state.depth, 1, 'a dead save starts a fresh run');
+  assert.equal(dead.state.level.kind, 'maze');
+
+  g.dismissModal();
+  assert.equal(st.over, true, 'the old state is left alone...');
+  assert.equal(g.state.over, false, '...and the game is on a new one');
+  assert.equal(g.state.depth, 1);
+  assert.equal(g.state.modal, null);
+  assert.equal(g.state.stats.bosses, 0);
+  clearSave();
 });

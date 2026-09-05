@@ -1,4 +1,4 @@
-import type { MonsterKind } from './types';
+import type { RosterKind } from './types';
 
 /**
  * Dungeon themes. Every three maze floors the look of the dungeon and the
@@ -40,7 +40,7 @@ export interface Theme {
   name: string;
   palette: ThemePalette;
   /** Monster looks per role. Names must contain a sprite keyword the renderer knows. */
-  roster: Record<MonsterKind, Look[]>;
+  roster: Record<RosterKind, Look[]>;
 }
 
 export const THEMES: readonly Theme[] = [

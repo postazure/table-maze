@@ -13,7 +13,7 @@
  * 7. Validate solvability; retry with a re-mixed seed, relax as a last resort.
  */
 import { Tile, key, parseKey, eq } from './types';
-import type { Chest, Door, KeyItem, LevelData, Monster, MonsterKind, Rng, Vec } from './types';
+import type { Chest, Door, KeyItem, LevelData, Monster, RosterKind, Rng, Vec } from './types';
 import { hashSeed, makeRng } from './rng';
 import { levelDims, makeMonster, rollChestLoot } from './balance';
 import { themeForDepth } from './themes';
@@ -390,7 +390,7 @@ function placeMonsters(
   rng: Rng,
 ): void {
   const count = Math.min(18, 5 + Math.floor(depth * 1.5));
-  const kinds: MonsterKind[] = [];
+  const kinds: RosterKind[] = [];
   if (count >= 3) kinds.push('guard', 'patrol', 'lurker');
   while (kinds.length < count) {
     const r = rng.next();

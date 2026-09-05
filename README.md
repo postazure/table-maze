@@ -41,6 +41,17 @@ Play it at **https://postazure.github.io/table-maze/**
     be knocked down. Lure it away from the corridor it watches, then loop around
     it through another passage. Kill one when you're well over its level and the
     reward is the biggest in the dungeon.
+- After every third floor you face a **boss** before you reach the shop. An intro card
+  explains the fight, then the game is on: **The Necromancer** channels a spell in a
+  central chamber while raising skeletons — smash all five crystals down his corridors
+  before the spell finishes, and you can't hurt him directly. **The Minotaur** is a slow
+  but unkillable hunter in a braided maze — just find the stairs. **The Weeping Angels**
+  haunt a grid of rooms and only move while your back is turned — face one down and it
+  freezes, find the stairs to escape. Win and one of your magic items gains a level (or
+  you gain a heart if you're wearing nothing), and your hearts refill. Lose in a boss
+  chamber and the run ends there — no waking up nearby this time — and a stats screen
+  shows how far you got, your level, kills, bosses beaten, gold, and time played before
+  you start a new run.
 - After every third floor you visit a **shop**: a room with three podiums, one magic
   item per slot. Each podium wears its slot emblem — a sword for offense, a shield for
   defense, a star for spirit — so you can see what kind of item it holds from across

@@ -70,6 +70,9 @@ export function HelpModal({ model, onClose }: HelpModalProps) {
               <li>Every third floor has a shop. Walk into a podium to see what the item does, then buy it or walk away.</li>
               <li>The emblem on a podium says what the item is for: sword = offense, shield = defense, star = spirit.</li>
               <li>You can buy one item per shop, and each slot holds one item.</li>
+              <li>After every third floor you face a boss. Beat it and one of your magic items gains a level.</li>
+              <li>Lose in a boss chamber and the run is over.</li>
+              <li>The hero faces the way they last walked. Some monsters care about that.</li>
             </ul>
           </div>
         </div>

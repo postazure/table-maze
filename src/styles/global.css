@@ -1091,3 +1091,189 @@ button {
   text-transform: uppercase;
   letter-spacing: 1px;
 }
+
+/* ---- Boss modals: intro, won, game over ---- */
+
+.boss-backdrop {
+  align-items: center;
+  padding: 12px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+.boss-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 440px;
+  max-height: 100%;
+  margin: 0 auto;
+  background: var(--panel);
+  border: 3px solid var(--border);
+  box-shadow: inset 2px 2px 0 var(--border-light), inset -3px -3px 0 var(--border-dark), 0 0 0 3px #050509;
+}
+
+.boss-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px;
+  border-bottom: 2px solid var(--border);
+  text-align: center;
+}
+
+.boss-title {
+  font-size: 12px;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.boss-subtitle {
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.boss-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.boss-sprite-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  background: #050509;
+  border: 2px solid var(--border);
+  align-self: center;
+}
+
+.boss-desc {
+  margin: 0;
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+  text-align: center;
+}
+
+.boss-tips {
+  margin: 0;
+}
+
+.boss-warn-line {
+  margin: 0;
+  padding: 8px;
+  background: #2a0f12;
+  border: 2px solid #7a1f1c;
+  color: #ffb3b0;
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.boss-btn-primary {
+  margin: 10px 12px 12px;
+  padding: 14px;
+  min-height: 44px;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+/* Boss won */
+
+.boss-reward {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  background: var(--panel-2);
+  border: 2px solid var(--border);
+  box-shadow: inset 1px 1px 0 var(--border-light), inset -2px -2px 0 var(--border-dark);
+}
+
+.boss-reward-icon {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #050509;
+  border: 3px solid var(--border);
+  box-shadow: inset 1px 1px 0 var(--border-light), inset -2px -2px 0 var(--border-dark);
+}
+
+.boss-reward-text {
+  min-width: 0;
+}
+
+.boss-reward-name {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.boss-reward-levels {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.boss-reward-new-level {
+  color: var(--gold);
+}
+
+.boss-healed-line {
+  color: var(--green);
+}
+
+/* Game over */
+
+.gameover-title {
+  color: var(--hp);
+}
+
+.gameover-cause {
+  font-size: 14px;
+}
+
+.gameover-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.gameover-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--panel-2);
+  border: 2px solid var(--border);
+  box-shadow: inset 1px 1px 0 var(--border-light), inset -2px -2px 0 var(--border-dark);
+}
+
+.gameover-stat-label {
+  font-size: 7px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.gameover-stat-value {
+  font-size: 12px;
+  color: var(--gold);
+}

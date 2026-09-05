@@ -4,8 +4,8 @@
  * No DOM access here: `main.ts` drives `tick`, `input.ts` drives `pointerAt`/
  * `pointerEnd`, and `onChange` is the "worth persisting" signal for save.ts.
  */
-import type { Chest, Dir, GameState, Hero, Monster, Rng, ShopOffer, Vec } from './types';
-import { ITEM_SLOT, SAVE_VERSION, eq, key, manhattan } from './types';
+import type { BossData, Chest, Dir, GameState, Hero, Monster, Rng, ShopOffer, Vec } from './types';
+import { HEART, ITEM_SLOT, SAVE_VERSION, eq, key, manhattan } from './types';
 import { hashSeed, makeRng } from './rng';
 import { bfsDistances, bfsPath } from './pathfind';
 import { generateLevel } from './maze';
@@ -15,11 +15,13 @@ import { updateMonsters } from './monsters';
 import {
   GOLD,
   GREEN,
+  GREY,
   ORANGE,
   RED,
   chestAt,
   closedDoorAt,
   damageMonster,
+  gameOver,
   heroAttack,
   keyAt,
   liveMonsterAt,
@@ -38,8 +40,14 @@ import {
   heroStats,
   itemName,
   reviveGear,
+  upgradeRandomItem,
 } from './items';
 import { generateShopLevel, offerAt, offerCenter } from './shop';
+import { BOSS_EVERY, bossName, generateBossLevel, makeBossMonster, roomAt } from './boss';
+
+/** The two boss kinds with per-tick rules, narrowed out of the union. */
+type NecroData = Extract<BossData, { kind: 'necromancer' }>;
+type AngelsData = Extract<BossData, { kind: 'angels' }>;
 
 /** ms between hero steps (~7 tiles/s) without speed boots. */
 const MOVE_MS = DEFAULT_MOVE_MS;
@@ -72,8 +80,8 @@ const BERSERK_PULSE_MS = 600;
 const BANE_PULSE_MS = 2000;
 /** How often the compass re-runs its BFS when the hero stands still. */
 const COMPASS_MS = 500;
-/** A shop appears after every third maze floor. */
-const SHOP_EVERY = 3;
+/** The necromancer's colour: his channelling ring and his exit. */
+const PURPLE = '#b98cff';
 
 export class Game {
   state!: GameState;
@@ -90,11 +98,18 @@ export class Game {
   private berserkTimer = 0;
   private compassTimer = COMPASS_MS;
   private dirty = false;
+  /**
+   * Next skeleton number on this boss floor. Seeded from the monster list so
+   * ids stay unique across a save/reload (dead minions stay in the list).
+   */
+  private minionSeq = 0;
 
   constructor(saved?: GameState | null) {
-    if (saved) {
+    // A dead run is not resumable: start over rather than reviving a corpse.
+    if (saved && !saved.over) {
       this.state = reviveState(saved);
       this.rng = makeRng(hashSeed(this.state.seed, this.state.depth, RNG_SALT));
+      this.minionSeq = this.state.level.monsters.length;
     } else {
       this.newGame();
     }
@@ -235,7 +250,14 @@ export class Game {
     updateMonsters(st, dt, this.rng);
     if (hero.hp !== hpBefore || hero.pos !== posBefore) this.dirty = true;
 
+    // --- boss chamber -------------------------------------------------------
+    this.tickBoss(dt);
     this.checkLevelUp();
+    // A boss popup (won, or the run ending) freezes everything else at once.
+    if (st.modal) {
+      this.emit();
+      return;
+    }
 
     // --- out of combat regen ------------------------------------------------
     // The regen ring shortens both the wait and the gap between hearts.
@@ -277,12 +299,14 @@ export class Game {
       pointer: null,
       fx: [],
       log: [],
-      stats: { kills: 0, deepest: depth, playMs: 0 },
+      stats: { kills: 0, deepest: depth, playMs: 0, bosses: 0 },
       descending: 0,
       modal: null,
       compass: null,
+      over: false,
     };
     this.rng = makeRng(hashSeed(seed, depth, RNG_SALT));
+    this.minionSeq = 0;
     this.moveTimer = 0;
     this.holdTimer = 0;
     this.engagedId = null;
@@ -292,18 +316,22 @@ export class Game {
   }
 
   /**
-   * Stairs taken. A maze floor whose depth is a multiple of three leads into a
-   * shop (same depth, items priced at that depth); leaving a shop goes on to
-   * the next maze floor. `state.depth` only ever counts maze floors.
+   * Stairs taken. A maze floor whose depth is a multiple of three leads into
+   * the boss chamber, the boss chamber into the shop (both at that same
+   * depth), and the shop on to the next maze floor. `state.depth` only ever
+   * counts maze floors.
    */
   private advanceLevel(): void {
     const st = this.state;
     const hero = st.hero;
-    const leftShop = st.level.kind === 'shop';
+    const from = st.level.kind;
     let salt = RNG_SALT;
-    if (!leftShop && st.depth % SHOP_EVERY === 0) {
+    if (from === 'boss') {
       st.level = generateShopLevel(st.depth, st.seed, hero);
       salt = RNG_SALT + 1;
+    } else if (from === 'maze' && st.depth % BOSS_EVERY === 0) {
+      st.level = generateBossLevel(st.depth, st.seed);
+      salt = RNG_SALT + 2;
     } else {
       st.depth += 1;
       st.stats.deepest = Math.max(st.stats.deepest, st.depth);
@@ -330,7 +358,16 @@ export class Game {
     this.engagedId = null;
     this.regenTimer = 0;
     this.compassTimer = COMPASS_MS;
-    pushLog(st, st.level.kind === 'shop' ? 'Shop' : `Depth ${st.depth}`);
+    this.minionSeq = st.level.monsters.length;
+    const boss = st.level.boss;
+    if (st.level.kind === 'boss' && boss) {
+      // Nothing runs — the spell clock included — until the player has read
+      // who is down here and what to do about them.
+      st.modal = { kind: 'bossIntro', boss: boss.kind };
+      pushLog(st, bossName(boss.kind));
+    } else {
+      pushLog(st, st.level.kind === 'shop' ? 'Shop' : `Depth ${st.depth}`);
+    }
     this.dirty = true;
     this.emit();
   }
@@ -536,6 +573,12 @@ export class Game {
   dismissModal(): void {
     const st = this.state;
     if (!st.modal) return;
+    // The game-over screen has one button and it starts a fresh run: the state
+    // behind it is dead and must not be touched afterwards.
+    if (st.modal.kind === 'gameOver') {
+      this.newGame();
+      return;
+    }
     st.modal = null;
     st.path.length = 0;
     st.pointer = null;
@@ -557,7 +600,9 @@ export class Game {
     // The swing clears the queue; from here on the hero keeps attacking on
     // their own while the monster stays in reach (see autoAttack).
     st.path.length = 0;
-    this.engagedId = m.alive ? m.id : null;
+    // Nothing to gain from hammering on something that cannot be hurt: one
+    // swing says "Immune" and the hero lets it go.
+    this.engagedId = m.alive && !m.invulnerable ? m.id : null;
     this.holdTimer = HOLD_ATTACK_MS;
     this.dirty = true;
   }
@@ -662,7 +707,7 @@ export class Game {
   private nearestInReach(stats: ItemStats): Monster | null {
     let far: Monster | null = null;
     for (const m of this.state.level.monsters) {
-      if (!m.alive) continue;
+      if (!m.alive || m.invulnerable) continue;
       const r = this.inReach(m, stats);
       if (r === 1) return m;
       if (r === 2 && !far) far = m;
@@ -685,12 +730,187 @@ export class Game {
     }
 
     if (eq(tile, level.exit)) {
+      // The stairs of a minotaur / angel chamber ARE the objective: claim the
+      // reward first, then descend once the player dismisses the popup.
+      if (level.kind === 'boss' && level.boss && !level.boss.defeated) this.winBoss();
       st.descending = DESCEND_MS;
       st.path.length = 0;
       pushText(st, tile, 'Descending...', GREEN, 1200);
       pushLog(st, 'Stairs down!');
       this.dirty = true;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Boss chambers
+  // -------------------------------------------------------------------------
+
+  /**
+   * Everything the boss of this floor does on its own clock. Called once per
+   * tick, never under a popup and never mid-descent (tick returns earlier), so
+   * the intro modal really does hold the necromancer's spell back.
+   */
+  private tickBoss(dt: number): void {
+    const st = this.state;
+    const boss = st.level.boss;
+    if (st.level.kind !== 'boss' || !boss || boss.defeated) return;
+    if (boss.kind === 'necromancer') this.tickNecromancer(dt, boss);
+    else if (boss.kind === 'angels') this.wakeAngels(boss);
+    // The minotaur has no clock at all: he just follows you (monsters.ts).
+  }
+
+  /** Spell clock, skeleton spawns, and the crystals that end all three. */
+  private tickNecromancer(dt: number, boss: NecroData): void {
+    const st = this.state;
+    const level = st.level;
+
+    // Crystals first, so the last one smashed on the very tick the spell would
+    // land still wins the floor.
+    const crystals = level.monsters.filter((m) => m.kind === 'crystal');
+    if (crystals.length > 0 && crystals.every((m) => !m.alive)) {
+      this.necromancerFlees();
+      return;
+    }
+
+    boss.spellMs -= dt;
+    if (boss.spellMs <= 0) {
+      boss.spellMs = 0;
+      gameOver(st, 'The Necromancer finished his spell.');
+      return;
+    }
+
+    boss.spawnMs -= dt;
+    if (boss.spawnMs <= 0) {
+      boss.spawnMs = boss.spawnEveryMs;
+      this.raiseMinion(boss);
+    }
+  }
+
+  /** A skeleton claws its way up beside its master, if there is room for it. */
+  private raiseMinion(boss: NecroData): void {
+    const st = this.state;
+    const level = st.level;
+    const live = level.monsters.reduce((n, m) => n + (m.alive && m.kind === 'minion' ? 1 : 0), 0);
+    if (live >= boss.maxMinions) return;
+    const necro = level.monsters.find((m) => m.kind === 'boss');
+    if (!necro) return;
+    const tile = this.freeTileNear(necro.pos);
+    if (!tile) return;
+
+    const minion = makeBossMonster('minion', level.depth, tile, `minion${this.minionSeq}`);
+    this.minionSeq += 1;
+    level.monsters.push(minion);
+    st.fx.push({ kind: 'flash', pos: { x: tile.x, y: tile.y }, color: PURPLE, t: 0, ttl: 360 });
+    pushText(st, tile, 'rises', PURPLE, 900);
+    this.dirty = true;
+  }
+
+  /** A free floor tile beside `p`: the four sides first, then the corners. */
+  private freeTileNear(p: Vec): Vec | null {
+    const st = this.state;
+    const around: Vec[] = [
+      { x: p.x, y: p.y - 1 },
+      { x: p.x + 1, y: p.y },
+      { x: p.x, y: p.y + 1 },
+      { x: p.x - 1, y: p.y },
+      { x: p.x + 1, y: p.y - 1 },
+      { x: p.x + 1, y: p.y + 1 },
+      { x: p.x - 1, y: p.y + 1 },
+      { x: p.x - 1, y: p.y - 1 },
+    ];
+    for (const t of around) {
+      if (!isFloor(st.level, t)) continue;
+      if (liveMonsterAt(st.level, t)) continue;
+      if (eq(t, st.hero.pos)) continue;
+      return t;
+    }
+    return null;
+  }
+
+  /**
+   * The last crystal is dust: the necromancer abandons the spell and vanishes,
+   * his skeletons crumble, and the stairs he was standing on are finally free.
+   */
+  private necromancerFlees(): void {
+    const st = this.state;
+    const level = st.level;
+    const necro = level.monsters.find((m) => m.kind === 'boss');
+    if (necro) {
+      necro.alive = false;
+      st.fx.push({
+        kind: 'ring',
+        pos: { x: necro.pos.x, y: necro.pos.y },
+        radius: 2.4,
+        color: PURPLE,
+        t: 0,
+        ttl: 700,
+      });
+      pushText(st, necro.pos, 'The Necromancer flees!', PURPLE, 1600);
+      level.exit = { x: necro.pos.x, y: necro.pos.y };
+    }
+    for (const m of level.monsters) {
+      if (!m.alive || m.kind !== 'minion') continue;
+      m.alive = false;
+      st.fx.push({ kind: 'flash', pos: { x: m.pos.x, y: m.pos.y }, color: GREY, t: 0, ttl: 320 });
+    }
+    this.winBoss();
+  }
+
+  /** Every idle angel in the room the hero just walked into opens its eyes. */
+  private wakeAngels(boss: AngelsData): void {
+    const st = this.state;
+    const room = roomAt(boss.rooms, st.hero.pos);
+    if (room < 0) return;
+    let woke = false;
+    for (const m of st.level.monsters) {
+      if (!m.alive || m.kind !== 'angel' || m.state !== 'idle') continue;
+      if (m.roomId !== room) continue;
+      m.state = 'chasing';
+      pushText(st, m.pos, '!', RED, 900);
+      woke = true;
+    }
+    if (woke) {
+      pushLog(st, 'An angel stirs...');
+      pushShake(st, 6, 260);
+      this.dirty = true;
+    }
+  }
+
+  /**
+   * The floor is won. One worn item gains a level (a hero wearing nothing gets
+   * a heart instead), the hero is patched up, and the popup holds everything
+   * still until the player taps it away — the descent, when there is one,
+   * happens after that.
+   */
+  private winBoss(): void {
+    const st = this.state;
+    const hero = st.hero;
+    const boss = st.level.boss;
+    if (!boss || boss.defeated) return;
+    boss.defeated = true;
+    st.stats.bosses += 1;
+
+    const upgraded = upgradeRandomItem(hero, this.rng);
+    const heart = upgraded === null;
+    if (heart) {
+      hero.maxHp += HEART;
+      hero.hp += HEART;
+    }
+    hero.hp = hero.maxHp;
+    hero.sleeping = false;
+    hero.stun = 0;
+    st.path.length = 0;
+    st.fx.push({
+      kind: 'ring',
+      pos: { x: hero.pos.x, y: hero.pos.y },
+      radius: 2,
+      color: GOLD,
+      t: 0,
+      ttl: 600,
+    });
+    st.modal = { kind: 'bossWon', boss: boss.kind, upgraded, heart };
+    pushLog(st, `${bossName(boss.kind)} is beaten!`);
+    this.dirty = true;
   }
 
   // -------------------------------------------------------------------------
@@ -811,7 +1031,7 @@ export class Game {
     let target: Monster | null = null;
     let best = Infinity;
     for (const m of st.level.monsters) {
-      if (!m.alive) continue;
+      if (!m.alive || m.invulnerable) continue; // no point setting a boss on fire
       const d = dists.get(key(m.pos));
       if (d === undefined || d > stats.fireRange) continue;
       if (d < best) {
@@ -968,8 +1188,15 @@ function reviveState(saved: GameState): GameState {
   s.descending = 0;
   s.modal = null;
   s.compass = null;
+  s.over = false;
   if (typeof s.level.theme !== 'string') s.level.theme = themeForDepth(s.depth).id;
-  if (!s.stats) s.stats = { kills: 0, deepest: s.depth || 1, playMs: 0 };
+  if (!s.stats) s.stats = { kills: 0, deepest: s.depth || 1, playMs: 0, bosses: 0 };
+  if (typeof s.stats.bosses !== 'number') s.stats.bosses = 0;
+  // Dropped back into an unfinished boss chamber: show the briefing again, so
+  // the spell clock is not running while the player works out where they are.
+  if (s.level.kind === 'boss' && s.level.boss && !s.level.boss.defeated) {
+    s.modal = { kind: 'bossIntro', boss: s.level.boss.kind };
+  }
   const hero = s.hero as Hero;
   if (!hero.keys) hero.keys = { door: 0, chest: 0 };
   if (!Array.isArray(hero.items)) hero.items = [];

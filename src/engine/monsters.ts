@@ -4,7 +4,7 @@
  * on the tile grid, gated by `moveCooldown`.
  */
 import type { GameState, LevelData, Monster, Rng, Vec } from './types';
-import { eq, key, manhattan } from './types';
+import { eq, inFrontOf, key, manhattan } from './types';
 import { bfsDistances, bfsPath } from './pathfind';
 import { GREEN, chestAt, closedDoorAt, damageMonster, keyAt, liveMonsterAt, monsterAttack } from './combat';
 import type { ItemStats } from './items';
@@ -41,7 +41,7 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
 
     // Attack takes priority over movement. A sleeping hero is left alone.
     if (!state.hero.sleeping && manhattan(m.pos, heroPos) === 1) {
-      if (m.attackCooldown <= 0 && willFight(m)) {
+      if (m.attackCooldown <= 0 && willFight(state, m)) {
         monsterAttack(state, m, rng);
         m.attackCooldown = cooldownFor(state, m, stats, m.attackInterval);
       }
@@ -78,9 +78,28 @@ function cooldownFor(state: GameState, m: Monster, stats: ItemStats, base: numbe
  * Guards are furniture until you poke them: they only swing at an adjacent
  * hero while the fight they were dragged into is still fresh. Patrols and
  * lurkers always attack whoever stands next to them.
+ *
+ * In a boss chamber: crystals and the necromancer never lift a finger, and an
+ * angel is stone while the hero is looking at it — including its attack, so
+ * standing face to face with one is safe.
  */
-function willFight(m: Monster): boolean {
-  return m.kind !== 'guard' || m.sinceCombat < GUARD_ENGAGE_MS;
+function willFight(state: GameState, m: Monster): boolean {
+  switch (m.kind) {
+    case 'guard':
+      return m.sinceCombat < GUARD_ENGAGE_MS;
+    case 'crystal':
+    case 'boss':
+      return false;
+    case 'angel':
+      return m.state === 'chasing' && !frozenByGaze(state, m);
+    default:
+      return true;
+  }
+}
+
+/** An angel in front of the hero (a half-plane, see `inFrontOf`) cannot act. */
+function frozenByGaze(state: GameState, m: Monster): boolean {
+  return inFrontOf(state.hero.pos, state.hero.facing, m.pos);
 }
 
 /** How long a struck guard keeps fighting back. */
@@ -201,9 +220,45 @@ function chooseStep(state: GameState, m: Monster, stats: ItemStats): Vec | null 
       return patrolStep(state, m, stats);
     case 'lurker':
       return lurkerStep(state, m, stats);
+    case 'minion':
+    case 'minotaur':
+      return hunterStep(state, m);
+    case 'angel':
+      return angelStep(state, m);
+    case 'crystal':
+    case 'boss':
+      return null;
     default:
       return null;
   }
+}
+
+/**
+ * Longest route a boss-chamber hunter will work out. Effectively "no limit":
+ * they know where the hero is anywhere on the floor and never give up. Capped
+ * only so a pathological level cannot make the BFS run away with itself.
+ */
+const HUNT_MAX_LEN = 4096;
+
+/**
+ * Minions and the minotaur: straight at the hero, forever, at their own pace.
+ * No sight range, no leash, no idling — the only thing that stops them is a
+ * blocked corridor, and then they try again next cycle.
+ */
+function hunterStep(state: GameState, m: Monster): Vec | null {
+  m.state = 'chasing';
+  return stepToward(state, m, state.hero.pos, HUNT_MAX_LEN);
+}
+
+/**
+ * Angels: statues until the hero walks into their room (game.ts wakes them),
+ * then relentless hunters — but only while the hero's back is turned. Being
+ * looked at freezes them where they stand.
+ */
+function angelStep(state: GameState, m: Monster): Vec | null {
+  if (m.state !== 'chasing') return null;
+  if (frozenByGaze(state, m)) return null;
+  return stepToward(state, m, state.hero.pos, HUNT_MAX_LEN);
 }
 
 /**

@@ -6,6 +6,7 @@
  * game.ts -> monsters.ts -> combat.ts, so there are no cycles.
  */
 import type {
+  BossKind,
   Chest,
   Door,
   Effect,
@@ -14,9 +15,10 @@ import type {
   LevelData,
   Monster,
   Rng,
+  RunStats,
   Vec,
 } from './types';
-import { HEART, eq, key, manhattan, parseKey } from './types';
+import { BOSS_HIT_FRACTION, HEART, eq, key, manhattan, parseKey } from './types';
 import { damage } from './balance';
 import { bfsDistances, floorNeighbors, isFloor } from './pathfind';
 import type { ItemStats } from './items';
@@ -135,6 +137,12 @@ export function damageMonster(
   if (!m.alive) return;
   const amount = Math.max(0, Math.round(dmg));
   if (amount <= 0) return;
+  // Bosses, angels and the necromancer cannot be hurt at all: no hit flash, no
+  // combat clocks, no on-hit procs. Just a word so the player stops trying.
+  if (m.invulnerable) {
+    pushText(state, m.pos, 'Immune', GREY);
+    return;
+  }
   const hero = state.hero;
   const source = opts.source ?? 'hero';
   const stats = heroStats(hero);
@@ -194,7 +202,7 @@ function onHeroHit(
 /** Lightning wand: hop from the struck monster to its nearest live neighbours. */
 function chainFrom(state: GameState, m: Monster, rng: Rng, stats: ItemStats): void {
   const targets = state.level.monsters
-    .filter((o) => o.alive && o !== m && manhattan(o.pos, m.pos) <= CHAIN_RADIUS)
+    .filter((o) => o.alive && !o.invulnerable && o !== m && manhattan(o.pos, m.pos) <= CHAIN_RADIUS)
     .sort((a, b) => manhattan(a.pos, m.pos) - manhattan(b.pos, m.pos))
     .slice(0, Math.max(0, stats.chainTargets));
   if (targets.length === 0) return;
@@ -257,12 +265,21 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
     return;
   }
 
-  const dmg = damage(m.atk, hero.def, rng);
+  // A minotaur's horns and an angel's touch always take the same bite out of
+  // the hero, whatever their armour: a third of their hearts.
+  const bossHit = m.kind === 'minotaur' || m.kind === 'angel';
+  const dmg = bossHit
+    ? Math.max(1, Math.ceil(hero.maxHp * BOSS_HIT_FRACTION))
+    : damage(m.atk, hero.def, rng);
   hero.hp -= dmg;
   hero.hitFlash = 150;
 
   pushText(state, hero.pos, `-${dmg}`, RED);
-  pushShake(state, 4, 180);
+  pushShake(state, bossHit ? BOSS_SHAKE : 4, bossHit ? 380 : 180);
+  if (m.kind === 'angel') {
+    // Stone drains the colour out of the tile it grabs you on.
+    state.fx.push({ kind: 'flash', pos: { x: hero.pos.x, y: hero.pos.y }, color: GREY, t: 0, ttl: 320 });
+  }
 
   // Knockback: shove the hero one tile directly away from the monster.
   // Patrols are the "slow you down" mob: their hits never shove.
@@ -280,7 +297,48 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
     damageMonster(state, m, stats.thornDmg, rng, { source: 'thorn', color: GREY });
   }
 
-  if (hero.hp <= 0) knockDown(state);
+  if (hero.hp <= 0) knockDown(state, m);
+}
+
+/** How hard the screen jolts when a boss connects. */
+const BOSS_SHAKE = 14;
+
+/**
+ * The run is over: only ever called from a boss chamber. Freezes the world
+ * behind the game-over popup with a snapshot of the run for it to show. The
+ * hero is left standing where they fell, on 0 hp.
+ */
+export function gameOver(state: GameState, cause: string): void {
+  const hero = state.hero;
+  const stats: RunStats = {
+    deepest: state.stats.deepest,
+    heroLevel: hero.level,
+    kills: state.stats.kills,
+    bosses: state.stats.bosses,
+    gold: hero.gold,
+    playMs: state.stats.playMs,
+  };
+  state.over = true;
+  hero.hp = Math.max(0, hero.hp);
+  hero.sleeping = false;
+  hero.stun = 0;
+  state.path.length = 0;
+  state.pointer = null;
+  pushLog(state, cause);
+  const boss: BossKind = state.level.boss?.kind ?? 'necromancer';
+  state.modal = { kind: 'gameOver', cause, boss, stats };
+}
+
+/** What finished the hero off, in one sentence, keyed on who landed the blow. */
+function causeOfDeath(m: Monster | null): string {
+  switch (m?.kind) {
+    case 'minotaur':
+      return 'The Minotaur caught you.';
+    case 'angel':
+      return 'You were turned to stone.';
+    default:
+      return 'The skeletons wore you down.';
+  }
 }
 
 /**
@@ -288,7 +346,7 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
  * over recently and fall asleep there; the game hands control back once they
  * have slept themselves back to full health.
  */
-function knockDown(state: GameState): void {
+function knockDown(state: GameState, attacker: Monster | null = null): void {
   const hero = state.hero;
   const stats = heroStats(hero);
 
@@ -313,6 +371,13 @@ function knockDown(state: GameState): void {
     if (spot) hero.pos = spot;
     state.trail.add(key(hero.pos));
     pushLog(state, 'The feather burns!');
+    return;
+  }
+
+  // In a boss chamber there is no lying down and no waking up: this is the end
+  // of the run. `hero.hp` may be negative here; gameOver settles it at 0.
+  if (state.level.kind === 'boss') {
+    gameOver(state, causeOfDeath(attacker));
     return;
   }
 

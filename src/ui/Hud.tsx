@@ -42,8 +42,10 @@ function HudInner({ model, onNewGame, onHelp }: HudProps) {
       <div className="hud-top">
         <div className="hud-badges">
           <span className="hud-badge">
-            {model.shop ? (
+            {model.levelKind === 'shop' ? (
               <>SHOP</>
+            ) : model.levelKind === 'boss' ? (
+              <>BOSS</>
             ) : (
               <>
                 DEPTH <b>{model.depth}</b>

@@ -329,6 +329,37 @@ export function equip(hero: Hero, item: MagicItem): MagicItem | null {
 }
 
 /**
+ * Boss reward: bump one worn item a level and re-apply its constant bonuses.
+ *
+ * The item object is mutated in place, so `hero.gear[slot]` keeps pointing at
+ * the same reference (the bossWon popup and the help screen both hold on to
+ * it). Timers are left alone: an upgrade is not a re-equip. Returns the item
+ * that grew, or null when the hero wears nothing at all — the caller then
+ * hands out a heart instead.
+ */
+export function upgradeRandomItem(hero: Hero, rng: Rng): MagicItem | null {
+  const gear = hero.gear;
+  if (!gear) return null;
+  const filled = ITEM_SLOTS.filter((slot) => gear[slot] !== null);
+  if (filled.length === 0) return null;
+
+  const item = gear[rng.pick(filled)] as MagicItem;
+  const before = itemStats(item);
+  item.level = Math.max(1, Math.floor(item.level || 1)) + 1;
+  const after = itemStats(item);
+
+  hero.atk += after.atkBonus - before.atkBonus;
+  hero.def += after.defBonus - before.defBonus;
+  const dHp = after.maxHpBonus - before.maxHpBonus;
+  if (dHp !== 0) {
+    // Extra hearts arrive full: hp moves with maxHp, then is clamped either way.
+    hero.maxHp = Math.max(1, hero.maxHp + dHp);
+    hero.hp = Math.max(1, Math.min(hero.hp + dHp, hero.maxHp));
+  }
+  return item;
+}
+
+/**
  * Fill in the magic-item fields a hero from an older save may be missing.
  * SAVE_VERSION already rejects stale saves; this is belt and braces.
  */

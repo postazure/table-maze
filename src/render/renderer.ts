@@ -3,12 +3,14 @@ import {
   parseKey,
   ITEM_KINDS,
   ITEM_SLOT,
+  inFrontOf,
   type GameState,
   type LevelData,
   type Vec,
   type TileMapper,
   type Monster,
   type Hero,
+  type Dir,
   type Effect,
   type Door,
   type Chest,
@@ -37,6 +39,16 @@ const RING_PATROL = '#5aa9ff';
 const RING_LURKER = '#a97cff';
 const RING_CHASING = '#ff5a5f';
 const RING_RETURNING = '#f5d451';
+// Boss-only rings/auras.
+const RING_NECROMANCER = '#b56cff';
+const RING_ANGEL_IDLE = '#5a5a66';
+const RING_ANGEL_WATCH = '#c7c7d1';
+const CRYSTAL_GLOW_COLOR = '#c13fe0';
+const NECRO_SPARK_COLORS = ['#b56cff', '#ff8ce8', '#e8d9ff'] as const;
+const SPELL_BAR_COLOR = '#b56cff';
+const SPELL_BAR_URGENT_COLOR = '#e53b3b';
+/** Below this many ms left, the spell bar tints red and pulses. */
+const SPELL_URGENT_MS = 15000;
 
 const LUNGE_MS = 120;
 const SUB = 8; // pixel-art sub-resolution per tile (both for the level canvas and sprites)
@@ -103,7 +115,14 @@ function buildIcon(rows: string[], palette: Record<string, string>): HTMLCanvasE
 // Hand-authored 8x8 icons.
 // ---------------------------------------------------------------------------
 
-const HERO_ROWS = ['..HHHH..', '.HHHHHH.', '.HSSSSH.', '.SSEESS.', '..SSSS..', '.AAAAAD.', 'CAAGGAAC', '.B....B.'];
+// Four facing looks sharing one 8x8 grid and palette. S is the original
+// front view; N is a back view (hood/hair only, no face, cloak seam down the
+// spine); E is a right-facing profile (one eye, arm+sword reaching forward
+// off the right edge); W reuses the E sprite mirrored via ctx.scale(-1,1)
+// (see drawHero) rather than a fifth hand-drawn row set.
+const HERO_ROWS_S = ['..HHHH..', '.HHHHHH.', '.HSSSSH.', '.SSEESS.', '..SSSS..', '.AAAAAD.', 'CAAGGAAC', '.B....B.'];
+const HERO_ROWS_N = ['..HHHH..', '.HHHHHH.', '.HHHHHH.', '.HDDDDH.', '..AAAA..', '.AADDAA.', 'CAADDAAC', '.B....B.'];
+const HERO_ROWS_E = ['.HHH....', '.HHHHH..', '.HSSSH..', '.SSSES..', '..SSS...', '.AAAAD..', 'CAAAADD.', '.B..BDD.'];
 const HERO_PALETTE: Record<string, string> = {
   H: '#2f5d4f',
   S: '#e8b98c',
@@ -324,7 +343,8 @@ export class Renderer implements TileMapper {
   private camPx = { x: 0, y: 0 };
   private needSnap = true;
 
-  private heroSprite: HTMLCanvasElement;
+  /** Facing sprites: N/S/E hand-drawn; W is drawn by mirroring E (see drawHero). */
+  private heroSprites: Record<'N' | 'S' | 'E', HTMLCanvasElement>;
   private doorKeySprite: HTMLCanvasElement;
   private chestKeySprite: HTMLCanvasElement;
   private chestClosedSprite: HTMLCanvasElement;
@@ -336,6 +356,11 @@ export class Renderer implements TileMapper {
   private podiumSprite: HTMLCanvasElement;
   /** Hero level captured at the start of each draw, used to color monster level badges. */
   private heroLevel = 1;
+  /** Hero pos/facing captured at the start of each draw: angels need to know if they're being watched. */
+  private heroPos: Vec = { x: 0, y: 0 };
+  private heroFacing: Dir = 'S';
+  /** necromancer boss level only: spellMs / spellTotalMs, 1 elsewhere. Speeds up his ring's pulse. */
+  private necroSpellFrac = 1;
   private monsterSprites: Map<string, HTMLCanvasElement> = new Map();
   private itemSprites: Map<ItemKind, HTMLCanvasElement> = new Map();
   private slotSprites: Map<ItemSlot, HTMLCanvasElement> = new Map();
@@ -347,7 +372,11 @@ export class Renderer implements TileMapper {
     if (!ctx) throw new Error('Renderer: 2d context unavailable');
     this.ctx = ctx;
 
-    this.heroSprite = buildIcon(HERO_ROWS, HERO_PALETTE);
+    this.heroSprites = {
+      N: buildIcon(HERO_ROWS_N, HERO_PALETTE),
+      S: buildIcon(HERO_ROWS_S, HERO_PALETTE),
+      E: buildIcon(HERO_ROWS_E, HERO_PALETTE),
+    };
     this.doorKeySprite = buildIcon(DOOR_KEY_ROWS, DOOR_KEY_PALETTE);
     this.chestKeySprite = buildIcon(CHEST_KEY_ROWS, CHEST_KEY_PALETTE);
     this.chestClosedSprite = buildIcon(CHEST_CLOSED_ROWS, CHEST_CLOSED_PALETTE);
@@ -487,6 +516,12 @@ export class Renderer implements TileMapper {
 
   draw(state: GameState, dt: number): void {
     this.heroLevel = state.hero.level;
+    this.heroPos = state.hero.pos;
+    this.heroFacing = state.hero.facing;
+    this.necroSpellFrac =
+      state.level.kind === 'boss' && state.level.boss?.kind === 'necromancer'
+        ? state.level.boss.spellMs / state.level.boss.spellTotalMs
+        : 1;
     // 1. Age & prune effects.
     for (const fx of state.fx) fx.t += dt;
     state.fx = state.fx.filter((fx) => fx.t < fx.ttl);
@@ -622,8 +657,11 @@ export class Renderer implements TileMapper {
       if (this.inRange(c.pos, startX, endX, startY, endY)) this.drawChest(ctx, c, t);
     }
 
-    // Exit.
-    if (this.inRange(state.level.exit, startX, endX, startY, endY)) {
+    // Exit. Hidden while the necromancer still stands on it (his tile IS the
+    // exit from the start; it only appears once he flees).
+    const necroBlocksExit =
+      state.level.kind === 'boss' && state.level.boss?.kind === 'necromancer' && !state.level.boss.defeated;
+    if (!necroBlocksExit && this.inRange(state.level.exit, startX, endX, startY, endY)) {
       this.drawTileSprite(ctx, this.exitSprite, state.level.exit, t, 0.86);
     }
 
@@ -655,6 +693,13 @@ export class Renderer implements TileMapper {
 
     // Effects on top.
     for (const fx of state.fx) this.drawEffect(ctx, fx, t);
+
+    // Necromancer spell clock — screen space, top of the viewport, hidden
+    // once he's beaten. Resets the transform itself (like the descend fade
+    // below); nothing is drawn in camera space after this.
+    if (state.level.kind === 'boss' && state.level.boss?.kind === 'necromancer' && !state.level.boss.defeated) {
+      this.drawSpellClock(ctx, state.level.boss.spellMs, state.level.boss.spellTotalMs);
+    }
 
     // 4. Descend fade — screen space, covers the whole viewport regardless
     // of camera position.
@@ -846,12 +891,81 @@ export class Renderer implements TileMapper {
     ctx.restore();
   }
 
-  private ringColorFor(m: Monster): { color: string; pulse: boolean } {
+  /**
+   * Ring color/pulse for every monster kind, including the boss ones, so
+   * nothing new falls through to the generic lurker color by accident.
+   * `crystal` deliberately isn't handled here — it draws no ring at all
+   * (see drawMonster) — and `frozen` is angel-only, read by drawMonster to
+   * add the "being watched" eye glint.
+   */
+  private ringColorFor(m: Monster): { color: string; pulse: boolean; pulseDivisor?: number; frozen?: boolean } {
+    if (m.kind === 'boss') {
+      // Purple channelling ring; pulses faster as the spell nears completion.
+      const frac = Math.max(0, Math.min(1, this.necroSpellFrac));
+      return { color: RING_NECROMANCER, pulse: true, pulseDivisor: 30 + 100 * frac };
+    }
+    if (m.kind === 'minotaur') return { color: RING_CHASING, pulse: true }; // always hunting
+    if (m.kind === 'angel') {
+      if (m.state === 'idle') return { color: RING_ANGEL_IDLE, pulse: false };
+      const frozen = inFrontOf(this.heroPos, this.heroFacing, m.pos);
+      if (frozen) return { color: RING_ANGEL_WATCH, pulse: false, frozen: true };
+      return { color: RING_CHASING, pulse: true };
+    }
     if (m.state === 'chasing') return { color: RING_CHASING, pulse: true };
     if (m.state === 'returning') return { color: RING_RETURNING, pulse: false };
     if (m.kind === 'guard') return { color: RING_GUARD, pulse: false };
     if (m.kind === 'patrol') return { color: RING_PATROL, pulse: false };
     return { color: RING_LURKER, pulse: false };
+  }
+
+  /** Square outline ring shared by every monster and boss aura. */
+  private drawRing(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    size: number,
+    color: string,
+    pulse: boolean,
+    pulseDivisor = 130,
+  ): void {
+    const outlineSize = size + 4;
+    const ox2 = Math.round(cx - outlineSize / 2);
+    const oy2 = Math.round(cy - outlineSize / 2);
+    ctx.save();
+    ctx.globalAlpha = pulse ? 0.55 + 0.4 * (0.5 + 0.5 * Math.sin(performance.now() / pulseDivisor)) : 0.9;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(ox2 + 0.5, oy2 + 0.5, outlineSize - 1, outlineSize - 1);
+    ctx.restore();
+  }
+
+  /** crystal: a faint pulsing magenta glow square behind the sprite instead of a ring. */
+  private drawCrystalGlow(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number): void {
+    const alpha = 0.16 + 0.14 * (0.5 + 0.5 * Math.sin((performance.now() / 1400) * Math.PI * 2));
+    const glowSize = Math.round(size * 1.35);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = CRYSTAL_GLOW_COLOR;
+    ctx.fillRect(Math.round(cx - glowSize / 2), Math.round(cy - glowSize / 2), glowSize, glowSize);
+    ctx.restore();
+  }
+
+  /** necromancer: 2-3 small purple sparks orbiting the channelling ring, like drawKeyAura. */
+  private drawNecroSparks(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, t: number): void {
+    const sub = Math.max(1, t / SUB);
+    const now = performance.now();
+    const orbitR = size * 0.62;
+    ctx.save();
+    for (let i = 0; i < NECRO_SPARK_COLORS.length; i++) {
+      const phase = (((now / 900 + i / NECRO_SPARK_COLORS.length) % 1) + 1) % 1;
+      const ang = phase * Math.PI * 2;
+      const sx = Math.round((cx + Math.cos(ang) * orbitR) / sub) * sub;
+      const sy = Math.round((cy + Math.sin(ang) * orbitR) / sub) * sub;
+      ctx.globalAlpha = 0.5 + 0.4 * (0.5 + 0.5 * Math.sin(phase * Math.PI * 2 + i));
+      ctx.fillStyle = NECRO_SPARK_COLORS[i];
+      ctx.fillRect(sx, sy, sub, sub);
+    }
+    ctx.restore();
   }
 
   private drawMonster(ctx: CanvasRenderingContext2D, m: Monster, t: number): void {
@@ -865,23 +979,26 @@ export class Renderer implements TileMapper {
     }
     const cx = m.rpos.x * t + t / 2 + ox;
     const cy = m.rpos.y * t + t / 2 + oy;
-    const size = Math.round(t * 0.82);
+    // Bosses read as bigger threats than the maze roster; crystals sit a
+    // touch smaller since they're furniture, not a hunter.
+    const sizeScale = m.kind === 'crystal' ? 0.9 : m.kind === 'boss' ? 1.0 : m.kind === 'minotaur' ? 1.05 : 0.82;
+    const size = Math.round(t * sizeScale);
     const dx = Math.round(cx - size / 2);
     const dy = Math.round(cy - size / 2);
 
     const spriteKey = monsterSpriteKey(m.name);
     const sprite = this.monsterSprites.get(spriteKey) ?? this.monsterSprites.get('blob');
 
-    const { color, pulse } = this.ringColorFor(m);
-    const outlineSize = size + 4;
-    const ox2 = Math.round(cx - outlineSize / 2);
-    const oy2 = Math.round(cy - outlineSize / 2);
-    ctx.save();
-    ctx.globalAlpha = pulse ? 0.55 + 0.4 * (0.5 + 0.5 * Math.sin(performance.now() / 130)) : 0.9;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(ox2 + 0.5, oy2 + 0.5, outlineSize - 1, outlineSize - 1);
-    ctx.restore();
+    // Crystal gets a glow instead of a ring; everyone else gets ringColorFor's
+    // ring, plus the necromancer's extra orbiting sparks.
+    let ring: { color: string; pulse: boolean; pulseDivisor?: number; frozen?: boolean } | null = null;
+    if (m.kind === 'crystal') {
+      this.drawCrystalGlow(ctx, cx, cy, size);
+    } else {
+      ring = this.ringColorFor(m);
+      this.drawRing(ctx, cx, cy, size, ring.color, ring.pulse, ring.pulseDivisor);
+      if (m.kind === 'boss') this.drawNecroSparks(ctx, cx, cy, size, t);
+    }
 
     if (sprite) {
       ctx.save();
@@ -889,6 +1006,18 @@ export class Renderer implements TileMapper {
       else if (spriteKey === 'ghost') ctx.globalAlpha = 0.8;
       ctx.drawImage(sprite, dx, dy, size, size);
       ctx.restore();
+    }
+
+    // angel, chasing + frozen (in front of the hero): a small pale glint at
+    // the eye line to show it's watching, even though the sprite itself has
+    // no visible eyes.
+    if (ring?.frozen) {
+      const gy = Math.round((dy + size * 0.32) / sub) * sub;
+      const gx1 = Math.round((dx + size * 0.34) / sub) * sub;
+      const gx2 = Math.round((dx + size * 0.62) / sub) * sub;
+      ctx.fillStyle = '#f5f0ff';
+      ctx.fillRect(gx1, gy, sub, sub);
+      ctx.fillRect(gx2, gy, sub, sub);
     }
 
     // poisonDagger: green tint + one or two bubbles rising on a time cycle.
@@ -934,7 +1063,9 @@ export class Renderer implements TileMapper {
     }
 
     // Level badge: small dark tag at the bottom-right corner of the sprite.
-    {
+    // Crystals are furniture (no threat level to compare) and the
+    // necromancer already has his own spell-clock UI, so both skip it.
+    if (m.kind !== 'crystal' && m.kind !== 'boss') {
       const fontPx = Math.max(6, Math.round(t * 0.26));
       const label = `${m.level}`;
       ctx.save();
@@ -1019,11 +1150,12 @@ export class Renderer implements TileMapper {
 
     ctx.save();
     if (hero.facing === 'W') {
+      // No separate W art: mirror the E (right-facing) profile sprite.
       ctx.translate(cx, cy);
       ctx.scale(-1, 1);
-      ctx.drawImage(this.heroSprite, -size / 2, -size / 2, size, size);
+      ctx.drawImage(this.heroSprites.E, -size / 2, -size / 2, size, size);
     } else {
-      ctx.drawImage(this.heroSprite, dx, dy, size, size);
+      ctx.drawImage(this.heroSprites[hero.facing], dx, dy, size, size);
     }
     ctx.restore();
 
@@ -1083,6 +1215,46 @@ export class Renderer implements TileMapper {
     const x = Math.round((cx - size / 2) / sub) * sub;
     const y = Math.round((topY - size + bob) / sub) * sub;
     ctx.drawImage(sprite, x, y, size, size);
+  }
+
+  /**
+   * Necromancer boss level: a screen-space bar across the top of the
+   * viewport showing the spell clock. Resets the transform to device pixels
+   * itself (like the descend fade) since it must ignore the camera. Caller
+   * is responsible for not drawing anything else in camera space after this.
+   */
+  private drawSpellClock(ctx: CanvasRenderingContext2D, spellMs: number, spellTotalMs: number): void {
+    const frac = Math.max(0, Math.min(1, spellMs / spellTotalMs));
+    const urgent = spellMs < SPELL_URGENT_MS;
+
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    const margin = 8;
+    const x = margin;
+    const y = margin;
+    const w = Math.max(0, this.viewW - margin * 2);
+    const h = 16;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(5,5,9,0.75)';
+    ctx.fillRect(x, y, w, h);
+
+    ctx.globalAlpha = urgent ? 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(performance.now() / 140)) : 1;
+    ctx.fillStyle = urgent ? SPELL_BAR_URGENT_COLOR : SPELL_BAR_COLOR;
+    ctx.fillRect(x, y, Math.round(w * frac), h);
+    ctx.globalAlpha = 1;
+
+    ctx.strokeStyle = 'rgba(240,236,255,0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+
+    ctx.font = '10px "Press Start 2P", monospace';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#f0ecff';
+    ctx.textAlign = 'left';
+    ctx.fillText('SPELL', x + 4, y + h / 2 + 1);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${Math.ceil(spellMs / 1000)}s`, x + w - 4, y + h / 2 + 1);
+    ctx.restore();
   }
 
   private drawEffect(ctx: CanvasRenderingContext2D, fx: Effect, t: number): void {

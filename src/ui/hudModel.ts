@@ -17,8 +17,8 @@ export interface HudModel {
   log: string[]; // last 3 messages, oldest first
   /** One magic item per slot, or null if empty. */
   gear: Record<ItemSlot, MagicItem | null>;
-  /** True when the hero is standing on a shop level. */
-  shop: boolean;
+  /** The kind of level the hero is currently on (drives the depth badge). */
+  levelKind: 'maze' | 'shop' | 'boss';
   /** Current popup, compared by reference. */
   modal: Modal | null;
 }
@@ -40,7 +40,7 @@ export function deriveHudModel(state: GameState): HudModel {
     kills: state.stats.kills,
     stunned: hero.sleeping || hero.stun > 0,
     gear: hero.gear,
-    shop: state.level.kind === 'shop',
+    levelKind: state.level.kind,
     modal: state.modal,
     log: state.log.slice(-3).map((m) => m.text),
   };
@@ -69,7 +69,7 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     a.chestKeys !== b.chestKeys ||
     a.kills !== b.kills ||
     a.stunned !== b.stunned ||
-    a.shop !== b.shop ||
+    a.levelKind !== b.levelKind ||
     a.modal !== b.modal ||
     a.log.length !== b.log.length ||
     !gearSlotEquals(a.gear.offense, b.gear.offense) ||
