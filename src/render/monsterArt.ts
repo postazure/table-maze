@@ -793,3 +793,28 @@ for (const theme of THEMES) {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Startup sanity check: a creature's sprite key means the same role
+// (guard/patrol/lurker) everywhere it turns up, across every theme. Two
+// roster entries that resolve to the same sprite (e.g. "Wolf" and "Ice Wolf"
+// both key to "wolf") are the same creature reskinned, so a player should
+// never meet it as a lurker in one theme and a patrol in another — let alone
+// both roles inside one theme's own roster, which this also catches.
+// ---------------------------------------------------------------------------
+
+const roleForSpriteKey = new Map<string, string>();
+for (const theme of THEMES) {
+  for (const [role, looks] of Object.entries(theme.roster)) {
+    for (const look of looks) {
+      const key = monsterSpriteKey(look.name);
+      const prevRole = roleForSpriteKey.get(key);
+      if (prevRole && prevRole !== role) {
+        throw new Error(
+          `monsterArt: "${look.name}" (sprite "${key}") is a ${role} in theme "${theme.id}" but a ${prevRole} elsewhere`,
+        );
+      }
+      roleForSpriteKey.set(key, role);
+    }
+  }
+}
