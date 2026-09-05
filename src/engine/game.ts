@@ -1037,7 +1037,7 @@ export class Game {
     if (shrine.kind === 'ward') {
       // Temporary hearts do not stack into a bigger pool than one ward's
       // worth: a second ward tops the first back up.
-      const pool = Math.max(hero.tempHp ?? 0, wardTempHp(shrine.level));
+      const pool = Math.max(hero.tempHp ?? 0, wardTempHp(shrine.level, hero.spirit));
       hero.tempHp = pool;
       hero.tempHpMax = Math.max(hero.tempHpMax ?? 0, pool);
     } else {

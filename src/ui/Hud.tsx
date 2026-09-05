@@ -189,6 +189,7 @@ function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound, onOpenVolu
       <div className="hud-stats">
         <Stat icon="sword" title="Attack" value={model.atk} buffed={model.atkBuffed} />
         <Stat icon="shield" title="Defense" value={model.def} buffed={model.defBuffed} />
+        <Stat icon="spirit" title="Spirit (shrines give more)" value={model.spirit} />
         <Stat icon="coin" title="Gold" value={model.gold} />
         <Stat icon="doorKey" title="Door keys" value={model.doorKeys} />
         <Stat icon="chestKey" title="Chest keys" value={model.chestKeys} />

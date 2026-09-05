@@ -1,8 +1,7 @@
-import type { HudModel } from './hudModel';
-import type { ItemSlot, MagicItem, ShrineKind } from '../engine/types';
-import { SHRINE_KINDS } from '../engine/types';
+import type { HudBuff, HudModel } from './hudModel';
+import type { ItemSlot, MagicItem } from '../engine/types';
 import { itemDescription, itemName } from '../engine/items';
-import { shrineDescription, shrineName } from '../engine/shrines';
+import { heartsLabel, shrineDescription, shrineName } from '../engine/shrines';
 import { PixelIcon } from './icons';
 
 export interface HelpModalProps {
@@ -41,20 +40,27 @@ function GearRow({ slot, label, item }: { slot: ItemSlot; label: string; item: M
 }
 
 /**
- * One shrine on the help screen, described with the numbers it would hand out
- * at the depth the hero is standing on.
+ * One shrine effect the hero has running, and how much of it is left.
+ *
+ * This is the one screen that puts the clock into words. Everywhere else a
+ * timer is a draining bar and a blink, because everywhere else the hero is
+ * mid-fight; here the game is paused and the player has come looking for the
+ * detail, so seconds are what they want. The ward has no clock, so it counts
+ * out the hearts it has left instead.
  */
-function ShrineRow({ kind, depth }: { kind: ShrineKind; depth: number }) {
+function BuffRow({ buff, tempHp }: { buff: HudBuff; tempHp: number }) {
+  const left = buff.kind === 'ward' ? `${heartsLabel(tempHp)} left` : `${buff.secondsLeft}s left`;
   return (
-    <div className="help-gear">
+    <div className={`help-gear help-buff help-buff-${buff.phase}`}>
       <div className="help-gear-icon">
-        <PixelIcon name={kind} size={32} />
+        <PixelIcon name={buff.kind} size={32} />
       </div>
       <div className="help-gear-text">
         <div className="help-gear-title">
-          <span className="help-gear-name">{shrineName(kind)}</span>
+          <span className="help-gear-name">{shrineName(buff.kind)}</span>
+          <span className="help-gear-level">{left}</span>
         </div>
-        <p className="help-gear-desc">{shrineDescription(kind, depth)}</p>
+        <p className="help-gear-desc">{shrineDescription(buff.kind, buff.level)}</p>
       </div>
     </div>
   );
@@ -79,16 +85,15 @@ export function HelpModal({ model, onClose }: HelpModalProps) {
             <GearRow key={slot} slot={slot} label={label} item={model.gear[slot]} />
           ))}
           <div className="help-section">
-            <span className="help-title">Shrines</span>
-            <p className="help-gear-desc">
-              A few alcoves glow on every floor. Walk over one to light it and it hands you its gift, once. They
-              never block anything, so you can walk past one now and come back for it when a fight needs it. The
-              row under your hearts shows what is running; each bar drains as the effect does, and blinks when it
-              is nearly out.
-            </p>
-            {SHRINE_KINDS.map((kind) => (
-              <ShrineRow key={kind} kind={kind} depth={model.depth} />
-            ))}
+            <span className="help-title">Running now</span>
+            {model.buffs.length > 0 ? (
+              model.buffs.map((buff) => <BuffRow key={buff.kind} buff={buff} tempHp={model.tempHp} />)
+            ) : (
+              <p className="help-gear-desc help-muted">
+                Nothing running. Glowing alcoves stand off the corridors of every floor — walk over one and it
+                hands you its gift, once. Your spirit ({model.spirit}) is how much further each one goes.
+              </p>
+            )}
           </div>
           <div className="help-section">
             <span className="help-title">How to play</span>
@@ -102,6 +107,7 @@ export function HelpModal({ model, onClose }: HelpModalProps) {
               <li>Hunters chase you when you get close and hit far too hard to fight at your level. They spot you later while they are over your level, so early floors give you room to back out. Lead them away, then loop around.</li>
               <li>Out of hearts? You sleep somewhere safe until they refill, and every monster heals to full.</li>
               <li>Glowing alcoves are shrines. Step on one for a gift that runs out; a dark one is already spent.</li>
+              <li>Spirit makes every shrine go further: the timed ones last longer, the ward hands out more hearts. It creeps up as you level, and anything in your spirit slot adds to it.</li>
               <li>Every third floor has a shop. Walk into a podium to see what the item does, then buy it or walk away.</li>
               <li>The emblem on a podium says what the item is for: sword = offense, shield = defense, star = spirit.</li>
               <li>You can buy one item per shop, and each slot holds one item.</li>

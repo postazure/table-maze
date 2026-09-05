@@ -86,9 +86,19 @@ Play it at **https://postazure.github.io/table-maze/**
   **Time Bubble** drops every monster within six tiles to a crawl. What is running
   shows twice over: a row of chips under your hearts, and a row of pips floating
   above the hero. Neither counts down in numbers. The bar drains, and the last ten
-  seconds blink — the last five twice as fast. Get knocked down and every shrine
-  effect goes with it. They do survive the stairs, so a shrine near the way down is
-  a way to walk into the next floor, or a boss chamber, already buffed.
+  seconds blink — the last five twice as fast. For the actual seconds, open the help
+  screen: it lists exactly what you have running and how long is left on each, and
+  nothing else — it is a read on your hero, not a catalogue. Get knocked down and
+  every shrine effect goes with it. They do survive the stairs, so a shrine near the
+  way down is a way to walk into the next floor, or a boss chamber, already buffed.
+- **Spirit** is your third stat, next to attack and defense, and the only thing it
+  does is make shrines go further. Every point is ten percent more, up to double.
+  The timed shrines run longer; the ward, which has no clock, hands out more hearts
+  instead — each one gets more of the only currency it has, so nothing is made both
+  longer and stronger. Spirit creeps up a point every third hero level, and
+  *anything* you wear in the spirit slot adds to it, whatever else that item does.
+  So the star podium in the shop is not only a gold charm or an XP tome: it is also
+  a standing bet on the alcoves of every floor after it.
 - After every third floor you face a **boss** before you reach the shop. An intro card
   explains the fight, then the game is on: **The Necromancer** channels a spell in a
   central chamber while raising skeletons — smash all five crystals down his corridors

@@ -271,8 +271,8 @@ button {
 
 .hud-stats {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
   margin-bottom: 8px;
 }
 
@@ -280,7 +280,7 @@ button {
   border: 2px solid var(--border);
   box-shadow: inset 1px 1px 0 var(--border-light), inset -2px -2px 0 var(--border-dark);
   background: var(--panel-2);
-  padding: 5px 2px 4px;
+  padding: 5px 1px 4px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -921,6 +921,26 @@ button {
 
 .help-gear-level {
   color: var(--gold);
+}
+
+/* Rows on the help screen for the shrine effects the hero has running. The
+   game is paused behind this screen, so unlike the HUD chip and the pip over
+   the hero this one spells the time out. The chip is only tinted by how close
+   the effect is to lapsing; nothing blinks at a reader. */
+.help-buff .help-gear-level {
+  padding: 2px 4px;
+  background: var(--border);
+  color: var(--text);
+}
+
+.help-buff-warn .help-gear-level {
+  background: var(--gold);
+  color: var(--bg);
+}
+
+.help-buff-urgent .help-gear-level {
+  background: #e53b3b;
+  color: var(--text);
 }
 
 .help-muted {

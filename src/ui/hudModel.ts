@@ -11,6 +11,14 @@ export interface HudBuff {
   /** 0-100, stepped so the HUD is not re-rendered for every millisecond. */
   pct: number;
   phase: BuffPhase;
+  /**
+   * Whole seconds left, for the help screen — which is the one place that says
+   * how long in words, because the game is paused behind it. The HUD chip and
+   * the pip over the hero stay wordless. 0 for the ward, which has no clock.
+   */
+  secondsLeft: number;
+  /** The depth the shrine was generated at; its numbers all come from this. */
+  level: number;
 }
 
 export interface HudModel {
@@ -26,6 +34,8 @@ export interface HudModel {
   /** True while a shrine is what is propping that number up. */
   atkBuffed: boolean;
   defBuffed: boolean;
+  /** Spirit: how much further this hero's shrines go. */
+  spirit: number;
   gold: number;
   doorKeys: number;
   chestKeys: number;
@@ -61,10 +71,22 @@ export function deriveHudModel(state: GameState): HudModel {
   // The ward has no clock: its bar drains as the temporary hearts are spent,
   // and it never blinks.
   if (tempHp > 0) {
-    buffs.push({ kind: 'ward', pct: steppedPct(tempHp, hero.tempHpMax || tempHp), phase: 'solid' });
+    buffs.push({
+      kind: 'ward',
+      pct: steppedPct(tempHp, hero.tempHpMax || tempHp),
+      phase: 'solid',
+      secondsLeft: 0,
+      level: 1,
+    });
   }
   for (const b of hero.buffs ?? []) {
-    buffs.push({ kind: b.kind, pct: steppedPct(b.ms, b.totalMs), phase: buffPhase(b.ms) });
+    buffs.push({
+      kind: b.kind,
+      pct: steppedPct(b.ms, b.totalMs),
+      phase: buffPhase(b.ms),
+      secondsLeft: Math.ceil(b.ms / 1000),
+      level: b.level,
+    });
   }
   return {
     depth: state.depth,
@@ -77,6 +99,7 @@ export function deriveHudModel(state: GameState): HudModel {
     def: hero.def + defBonus,
     atkBuffed: atkBonus > 0,
     defBuffed: defBonus > 0,
+    spirit: hero.spirit,
     gold: hero.gold,
     doorKeys: hero.keys.door ?? 0,
     chestKeys: hero.keys.chest ?? 0,
@@ -117,6 +140,7 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     a.stunned !== b.stunned ||
     a.atkBuffed !== b.atkBuffed ||
     a.defBuffed !== b.defBuffed ||
+    a.spirit !== b.spirit ||
     a.tempHp !== b.tempHp ||
     a.tempHpMax !== b.tempHpMax ||
     a.buffs.length !== b.buffs.length ||
@@ -136,6 +160,7 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     const x = a.buffs[i];
     const y = b.buffs[i];
     if (x.kind !== y.kind || x.pct !== y.pct || x.phase !== y.phase) return false;
+    if (x.secondsLeft !== y.secondsLeft || x.level !== y.level) return false;
   }
   return true;
 }

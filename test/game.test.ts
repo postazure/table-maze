@@ -30,9 +30,12 @@ import {
   FREEZE_MS,
   addBuff,
   buffPhase,
+  SPIRIT_MAX_MULT,
   buffDef,
   frostIntervalMs,
   furyAtk,
+  shrineDurationMs,
+  spiritMult,
   stoneDef,
   wardTempHp,
 } from '../src/engine/shrines';
@@ -2277,4 +2280,54 @@ test('save/load keeps running shrine effects and temporary hearts', () => {
   assert.equal(loaded.hero.buffs[0].level, 3);
   assert.equal(loaded.hero.tempHp, 6);
   assert.equal(loaded.hero.tempHpMax, 8);
+});
+
+
+test('spirit stretches a timed shrine and fattens the ward', () => {
+  // Duration is the currency of a timed shrine, hearts the currency of the
+  // ward, and spirit buys more of whichever one the shrine has.
+  assert.ok(shrineDurationMs('fury', 5) > shrineDurationMs('fury', 0));
+  assert.ok(wardTempHp(1, 5) > wardTempHp(1, 0));
+  // ...and never both at once for the same shrine: the ward has no clock to
+  // stretch, and a timed shrine's potency takes no spirit argument at all.
+  assert.equal(shrineDurationMs('ward', 99), 0);
+
+  const plain = corridorGame();
+  plain.state.hero.spirit = 0;
+  const weak = addBuff(plain.state.hero, 'frost', 1);
+
+  const blessed = corridorGame();
+  blessed.state.hero.spirit = 6;
+  const strong = addBuff(blessed.state.hero, 'frost', 1);
+
+  assert.ok(strong.totalMs > weak.totalMs, 'a high-spirit hero holds it longer');
+  assert.equal(strong.ms, strong.totalMs, 'and starts full');
+});
+
+test('spirit never gives more than double, however high it climbs', () => {
+  assert.equal(spiritMult(0), 1);
+  assert.equal(spiritMult(1000), SPIRIT_MAX_MULT);
+  assert.equal(shrineDurationMs('time', 1000), shrineDurationMs('time', 0) * SPIRIT_MAX_MULT);
+  assert.equal(wardTempHp(1, 1000), wardTempHp(1, 0) * SPIRIT_MAX_MULT);
+});
+
+test('a buff keeps the length it was lit with when the hero levels up', () => {
+  const g = corridorGame();
+  g.state.hero.spirit = 2;
+  const buff = addBuff(g.state.hero, 'fury', 1);
+  const lit = buff.totalMs;
+
+  // Levelling mid-effect must not move the bar the player is watching.
+  g.state.hero.spirit = 20;
+  g.tick(1000);
+  assert.equal(buff.totalMs, lit);
+  assert.equal(buff.ms, lit - 1000);
+});
+
+test('a ward lit at high spirit hands out more hearts', () => {
+  const { g } = shrineGame('ward');
+  g.state.hero.spirit = 8;
+  stepEast(g);
+  assert.equal(g.state.hero.tempHp, wardTempHp(1, 8));
+  assert.ok(g.state.hero.tempHp > wardTempHp(1, 0));
 });

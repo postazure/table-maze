@@ -11,6 +11,11 @@
  * Five of the six are timers. The ward is not: it is a pool of temporary
  * hearts that soaks damage until it is empty, so it runs out by being used
  * rather than by waiting.
+ *
+ * On top of the depth, the hero's own `spirit` stretches every gift — the
+ * timed five last longer, and the ward, which has no clock to stretch, hands
+ * out more hearts instead. Each shrine gets more of the only currency it has,
+ * so nothing is made both longer and stronger at once.
  */
 import type { Buff, Hero, ShrineKind, TimedShrineKind } from './types';
 import { HEART } from './types';
@@ -51,20 +56,52 @@ export function shrineName(kind: ShrineKind): string {
   return NAMES[kind];
 }
 
-/** How long `kind` runs for. 0 for the ward, which is spent rather than timed. */
-export function shrineDurationMs(kind: ShrineKind): number {
-  return kind === 'ward' ? 0 : DURATION_MS[kind];
+/**
+ * How long `kind` runs for at `spirit`. 0 for the ward, which is spent rather
+ * than timed and takes its share of spirit as hearts instead.
+ */
+export function shrineDurationMs(kind: ShrineKind, spirit = 0): number {
+  if (kind === 'ward') return 0;
+  return Math.round(DURATION_MS[kind] * spiritMult(spirit));
 }
 
 const lvl = (level: number): number => Math.max(1, Math.floor(level || 1));
 
 // ---------------------------------------------------------------------------
+// Spirit
+// ---------------------------------------------------------------------------
+
+/** How much bigger one point of spirit makes a shrine's gift. */
+export const SPIRIT_PER_POINT = 0.1;
+/** However high spirit climbs, a shrine never gives more than this much over base. */
+export const SPIRIT_MAX_MULT = 2;
+
+/**
+ * What the hero's spirit multiplies a shrine's gift by: a tenth more per
+ * point, never past double.
+ *
+ * The cap is the design, not a safety rail. Shrines are meant to be a good
+ * twenty seconds you spend on the fight you choose; without a ceiling a deep
+ * hero in full spirit gear would simply be buffed all the time, and an effect
+ * that never lapses is a stat, not a shrine.
+ */
+export function spiritMult(spirit: number): number {
+  const s = Math.max(0, Math.floor(spirit || 0));
+  return Math.min(SPIRIT_MAX_MULT, 1 + SPIRIT_PER_POINT * s);
+}
+
+// ---------------------------------------------------------------------------
 // The numbers
 // ---------------------------------------------------------------------------
 
-/** Ward: temporary quarter-hearts. One heart, plus another every third floor. */
-export function wardTempHp(level: number): number {
-  return HEART * (1 + Math.floor(lvl(level) / 3));
+/**
+ * Ward: temporary quarter-hearts. One heart, plus another every third floor,
+ * and spirit on top — the ward has no clock, so spirit buys hearts here rather
+ * than seconds.
+ */
+export function wardTempHp(level: number, spirit = 0): number {
+  const base = HEART * (1 + Math.floor(lvl(level) / 3));
+  return Math.round(base * spiritMult(spirit));
 }
 
 /** Fury: extra attack while it runs. */
@@ -106,9 +143,16 @@ export const TIME_SLOW_MULT = 2.5;
 // Buffs on the hero
 // ---------------------------------------------------------------------------
 
-/** A fresh buff for `kind` at `level`. Never called for the ward. */
-export function makeBuff(kind: TimedShrineKind, level: number): Buff {
-  const ms = shrineDurationMs(kind);
+/**
+ * A fresh buff for `kind` at `level`, stretched by `spirit`. Never called for
+ * the ward.
+ *
+ * Spirit is baked into `totalMs` here rather than read every tick, so a buff
+ * keeps the length it was lit with: levelling up mid-effect does not silently
+ * move the bar the player is watching.
+ */
+export function makeBuff(kind: TimedShrineKind, level: number, spirit = 0): Buff {
+  const ms = shrineDurationMs(kind, spirit);
   return { kind, ms, totalMs: ms, level: lvl(level), timer: 0 };
 }
 
@@ -122,7 +166,7 @@ export function findBuff(hero: Hero, kind: TimedShrineKind): Buff | null {
  */
 export function addBuff(hero: Hero, kind: TimedShrineKind, level: number): Buff {
   if (!hero.buffs) hero.buffs = [];
-  const fresh = makeBuff(kind, level);
+  const fresh = makeBuff(kind, level, hero.spirit);
   const live = findBuff(hero, kind);
   if (live) {
     live.ms = fresh.ms;
@@ -197,7 +241,9 @@ export function reviveBuffs(hero: Hero): void {
     (b) => b && typeof b.kind === 'string' && typeof b.ms === 'number' && b.ms > 0,
   );
   for (const b of hero.buffs) {
-    if (typeof b.totalMs !== 'number' || b.totalMs <= 0) b.totalMs = shrineDurationMs(b.kind) || b.ms;
+    // A buff carries the length it was lit with, so fall back to what is left
+    // rather than re-deriving a duration from today's spirit.
+    if (typeof b.totalMs !== 'number' || b.totalMs < b.ms) b.totalMs = b.ms;
     if (typeof b.level !== 'number') b.level = 1;
     if (typeof b.timer !== 'number') b.timer = 0;
   }
@@ -208,25 +254,33 @@ export function reviveBuffs(hero: Hero): void {
 // ---------------------------------------------------------------------------
 
 const sec = (ms: number): string => `${Math.round(ms / 100) / 10}s`;
-const hearts = (hp: number): string => {
-  const h = hp / HEART;
-  return `${Number.isInteger(h) ? h : h.toFixed(2)} heart${h === 1 ? '' : 's'}`;
-};
 
-/** Plain-words explanation of one shrine at `level`, with its real numbers. */
+/** Quarter-hearts as words: "1 heart", "1.5 hearts". Used by the help screen. */
+export function heartsLabel(hp: number): string {
+  const h = Math.max(0, hp) / HEART;
+  return `${Number.isInteger(h) ? h : h.toFixed(2).replace(/0+$/, '')} heart${h === 1 ? '' : 's'}`;
+}
+
+/**
+ * Plain words for what one shrine is doing, with its real numbers.
+ *
+ * No duration in here: the only place these are read is beside a running
+ * effect, which shows its own time left. Saying "for 20s" next to "14s left"
+ * would be two clocks for one effect.
+ */
 export function shrineDescription(kind: ShrineKind, level: number): string {
   switch (kind) {
     case 'ward':
-      return `${hearts(wardTempHp(level))} of extra, temporary hearts. Hits eat those first, and nothing ever refills them.`;
+      return `Temporary hearts on top of your own. Hits eat these first, and nothing ever refills them.`;
     case 'fury':
-      return `+${furyAtk(level)} attack for ${sec(shrineDurationMs('fury'))}.`;
+      return `+${furyAtk(level)} attack.`;
     case 'stone':
-      return `+${stoneDef(level)} defense for ${sec(shrineDurationMs('stone'))}.`;
+      return `+${stoneDef(level)} defense.`;
     case 'frost':
-      return `For ${sec(shrineDurationMs('frost'))}, an ice ball flies at the nearest monster within ${FROST_RANGE} tiles every ${sec(frostIntervalMs(level))} for ${frostDmg(level)} damage and freezes it solid for ${sec(FREEZE_MS)}.`;
+      return `An ice ball flies at the nearest monster within ${FROST_RANGE} tiles every ${sec(frostIntervalMs(level))} for ${frostDmg(level)} damage, and freezes it solid for ${sec(FREEZE_MS)}.`;
     case 'mend':
-      return `A quarter heart every ${sec(mendPulseMs(level))} for ${sec(shrineDurationMs('mend'))}, even while fighting.`;
+      return `A quarter heart every ${sec(mendPulseMs(level))}, even while fighting.`;
     case 'time':
-      return `For ${sec(shrineDurationMs('time'))}, every monster within ${TIME_RADIUS} tiles moves and attacks at a crawl.`;
+      return `Every monster within ${TIME_RADIUS} tiles moves and attacks at a crawl.`;
   }
 }
