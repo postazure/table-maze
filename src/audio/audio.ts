@@ -21,6 +21,7 @@ import { playSfx } from './sfx';
 import { MusicPlayer, trackForLevel } from './music';
 
 const STORAGE_KEY = 'table-maze:sound';
+const VOLUME_STORAGE_KEY = 'table-maze:volume';
 
 /**
  * The mix, in one place, measured rather than guessed.
@@ -43,11 +44,16 @@ const STORAGE_KEY = 'table-maze:sound';
  * raising `music` much past 0.18 would spend it.
  */
 const MIX = {
-  /** Overall trim, applied last, after the compressor. */
+  /** Overall trim, applied last, after the compressor. The player's own
+   *  volume slider (see `GameAudio.volume`) scales this down further; it
+   *  never scales it up, so a slider at max still sounds like the mix above. */
   master: 0.5,
   sfx: 0.44,
   music: 0.127,
 } as const;
+
+/** Volume slider default: full, the mix as tuned above. Persisted once changed. */
+const DEFAULT_VOLUME = 1;
 
 /** At most this many sounds start in any one frame... */
 const MAX_PER_FRAME = 5;
@@ -76,6 +82,9 @@ export class GameAudio {
   /** Whether the player wants sound at all. Persisted across runs. */
   private on: boolean;
 
+  /** The player's own trim on top of the mix, 0..1. Persisted across runs. */
+  private volume: number;
+
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private sfxBus: GainNode | null = null;
@@ -87,10 +96,16 @@ export class GameAudio {
 
   constructor() {
     this.on = readPreference();
+    this.volume = readVolume();
   }
 
   get enabled(): boolean {
     return this.on;
+  }
+
+  /** The player's own trim on top of the mix, 0..1. */
+  get level(): number {
+    return this.volume;
   }
 
   /**
@@ -144,12 +159,15 @@ export class GameAudio {
       // otherwise go on scheduling notes into a silent gain for the whole run.
       this.music?.play(null);
     }
-    const master = this.master;
-    if (!master || !this.ctx) return;
-    const now = this.ctx.currentTime;
-    master.gain.cancelScheduledValues(now);
-    master.gain.setValueAtTime(master.gain.value, now);
-    master.gain.linearRampToValueAtTime(on ? MIX.master : 0.0001, now + 0.15);
+    this.rampMaster(0.15);
+  }
+
+  /** Set the player's own trim (0..1) and remember it. Takes effect instantly. */
+  setLevel(level: number): void {
+    this.volume = Math.min(1, Math.max(0, level));
+    writeVolume(this.volume);
+    // Quick ramp rather than a snap, so dragging the slider doesn't click.
+    this.rampMaster(0.05);
   }
 
   /**
@@ -181,6 +199,21 @@ export class GameAudio {
 
   // -------------------------------------------------------------------------
 
+  /** What the master gain should be right now, given on/off and the slider. */
+  private masterTarget(): number {
+    return this.on ? MIX.master * this.volume : 0.0001;
+  }
+
+  /** Glide the master gain to `masterTarget()` over `seconds`, clicks-free. */
+  private rampMaster(seconds: number): void {
+    const master = this.master;
+    if (!master || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    master.gain.cancelScheduledValues(now);
+    master.gain.setValueAtTime(master.gain.value, now);
+    master.gain.linearRampToValueAtTime(this.masterTarget(), now + seconds);
+  }
+
   private ready(): boolean {
     return this.on && this.ctx !== null && this.ctx.state === 'running' && this.sfxBus !== null;
   }
@@ -210,7 +243,7 @@ export class GameAudio {
     glue.release.value = 0.16;
 
     const master = ctx.createGain();
-    master.gain.value = this.on ? MIX.master : 0.0001;
+    master.gain.value = this.masterTarget();
     glue.connect(master).connect(ctx.destination);
     this.master = master;
 
@@ -266,6 +299,25 @@ function readPreference(): boolean {
 function writePreference(on: boolean): void {
   try {
     localStorage?.setItem(STORAGE_KEY, on ? '1' : '0');
+  } catch {
+    /* nothing to do; the choice lasts for this session only */
+  }
+}
+
+function readVolume(): number {
+  try {
+    const raw = localStorage?.getItem(VOLUME_STORAGE_KEY);
+    if (raw === null) return DEFAULT_VOLUME;
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : DEFAULT_VOLUME;
+  } catch {
+    return DEFAULT_VOLUME;
+  }
+}
+
+function writeVolume(level: number): void {
+  try {
+    localStorage?.setItem(VOLUME_STORAGE_KEY, String(level));
   } catch {
     /* nothing to do; the choice lasts for this session only */
   }

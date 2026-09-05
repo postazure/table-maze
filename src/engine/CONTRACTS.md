@@ -286,8 +286,10 @@ maze tracks (neighbouring themes never share one).
 ```ts
 export class GameAudio {
   get enabled(): boolean;
+  get level(): number;               // the player's own volume trim, 0..1
   attach(): void;                    // listen for the first gesture and for the tab hiding
   setEnabled(on: boolean): void;     // persisted in localStorage, key "table-maze:sound"
+  setLevel(level: number): void;     // persisted in localStorage, key "table-maze:volume"
   update(state: GameState): void;    // drain state.sfx, keep the music on the right track
   dispose(): void;
 }
@@ -317,6 +319,16 @@ input). Effects reach it only when several pile up or a long jingle plays, which
 is what it is for; the music must never reach it at all, or it ducks the effects
 every time it swells. Its worst peak currently lands around 0.09, so there is
 about 3 dB of room — raising `music` much past 0.18 would spend it.
+
+`level` is the player's own trim on top of all of that (`MIX.master * level`),
+0..1, defaulting to 1 — it only ever scales the mix down, never past it.
+`setLevel` glides the master gain to the new value over 50ms so dragging a
+slider never clicks. It is independent of `enabled`/`setEnabled`: muting via
+the speaker button still stops the band outright (see `setEnabled`'s comment),
+while dragging the volume to 0 just leaves it silent without touching the
+on/off preference. `ui/VolumeModal.tsx` is the one UI for it, opened by a long
+press on the speaker button (`ui/Hud.tsx`); a plain tap on that button still
+toggles `enabled`, unaffected by the volume UI.
 
 ## ui/Hud.tsx + ui/hudModel.ts (React; supersedes the old hud.ts class)
 ```ts

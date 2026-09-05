@@ -1,10 +1,13 @@
-import { memo } from 'react';
+import { memo, useCallback, useRef } from 'react';
 import type { ItemSlot } from '../engine/types';
 import type { HudModel } from './hudModel';
 import { PixelIcon, type IconName } from './icons';
 import { Hearts } from './Hearts';
 
 const GEAR_SLOTS: readonly ItemSlot[] = ['offense', 'defense', 'spirit'];
+
+/** How long a press on the speaker button has to hold before it opens the volume modal. */
+const LONG_PRESS_MS = 500;
 
 export interface HudProps {
   model: HudModel;
@@ -13,6 +16,8 @@ export interface HudProps {
   /** Sound and music on? Drives the speaker button. */
   soundOn: boolean;
   onToggleSound: () => void;
+  /** A long press on the speaker button opens the volume modal instead of toggling. */
+  onOpenVolume: () => void;
 }
 
 /** Round a percentage down to a multiple of 4 for a chunky, "stepped" bar fill. */
@@ -31,7 +36,7 @@ function Stat({ icon, title, value }: { icon: IconName; title: string; value: nu
   );
 }
 
-function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound }: HudProps) {
+function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound, onOpenVolume }: HudProps) {
   const xpPct = steppedPct(model.xp, model.xpToNext);
 
   const handleNewGame = () => {
@@ -39,6 +44,37 @@ function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound }: HudProps
       onNewGame();
     }
   };
+
+  // A tap toggles sound; holding the same button opens the volume modal
+  // instead. The timer decides which one happened, and the click handler
+  // (which always fires on release) checks the flag to skip the toggle.
+  const longPress = useRef(false);
+  const pressTimer = useRef<number | null>(null);
+
+  const cancelPressTimer = useCallback(() => {
+    if (pressTimer.current !== null) {
+      window.clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  }, []);
+
+  const handleSoundPointerDown = useCallback(() => {
+    longPress.current = false;
+    cancelPressTimer();
+    pressTimer.current = window.setTimeout(() => {
+      pressTimer.current = null;
+      longPress.current = true;
+      onOpenVolume();
+    }, LONG_PRESS_MS);
+  }, [cancelPressTimer, onOpenVolume]);
+
+  const handleSoundClick = useCallback(() => {
+    if (longPress.current) {
+      longPress.current = false;
+      return;
+    }
+    onToggleSound();
+  }, [onToggleSound]);
 
   return (
     <>
@@ -63,8 +99,13 @@ function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound }: HudProps
           <button
             type="button"
             className="hud-btn-newgame hud-btn-help"
-            onClick={onToggleSound}
-            aria-label={soundOn ? 'Turn sound off' : 'Turn sound on'}
+            onClick={handleSoundClick}
+            onPointerDown={handleSoundPointerDown}
+            onPointerUp={cancelPressTimer}
+            onPointerLeave={cancelPressTimer}
+            onPointerCancel={cancelPressTimer}
+            onContextMenu={(e) => e.preventDefault()}
+            aria-label={soundOn ? 'Turn sound off (hold for volume)' : 'Turn sound on (hold for volume)'}
             aria-pressed={soundOn}
           >
             <PixelIcon name={soundOn ? 'sound' : 'soundOff'} size={14} />

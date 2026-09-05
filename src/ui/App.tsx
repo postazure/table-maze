@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { BossIntroModal } from './BossIntroModal';
 import { BossWonModal } from './BossWonModal';
 import { ChestModal } from './ChestModal';
@@ -7,12 +8,14 @@ import { Hud } from './Hud';
 import { ItemModal } from './ItemModal';
 import { MazeCanvas } from './MazeCanvas';
 import { ShopOfferModal } from './ShopOfferModal';
+import { VolumeModal } from './VolumeModal';
 import { useAudio } from './useAudio';
 import { useGame } from './useGame';
 
 export function App() {
   const { game, hud, newGame, dismissModal, openHelp, buyOffer } = useGame();
-  const { audio, soundOn, toggleSound } = useAudio();
+  const { audio, soundOn, toggleSound, volume, setVolume } = useAudio();
+  const [volumeOpen, setVolumeOpen] = useState(false);
   return (
     <div className="app">
       <MazeCanvas game={game} audio={audio} />
@@ -23,8 +26,17 @@ export function App() {
           onHelp={openHelp}
           soundOn={soundOn}
           onToggleSound={toggleSound}
+          onOpenVolume={() => setVolumeOpen(true)}
         />
       </div>
+      {volumeOpen && (
+        <VolumeModal
+          soundOn={soundOn}
+          volume={volume}
+          onChangeVolume={setVolume}
+          onClose={() => setVolumeOpen(false)}
+        />
+      )}
       {hud.modal?.kind === 'chest' && <ChestModal loot={hud.modal.loot} onClose={dismissModal} />}
       {hud.modal?.kind === 'shopOffer' && <ShopOfferModal offer={hud.modal} onBuy={buyOffer} onClose={dismissModal} />}
       {hud.modal?.kind === 'item' && <ItemModal item={hud.modal.item} replaced={hud.modal.replaced} onClose={dismissModal} />}

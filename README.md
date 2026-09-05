@@ -110,7 +110,8 @@ Play it at **https://postazure.github.io/table-maze/**
 - **Sound** is on by default; the speaker button in the HUD turns it and the
   music off, and remembers your choice. It tries to start playing the moment
   the game loads; where the browser won't allow that without a gesture, the
-  first sound arrives with your first tap instead.
+  first sound arrives with your first tap instead. Hold the speaker button
+  down to open a volume slider.
   Everything you hear is generated as you play — square waves, triangles and
   filtered noise, the palette of a 1980s sound chip. The sounds you hear all
   day (a footstep, a swing, a hit) shift a fraction in pitch every time so a
