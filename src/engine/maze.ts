@@ -24,6 +24,8 @@ const MAX_ATTEMPTS = 20;
 const MONSTER_MIN_DIST = 5;
 /** First depth that carries lurkers. Floor one is patrols and guards only. */
 const LURKERS_FROM_DEPTH = 2;
+/** Most monsters a floor's own route and side branches carry, warrens aside. */
+export const ROUTE_MONSTER_CAP = 18;
 
 interface GenOpts {
   doors: boolean;
@@ -170,9 +172,14 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
   };
 
   level.start = pickStart(level, rng);
-  const distFromStart = bfsDistances(level, level.start);
-  level.exit = pickExit(level, distFromStart, rng);
+  level.exit = pickExit(level, bfsDistances(level, level.start), rng);
 
+  // Warrens are carved before anything is placed on the floor, and they open
+  // new tiles, so the route to the stairs is measured afterwards.
+  const warrens = carveWarrens(level, bfsPath(level, level.start, level.exit) ?? [], rng);
+  level.warrens = warrens;
+
+  const distFromStart = bfsDistances(level, level.start);
   const mainPath = bfsPath(level, level.start, level.exit) ?? [];
   const fullPath: Vec[] = [level.start, ...mainPath];
   const onMain = new Set(fullPath.map(key));
@@ -228,7 +235,8 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
     }
   }
 
-  placeMonsters(level, depth, fullPath, onMain, used, distFromStart, rng);
+  placeMonsters(level, depth, fullPath, onMain, used, distFromStart, warrens, rng);
+  stockWarrens(level, depth, warrens, used, distFromStart, rng);
   easeGates(level, depth, rng);
   return level;
 }
@@ -390,9 +398,14 @@ function placeMonsters(
   onMain: Set<string>,
   used: Set<string>,
   dist: Map<string, number>,
+  warrens: Vec[][],
   rng: Rng,
 ): void {
-  const count = Math.min(18, 5 + Math.floor(depth * 1.5));
+  // The warrens get their own monsters afterwards. Keeping the route's budget
+  // out of them leaves each warren a self-contained pocket rather than a place
+  // the floor quietly hides half its guards.
+  const inWarren = new Set(warrens.flat().map(key));
+  const count = Math.min(ROUTE_MONSTER_CAP, 5 + Math.floor(depth * 1.5));
   // The first floor teaches the controls: patrols to swing at and guards to
   // decide about, but no lurker, which a level-one hero cannot beat head-on.
   const lurkers = depth >= LURKERS_FROM_DEPTH;
@@ -407,14 +420,14 @@ function placeMonsters(
   // Every tile a monster is allowed to stand on, in a stable shuffled order.
   const openTiles: Vec[] = [];
   for (const [k, d] of dist) {
-    if (d < MONSTER_MIN_DIST) continue;
+    if (d < MONSTER_MIN_DIST || inWarren.has(k)) continue;
     openTiles.push(parseKey(k));
   }
   rng.shuffle(openTiles);
   const freeAt = (p: Vec): boolean => {
     const k = key(p);
     const d = dist.get(k);
-    return d !== undefined && d >= MONSTER_MIN_DIST && !used.has(k);
+    return d !== undefined && d >= MONSTER_MIN_DIST && !used.has(k) && !inWarren.has(k);
   };
 
   // Chokepoint anchors for guards: tiles beside chests, doors and the exit,
@@ -536,6 +549,183 @@ function spawnLurker(
 }
 
 // ---------------------------------------------------------------------------
+// Warrens
+// ---------------------------------------------------------------------------
+
+/** Smallest pocket off the main path worth braiding into a warren. */
+const WARREN_MIN_TILES = 6;
+/** Fraction of a warren's dead ends opened into a loop. */
+const WARREN_BRAID = 0.7;
+/** One extra monster per this many warren tiles. */
+const WARREN_TILES_PER_MONSTER = 9;
+/** Never more than this many extra monsters in one warren. */
+export const WARREN_MONSTER_CAP = 3;
+/** ...nor more than this many across all of a floor's warrens. */
+export const WARREN_MONSTER_BUDGET = 14;
+
+/**
+ * The pockets of floor hanging off the main path, as lists of tiles. Found by
+ * flood-filling the maze with the route to the stairs treated as a wall, so
+ * every pocket is somewhere you go out of your way to visit.
+ */
+function offPathPockets(level: LevelData, onMain: Set<string>): Vec[][] {
+  const seen = new Set<string>(onMain);
+  const out: Vec[][] = [];
+  for (let y = 1; y < level.height - 1; y++) {
+    for (let x = 1; x < level.width - 1; x++) {
+      const p = { x, y };
+      const k = key(p);
+      if (seen.has(k) || !isFloor(level, p)) continue;
+      const pocket: Vec[] = [];
+      const stack: Vec[] = [p];
+      seen.add(k);
+      while (stack.length) {
+        const cur = stack.pop() as Vec;
+        pocket.push(cur);
+        for (const nb of floorNeighbors(level, cur)) {
+          const nk = key(nb);
+          if (seen.has(nk)) continue;
+          seen.add(nk);
+          stack.push(nb);
+        }
+      }
+      out.push(pocket);
+    }
+  }
+  return out;
+}
+
+/**
+ * Braid the bigger off-path pockets hard, so a side branch stops being a dead
+ * end you get cornered in and becomes a loop you can circle: somewhere to
+ * fight, back off, and come round again when the way down is guarded by
+ * something you cannot beat yet.
+ *
+ * A wall is only opened when every floor tile it touches belongs to the same
+ * pocket. That is what keeps a warren off the critical path: it cannot gain a
+ * second junction onto the route, so it never becomes a way around the guard
+ * standing on it.
+ */
+function carveWarrens(level: LevelData, mainPath: Vec[], rng: Rng): Vec[][] {
+  const onMain = new Set([key(level.start), ...mainPath.map(key)]);
+  const warrens: Vec[][] = [];
+  for (const pocket of offPathPockets(level, onMain)) {
+    if (pocket.length < WARREN_MIN_TILES) continue;
+    const inPocket = new Set(pocket.map(key));
+    const ends = pocket.filter((p) => floorNeighbors(level, p).length === 1);
+    rng.shuffle(ends);
+    const opened: Vec[] = [];
+    for (const p of ends.slice(0, Math.ceil(ends.length * WARREN_BRAID))) {
+      const w = loopWall(level, p, inPocket, rng);
+      if (!w) continue;
+      level.tiles[w.y][w.x] = Tile.Floor;
+      inPocket.add(key(w));
+      opened.push(w);
+    }
+    if (!opened.length) continue; // still a plain dead end: not a warren
+    warrens.push([...pocket, ...opened]);
+  }
+  return warrens;
+}
+
+/**
+ * A wall next to `p` that can be opened without letting the pocket touch
+ * anything new: the tile beyond it is already in the pocket, and every other
+ * floor tile the wall touches is too.
+ */
+function loopWall(level: LevelData, p: Vec, inPocket: Set<string>, rng: Rng): Vec | null {
+  const dirs: Vec[] = [
+    { x: 0, y: -1 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: -1, y: 0 },
+  ];
+  const cands: Vec[] = [];
+  for (const dir of dirs) {
+    const w = { x: p.x + dir.x, y: p.y + dir.y };
+    const o = { x: p.x + 2 * dir.x, y: p.y + 2 * dir.y };
+    if (w.x <= 0 || w.y <= 0 || w.x >= level.width - 1 || w.y >= level.height - 1) continue;
+    if (level.tiles[w.y][w.x] !== Tile.Wall) continue;
+    if (!isFloor(level, o) || !inPocket.has(key(o))) continue;
+    // Opening `w` joins it to every floor tile it touches. All of them must
+    // already be inside this pocket, or the warren gains a new junction.
+    let safe = true;
+    for (const nb of floorNeighbors(level, w)) {
+      if (!inPocket.has(key(nb))) {
+        safe = false;
+        break;
+      }
+    }
+    if (safe) cands.push(w);
+  }
+  return cands.length ? rng.pick(cands) : null;
+}
+
+/** A patrol beat that stays inside the warren, so the loop is what it walks. */
+function warrenBeat(level: LevelData, from: Vec, inWarren: Set<string>, rng: Rng): Vec[] | null {
+  const blocked = (p: Vec) => !inWarren.has(key(p));
+  const local = bfsDistances(level, from, { blocked, maxDist: 9 });
+  const ends: Vec[] = [];
+  for (const [k, d] of local) if (d >= 3) ends.push(parseKey(k));
+  if (!ends.length) return null;
+  ends.sort((a, b) => (local.get(key(b)) ?? 0) - (local.get(key(a)) ?? 0));
+  const to = rng.pick(ends.slice(0, Math.min(5, ends.length)));
+  const tail = bfsPath(level, from, to, { blocked });
+  return tail && tail.length ? [from, ...tail] : null;
+}
+
+/**
+ * Extra monsters for the warrens: the fights you pick rather than the ones
+ * that pick you.
+ *
+ * Mostly guards, because a guard is the best-paid fight a hero can actually
+ * win at their level, and the loop is what makes fighting one here different
+ * from meeting it in a corridor — back off round the bend, let the hearts come
+ * back, come at it again. A lurker turns up now and then so a warren is never
+ * free money; the loop is also the room you need to bait one and slip past.
+ * None of them can be a gate: no warren tile is on the way to the stairs, so
+ * every one of these keeps its full strength.
+ */
+function stockWarrens(
+  level: LevelData,
+  depth: number,
+  warrens: Vec[][],
+  used: Set<string>,
+  dist: Map<string, number>,
+  rng: Rng,
+): void {
+  const lurkers = depth >= LURKERS_FROM_DEPTH;
+  let n = level.monsters.length;
+  let budget = WARREN_MONSTER_BUDGET;
+  for (const warren of warrens) {
+    const want = Math.min(budget, WARREN_MONSTER_CAP, Math.floor(warren.length / WARREN_TILES_PER_MONSTER));
+    if (want <= 0) continue;
+    const spots = warren.filter((p) => {
+      const k = key(p);
+      return !used.has(k) && (dist.get(k) ?? 0) >= MONSTER_MIN_DIST;
+    });
+    rng.shuffle(spots);
+    const inWarren = new Set(warren.map(key));
+    for (let i = 0; i < want && i < spots.length; i++) {
+      const spot = spots[i];
+      const roll = rng.next();
+      const kind: RosterKind = roll < 0.45 ? 'guard' : roll < 0.85 || !lurkers ? 'patrol' : 'lurker';
+      const m = makeMonster(kind, depth, rng, spot, `w${++n}`);
+      if (kind === 'patrol') {
+        const beat = warrenBeat(level, spot, inWarren, rng);
+        if (!beat) continue; // nowhere to walk: leave the tile empty
+        m.patrolPath = beat;
+        m.patrolIndex = 0;
+        m.patrolDir = 1;
+      }
+      used.add(key(spot));
+      level.monsters.push(m);
+      budget--;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Gates
 // ---------------------------------------------------------------------------
 
@@ -639,6 +829,16 @@ function validate(level: LevelData): boolean {
     if (!floorNeighbors(level, c.pos).some((nb) => open.has(key(nb)))) return false;
   }
   for (const k of level.keys) if (!open.has(key(k.pos))) return false;
+
+  // Warrens are detours, never the route: wall every one of them off and the
+  // stairs must still be reachable, or a warren has become a way past a gate.
+  const warrenTiles = new Set((level.warrens ?? []).flat().map(key));
+  if (warrenTiles.size) {
+    const without = bfsDistances(level, start, {
+      blocked: (p) => warrenTiles.has(key(p)) || chestTiles.has(key(p)),
+    });
+    if (!without.has(key(exit))) return false;
+  }
 
   // Every guard the player cannot walk around sits at the floor's own level,
   // so the way down is never barred by a fight the hero cannot win.

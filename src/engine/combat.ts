@@ -19,7 +19,7 @@ import type {
   Vec,
 } from './types';
 import { BOSS_HIT_FRACTION, HEART, eq, key, manhattan, parseKey } from './types';
-import { damage } from './balance';
+import { damage, xpShare } from './balance';
 import { bfsDistances, floorNeighbors, isFloor } from './pathfind';
 import type { ItemStats } from './items';
 import { berserkActive, heroStats } from './items';
@@ -159,7 +159,7 @@ export function damageMonster(
   if (killed) {
     m.hp = 0;
     m.alive = false;
-    const xp = Math.round(m.xp * stats.xpMult);
+    const xp = Math.round(m.xp * stats.xpMult * xpShare(hero.level, m.level));
     const gold = Math.round(m.gold * stats.goldMult);
     hero.xp += xp;
     hero.gold += gold;

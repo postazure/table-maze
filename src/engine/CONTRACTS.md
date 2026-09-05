@@ -44,6 +44,7 @@ export function applyLevelUp(hero: Hero): void;      // called when hero.xp >= h
 export function makeMonster(kind: MonsterKind, depth: number, rng: Rng, pos: Vec, id: string, opts?: MonsterOpts): Monster; // stats scale with depth; picks name/glyph from a themed table. `opts.gate` = the player has no way around this one: it sits at the floor's own level and takes neither the role lift nor the elite roll.
 export function rollChestLoot(depth: number, rng: Rng): Loot;
 export function trinketGold(depth: number): number;  // coins a duplicate chest trinket melts down for
+export function xpShare(heroLevel: number, monsterLevel: number): number; // share of a kill's xp banked, from the level difference: >1 when the hero is behind (capped at 3), <1 when ahead (floored at 0.05). Gold is never scaled.
 export function damage(attackerAtk: number, defenderDef: number, rng: Rng): number; // >= 1
 ```
 
@@ -52,6 +53,9 @@ export function damage(attackerAtk: number, defenderDef: number, rng: Rng): numb
 export function generateLevel(depth: number, runSeed: number): LevelData;
 /** The guards the player has no way around: the cheapest start->exit route, counting one per guard walked through. */
 export function gateGuards(level: LevelData): Monster[];
+export const ROUTE_MONSTER_CAP: number;      // most monsters the route and its branches carry
+export const WARREN_MONSTER_CAP: number;     // ...per warren, on top of that
+export const WARREN_MONSTER_BUDGET: number;  // ...and across all of a floor's warrens
 ```
 Requirements:
 - Perfect maze (recursive backtracker or similar) on the tile grid from
@@ -76,6 +80,14 @@ Requirements:
   share tiles with monsters or each other. The level must be solvable: exit
   reachable from start once all doors are open, and every key reachable in
   order.
+- Warrens. After the route is known, flood-fill the floor with the route
+  treated as a wall and braid the bigger pockets that fall out (>= 6 tiles) so
+  they loop back on themselves. Only open a wall when every floor tile it
+  touches is already inside that pocket: that is what stops a warren gaining a
+  second junction onto the route and becoming a way past a gate guard. Record
+  them in `LevelData.warrens`; blocking every warren tile must always leave the
+  stairs reachable. Stock them with guards and patrols (and the odd lurker) on
+  top of the route's own budget, and keep the route's monsters out of them.
 - No unwinnable gate. Guards never move and heal back to full between attempts,
   so a guard on the only way to the stairs must be beatable or the run is dead.
   After placing monsters, re-roll every guard `gateGuards` reports at the

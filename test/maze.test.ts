@@ -2,7 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HEART, Tile, key } from '../src/engine/types';
 import type { Hero, LevelData, Monster, Rng, Vec } from '../src/engine/types';
-import { gateGuards, generateLevel } from '../src/engine/maze';
+import {
+  ROUTE_MONSTER_CAP,
+  WARREN_MONSTER_CAP,
+  WARREN_MONSTER_BUDGET,
+  gateGuards,
+  generateLevel,
+} from '../src/engine/maze';
 import { bfsDistances, bfsPath, floorNeighbors, isFloor } from '../src/engine/pathfind';
 import {
   applyLevelUp,
@@ -12,6 +18,7 @@ import {
   newHero,
   rollChestLoot,
   xpForLevel,
+  xpShare,
 } from '../src/engine/balance';
 import { hashSeed, makeRng } from '../src/engine/rng';
 
@@ -134,7 +141,11 @@ test('generateLevel: structure, entities and solvability', () => {
 
       // monsters
       assert.ok(lv.monsters.length >= 3, `${where}: at least 3 monsters`);
-      assert.ok(lv.monsters.length <= 18, where);
+      const warrenMonsters = Math.min(WARREN_MONSTER_BUDGET, (lv.warrens?.length ?? 0) * WARREN_MONSTER_CAP);
+      assert.ok(
+        lv.monsters.length <= ROUTE_MONSTER_CAP + warrenMonsters,
+        `${where}: ${lv.monsters.length} monsters is more than the route and warren caps allow`,
+      );
       const open = bfsDistances(lv, lv.start);
       for (const m of lv.monsters) {
         const d = open.get(key(m.pos));
@@ -412,15 +423,42 @@ function headOn(hero: Hero, m: Monster, rng: Rng): { win: boolean; heartsLeft: n
   return { win: false, heartsLeft: 0 };
 }
 
+/**
+ * The hero the game actually produces by `depth`: someone who cleared each
+ * floor's patrols, guards and chests on the way down and kept one of each
+ * trinket they found. The monster numbers are tuned against this hero, not
+ * against a bare one, so this is what the role tests must fight with.
+ */
+function playedTo(depth: number): Hero {
+  const hero = newHero();
+  const owned = new Set<string>();
+  for (let d = 1; d <= depth; d++) {
+    const level = generateLevel(d, 4242);
+    let xp = 0;
+    for (const m of level.monsters) {
+      if (m.kind !== 'lurker') xp += m.xp * xpShare(hero.level, m.level);
+    }
+    for (const c of level.chests) {
+      xp += c.loot.xp;
+      const item = c.loot.item;
+      if (!item || owned.has(item.name)) continue;
+      owned.add(item.name);
+      hero.atk += item.atk ?? 0;
+      hero.def += item.def ?? 0;
+      hero.maxHp += item.maxHp ?? 0;
+    }
+    hero.xp += Math.round(xp);
+    applyLevelUp(hero);
+  }
+  hero.hp = hero.maxHp;
+  return hero;
+}
+
 test('the three roles still read the same against a hero who keeps pace', () => {
   const rng = makeRng(4242);
   for (const depth of [2, 5, 10, 16, 22]) {
-    // A hero one level over the floor: what clearing each floor actually gives.
-    const hero = newHero();
-    while (hero.level <= depth) {
-      hero.xp = hero.xpToNext;
-      applyLevelUp(hero);
-    }
+    const hero = playedTo(depth);
+    assert.ok(hero.level >= depth, `depth ${depth}: hero fell behind at level ${hero.level}`);
     const cost = (kind: 'patrol' | 'guard' | 'lurker') => {
       let spent = 0;
       let wins = 0;
@@ -436,29 +474,154 @@ test('the three roles still read the same against a hero who keeps pace', () => 
     assert.ok(cost('patrol').spent < 0.15, `${where}: a patrol is a speed bump`);
     const guard = cost('guard');
     assert.ok(guard.winRate > 0.9, `${where}: a guard is won at level`);
-    assert.ok(guard.spent > 0.15, `${where}: but a guard costs real hearts (${guard.spent.toFixed(2)})`);
-    assert.ok(cost('lurker').winRate < 0.5, `${where}: a lurker is not a fight to pick`);
+    // The first floors are gentle on purpose; from the middle of the run a
+    // guard has to take a real bite out of the hero or nothing does.
+    if (depth >= 5) {
+      assert.ok(guard.spent > 0.15, `${where}: a guard costs real hearts (${guard.spent.toFixed(2)})`);
+    }
+    // A lurker is never a cheap fight. Deep in the run a well-kitted hero can
+    // take one, but it costs most of their hearts to do it.
+    const lurker = cost('lurker');
+    assert.ok(
+      lurker.spent > 0.5,
+      `${where}: a lurker should cost most of the hero's hearts (${lurker.spent.toFixed(2)})`,
+    );
+    if (depth <= 10) {
+      assert.ok(lurker.winRate < 0.5, `${where}: a lurker is not a fight to pick`);
+    }
   }
 });
 
-test('clearing a floor is worth about one level, not five', () => {
-  // The hero must track the depth: too fast and every floor after the first is
-  // free, too slow and the gate guards become walls.
-  const hero = newHero();
-  const owned = new Set<string>();
-  for (let depth = 1; depth <= 20; depth++) {
-    const level = generateLevel(depth, 1234);
-    // A thorough player: every patrol and guard, every chest, no lurkers.
-    for (const m of level.monsters) if (m.kind !== 'lurker') hero.xp += m.xp;
-    for (const c of level.chests) {
-      hero.xp += c.loot.xp;
-      const item = c.loot.item;
-      if (item) owned.add(item.name);
+test('clearing a floor keeps the hero level with the depth, however they play', () => {
+  // Three ways to play the same twenty floors. All three must stay in a narrow
+  // band around the depth: too far ahead and every floor after the first is
+  // free, too far behind and the gate guards become walls.
+  const styles = {
+    'sticks to the route': { patrols: 0.5, lurkers: 0, chests: 0.4 },
+    thorough: { patrols: 1, lurkers: 0, chests: 1 },
+    completionist: { patrols: 1, lurkers: 1, chests: 1 },
+  };
+  for (const [name, take] of Object.entries(styles)) {
+    const hero = newHero();
+    for (let depth = 1; depth <= 20; depth++) {
+      const level = generateLevel(depth, 1234);
+      let xp = 0;
+      for (const m of level.monsters) {
+        const share = take[m.kind === 'lurker' ? 'lurkers' : 'patrols'];
+        xp += m.xp * xpShare(hero.level, m.level) * share;
+      }
+      for (const c of level.chests) xp += c.loot.xp * take.chests;
+      hero.xp += Math.round(xp);
+      applyLevelUp(hero);
+      const gap = hero.level - depth;
+      assert.ok(gap >= -2 && gap <= 5, `${name} at depth ${depth}: hero is level ${hero.level}`);
     }
-    applyLevelUp(hero);
-    const gap = hero.level - depth;
-    assert.ok(gap >= 0 && gap <= 2, `depth ${depth}: hero is level ${hero.level}`);
   }
+});
+
+test('a monster pays by how far above or below the hero it is', () => {
+  assert.equal(xpShare(5, 5), 1, 'at level, full value');
+  assert.ok(xpShare(5, 7) > 1, 'a monster above the hero pays over the odds');
+  assert.ok(xpShare(7, 5) < 1, 'and one below pays a fraction');
+  // Clamped at both ends, and monotonic in between. Even hopelessly outclassed,
+  // a kill is worth something: the floor is above zero.
+  assert.ok(xpShare(1, 99) <= 3, 'the catch-up bonus is capped');
+  assert.ok(xpShare(99, 1) > 0, 'and a kill is never worth literally nothing');
+  for (let gap = -10; gap < 10; gap++) {
+    assert.ok(xpShare(10, 10 + gap) <= xpShare(10, 10 + gap + 1), `gap ${gap}`);
+  }
+});
+
+test('a hero who has fallen behind can grind a warren back up to the depth', () => {
+  // The reason warrens exist: arrive under-levelled, clear one, and the gate
+  // guard on the way down becomes a fight you can take.
+  for (const depth of [5, 12, 20]) {
+    let gained = 0;
+    const runs = 12;
+    for (let seed = 0; seed < runs; seed++) {
+      const level = generateLevel(depth, 70000 + seed);
+      const warrenTiles = new Set((level.warrens ?? []).flat().map(key));
+      const hero = newHero();
+      while (hero.level < depth - 3) {
+        hero.xp = hero.xpToNext;
+        applyLevelUp(hero);
+      }
+      const before = hero.level;
+      for (const m of level.monsters) {
+        if (!warrenTiles.has(key(m.pos))) continue;
+        hero.xp += Math.round(m.xp * xpShare(hero.level, m.level));
+        applyLevelUp(hero);
+      }
+      gained += hero.level - before;
+    }
+    assert.ok(gained / runs >= 1, `depth ${depth}: clearing the warrens gained ${(gained / runs).toFixed(2)} levels`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Warrens: side loops you choose to walk into, never the way down
+// ---------------------------------------------------------------------------
+
+test('a warren is never part of the route: wall them all off and the stairs remain', () => {
+  for (const depth of DEPTHS) {
+    for (const seed of SEEDS) {
+      const level = generateLevel(depth, seed);
+      const warrenTiles = new Set((level.warrens ?? []).flat().map(key));
+      const chestTiles = new Set(level.chests.map((c) => key(c.pos)));
+      assert.ok(!warrenTiles.has(key(level.start)), `depth ${depth} seed ${seed}: start is in a warren`);
+      assert.ok(!warrenTiles.has(key(level.exit)), `depth ${depth} seed ${seed}: exit is in a warren`);
+      const without = bfsDistances(level, level.start, {
+        blocked: (p) => warrenTiles.has(key(p)) || chestTiles.has(key(p)),
+      });
+      assert.ok(
+        without.has(key(level.exit)),
+        `depth ${depth} seed ${seed}: a warren has become a way round the route`,
+      );
+    }
+  }
+});
+
+test('a warren loops back on itself rather than dead-ending', () => {
+  let seen = 0;
+  for (const depth of DEPTHS) {
+    for (const seed of SEEDS) {
+      const level = generateLevel(depth, seed);
+      for (const warren of level.warrens ?? []) {
+        seen++;
+        const inside = new Set(warren.map(key));
+        // A tree over n tiles has n-1 edges. As many edges as tiles means a cycle.
+        let edges = 0;
+        for (const p of warren) {
+          for (const nb of floorNeighbors(level, p)) if (inside.has(key(nb))) edges++;
+        }
+        assert.ok(
+          edges / 2 >= warren.length,
+          `depth ${depth} seed ${seed}: warren of ${warren.length} tiles has no loop`,
+        );
+      }
+    }
+  }
+  assert.ok(seen > 0, 'the generator produced no warrens at all');
+});
+
+test('warrens are stocked, and their patrols have a beat that stays inside', () => {
+  let stocked = 0;
+  for (const depth of [2, 6, 12, 20]) {
+    for (const seed of SEEDS) {
+      const level = generateLevel(depth, seed);
+      const inside = new Set((level.warrens ?? []).flat().map(key));
+      for (const m of level.monsters) {
+        if (!inside.has(key(m.pos))) continue;
+        stocked++;
+        if (m.kind !== 'patrol') continue;
+        assert.ok(m.patrolPath && m.patrolPath.length >= 2, `depth ${depth} seed ${seed}: ${m.id} has no beat`);
+        for (const t of m.patrolPath ?? []) {
+          assert.ok(inside.has(key(t)), `depth ${depth} seed ${seed}: ${m.id} patrols out of its warren`);
+        }
+      }
+    }
+  }
+  assert.ok(stocked > 0, 'no warren was stocked with anything');
 });
 
 test('chest loot is sane', () => {

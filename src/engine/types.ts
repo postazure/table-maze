@@ -185,6 +185,13 @@ export interface LevelData {
   doors: Door[];
   chests: Chest[];
   monsters: Monster[];
+  /**
+   * Off-path pockets braided into loops (see maze.ts). Optional: absent on
+   * boss and shop floors, and on levels saved before warrens existed. Blocking
+   * every tile in here always leaves the stairs reachable — a warren is
+   * somewhere you choose to go, never part of the way down.
+   */
+  warrens?: Vec[][];
 }
 
 // ---------------------------------------------------------------------------

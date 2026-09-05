@@ -31,15 +31,44 @@ export function levelDims(depth: number): { width: number; height: number } {
 /**
  * XP needed to go from `level` to `level + 1`.
  *
- * Tuned against what one floor actually holds (see the pacing test in
- * test/maze.test.ts): clearing the patrols, guards and chests of floor `d` is
- * worth about one level, so the hero tracks the depth instead of racing ahead
- * of it. Lurkers are the surplus — the monster you kill when you want a
- * cushion, not the one you have to kill.
+ * Tuned against what one floor actually holds, warrens included (see the pacing
+ * test in test/maze.test.ts): clearing the patrols, guards and chests of floor
+ * `d` is worth about one level, so the hero tracks the depth instead of racing
+ * ahead of it. Lurkers are the surplus — the monster you kill when you want a
+ * cushion, not the one you have to kill. `xpShare` does the rest of the work:
+ * it is what stops a floor's extra monsters turning into extra levels.
  */
 export function xpForLevel(level: number): number {
   const l = Math.max(1, Math.floor(level));
-  return Math.round(45 * Math.pow(l, 1.1));
+  return Math.round(65 * Math.pow(l, 1.1));
+}
+
+/** Share of a monster's xp gained or lost per level between it and the hero. */
+const XP_PER_LEVEL_GAP = 0.5;
+/** However far ahead the hero gets, a kill is still worth this much of it. */
+const MIN_XP_SHARE = 0.05;
+/** However far behind, a kill is never worth more than this much of it. */
+const MAX_XP_SHARE = 3;
+
+/**
+ * How much of a monster's xp the hero actually banks, from the difference in
+ * their levels. The red and green tags on the sprites are the player's read on
+ * it: a red monster is above you and pays over the odds, a green one is below
+ * you and pays a fraction. The rate is the same in both directions; the clamps
+ * are not, and that is the whole shape of it — falling behind can treble a
+ * kill, running ahead only ever cuts it to a twentieth.
+ *
+ * This is what makes the warrens worth walking into. A hero who has fallen
+ * behind the depth can go and clear one to catch up and force a guarded
+ * corridor, and the further behind they are the faster it works. A hero
+ * already running ahead of the depth gets almost nothing for the same work, so
+ * grinding levels out rather than running away with the run. Gold is not
+ * scaled: an over-levelled hero who clears a warren anyway still gets paid,
+ * just not in levels.
+ */
+export function xpShare(heroLevel: number, monsterLevel: number): number {
+  const gap = Math.floor(monsterLevel) - Math.floor(heroLevel);
+  return Math.min(MAX_XP_SHARE, Math.max(MIN_XP_SHARE, 1 + XP_PER_LEVEL_GAP * gap));
 }
 
 export function newHero(): Hero {
