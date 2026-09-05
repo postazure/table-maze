@@ -202,7 +202,7 @@ function onHeroHit(
 /** Lightning wand: hop from the struck monster to its nearest live neighbours. */
 function chainFrom(state: GameState, m: Monster, rng: Rng, stats: ItemStats): void {
   const targets = state.level.monsters
-    .filter((o) => o.alive && o !== m && manhattan(o.pos, m.pos) <= CHAIN_RADIUS)
+    .filter((o) => o.alive && !o.invulnerable && o !== m && manhattan(o.pos, m.pos) <= CHAIN_RADIUS)
     .sort((a, b) => manhattan(a.pos, m.pos) - manhattan(b.pos, m.pos))
     .slice(0, Math.max(0, stats.chainTargets));
   if (targets.length === 0) return;

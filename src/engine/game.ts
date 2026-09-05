@@ -600,7 +600,9 @@ export class Game {
     // The swing clears the queue; from here on the hero keeps attacking on
     // their own while the monster stays in reach (see autoAttack).
     st.path.length = 0;
-    this.engagedId = m.alive ? m.id : null;
+    // Nothing to gain from hammering on something that cannot be hurt: one
+    // swing says "Immune" and the hero lets it go.
+    this.engagedId = m.alive && !m.invulnerable ? m.id : null;
     this.holdTimer = HOLD_ATTACK_MS;
     this.dirty = true;
   }
@@ -705,7 +707,7 @@ export class Game {
   private nearestInReach(stats: ItemStats): Monster | null {
     let far: Monster | null = null;
     for (const m of this.state.level.monsters) {
-      if (!m.alive) continue;
+      if (!m.alive || m.invulnerable) continue;
       const r = this.inReach(m, stats);
       if (r === 1) return m;
       if (r === 2 && !far) far = m;
@@ -1029,7 +1031,7 @@ export class Game {
     let target: Monster | null = null;
     let best = Infinity;
     for (const m of st.level.monsters) {
-      if (!m.alive) continue;
+      if (!m.alive || m.invulnerable) continue; // no point setting a boss on fire
       const d = dists.get(key(m.pos));
       if (d === undefined || d > stats.fireRange) continue;
       if (d < best) {

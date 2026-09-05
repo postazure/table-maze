@@ -32,7 +32,7 @@ export const BOSS_SALT = 6161;
 export const BOSS_EVERY = 3;
 
 /** How many candidate layouts we try before falling back to a fixed one. */
-const MAX_ATTEMPTS = 12;
+const MAX_ATTEMPTS = 20;
 
 /** No monster ever starts this close (manhattan) to the hero. */
 const MONSTER_MIN_MANHATTAN = 3;
@@ -277,6 +277,8 @@ const NECRO_MAX_CELLS = 12; // 24 tiles
 const NECRO_MIN_TURNS = 3;
 /** How often the random walk tries a turn before going straight on. */
 const TURN_BIAS = 0.72;
+/** Fresh draws for one corridor before the whole chamber is re-rolled. */
+const CORRIDOR_TRIES = 10;
 /** Minimum manhattan gap between two corridor mouths on the chamber edge. */
 const MOUTH_GAP = 4;
 
@@ -468,7 +470,13 @@ function buildNecromancer(depth: number, seed: number): LevelData | null {
   if (!mouths) return null;
   const ends: Vec[] = [];
   for (const mouth of mouths) {
-    const corridor = carveCorridor(tiles, size, size, mouth, rng);
+    // A corridor that boxes itself in leaves no trace, so a fresh draw (new
+    // length target, new turns) is worth a few tries before the whole chamber
+    // is thrown away.
+    let corridor: Vec[] | null = null;
+    for (let t = 0; t < CORRIDOR_TRIES && !corridor; t++) {
+      corridor = carveCorridor(tiles, size, size, mouth, rng);
+    }
     if (!corridor) return null;
     ends.push(corridor[corridor.length - 1]);
   }
@@ -757,6 +765,34 @@ function corridorRoute(
 }
 
 /**
+ * Would carving `route` leave a 2x2 patch of floor anywhere along it? That is
+ * the one way a corridor stops being 1-wide: running alongside a corridor laid
+ * earlier, or arriving beside a door another corridor already uses.
+ */
+function widensAnything(tiles: Tile[][], route: readonly Vec[]): boolean {
+  const added = new Set(route.map(key));
+  const floor = (p: Vec): boolean =>
+    added.has(key(p)) ||
+    (p.x >= 0 && p.y >= 0 && p.x < ANGEL_W && p.y < ANGEL_H && tiles[p.y][p.x] === Tile.Floor);
+  for (const p of route) {
+    for (const dx of [-1, 0]) {
+      for (const dy of [-1, 0]) {
+        const c = { x: p.x + dx, y: p.y + dy };
+        if (
+          floor(c) &&
+          floor({ x: c.x + 1, y: c.y }) &&
+          floor({ x: c.x, y: c.y + 1 }) &&
+          floor({ x: c.x + 1, y: c.y + 1 })
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Wire two neighbouring rooms together: pick facing door tiles, then wind
  * through the rock between them. Corridor tiles never touch a room other than
  * at the two doors, so a corridor can never eat into a room it passes.
@@ -782,7 +818,7 @@ function connectRooms(
       return true;
     };
     const route = corridorRoute(head, tail, usable, rng);
-    if (!route) continue;
+    if (!route || widensAnything(tiles, route)) continue;
     for (const p of route) tiles[p.y][p.x] = Tile.Floor;
     return true;
   }
@@ -871,7 +907,16 @@ function buildAngels(depth: number, seed: number): LevelData | null {
   const pool = rng.shuffle(rooms.map((_, i) => i).filter((i) => i !== startRoom && i !== exitRoom));
   for (const ri of pool) {
     if (level.monsters.length >= count) break;
-    const spots = rectTiles(rooms[ri]).filter((p) => (dist.get(key(p)) ?? -1) >= ANGEL_MIN_DIST);
+    // Never in a doorway: a statue wedged in the only gap would be a wall the
+    // hero cannot break, since angels are invulnerable.
+    const spots = rectTiles(rooms[ri]).filter(
+      (p) =>
+        (dist.get(key(p)) ?? -1) >= ANGEL_MIN_DIST &&
+        !STEPS.some((_, i) => {
+          const q = step(p, i);
+          return !inRect(rooms[ri], q) && isFloor(level, q);
+        }),
+    );
     if (!spots.length) continue;
     const angel = makeBossMonster('angel', depth, rng.pick(spots), `angel${level.monsters.length + 1}`);
     angel.roomId = ri;
@@ -883,7 +928,8 @@ function buildAngels(depth: number, seed: number): LevelData | null {
 }
 
 // ---------------------------------------------------------------------------
-// Fallbacks: fixed layouts, valid by construction, used if every roll failed
+// Fallbacks: plain layouts that are valid by construction, in case every
+// randomised roll above was thrown away
 // ---------------------------------------------------------------------------
 
 /** Chamber at 11..19 of a 31x31 slab, five zig-zag corridors written out. */
