@@ -525,7 +525,7 @@ test('a lurker reaches its full range once the hero catches up', () => {
 
 test('a guard never moves and only fights once it has been hit', () => {
   const g = corridorGame();
-  const guard = mkMonster({ pos: { x: 2, y: 1 }, kind: 'guard', atk: 3, attackInterval: 700 });
+  const guard = mkMonster({ pos: { x: 2, y: 1 }, kind: 'guard', hp: 30, maxHp: 30, atk: 3, attackInterval: 700 });
   g.state.level.monsters.push(guard);
   g.state.hero.hp = 20;
   g.state.hero.maxHp = 20;

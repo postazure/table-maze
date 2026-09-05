@@ -13,8 +13,11 @@ import {
 } from '../src/engine/maze';
 import { bfsDistances, bfsPath, floorNeighbors, isFloor } from '../src/engine/pathfind';
 import {
+  HERO_ATK_BASE,
+  HERO_HP_BASE,
   applyLevelUp,
   damage,
+  levelCurve,
   levelDims,
   makeMonster,
   monsterLevelCap,
@@ -278,10 +281,10 @@ test('rng is deterministic and in range', () => {
 
 test('hero progression', () => {
   const h = newHero();
-  assert.equal(h.hp, 3 * HEART, 'starts with three hearts');
-  assert.equal(h.maxHp, 3 * HEART);
+  assert.equal(h.hp, 4 * HEART, 'starts with four hearts');
+  assert.equal(h.maxHp, 4 * HEART);
   assert.equal(h.atk, 2);
-  assert.equal(h.def, 0);
+  assert.equal(h.def, 0, 'defense is a gear-only stat, never granted by a level');
   assert.equal(h.level, 1);
   assert.equal(h.xpToNext, xpForLevel(1));
   assert.deepEqual(h.keys, { door: 0, chest: 0 });
@@ -289,10 +292,11 @@ test('hero progression', () => {
   h.xp = xpForLevel(1) + xpForLevel(2);
   applyLevelUp(h);
   assert.equal(h.level, 3);
-  assert.equal(h.maxHp, 5 * HEART, 'one heart per level');
-  assert.equal(h.hp, 5 * HEART);
-  assert.equal(h.atk, 4);
-  assert.equal(h.def, 1); // gained at level 2 only
+  // atk and max HP ride the same compounding curve, not a flat per-level add.
+  assert.equal(h.maxHp, 23);
+  assert.equal(h.hp, 23);
+  assert.equal(h.atk, 3);
+  assert.equal(h.def, 0);
   assert.ok(h.xp < h.xpToNext);
 
   const noop = newHero();
@@ -328,9 +332,9 @@ test('patrols are trash, guards are a fight, lurkers are the thing you lure', ()
       assert.ok(patrol.level >= depth && patrol.level <= depth + 1, where);
       assert.ok(guard.level >= depth + 1 && guard.level <= depth + 2, where);
       assert.ok(lurker.level >= depth + 2 && lurker.level <= depth + 3, where);
-      // Patrols stay a speed bump: a quarter heart at depth 1, never more than a few swings to kill.
-      if (depth === 1) assert.equal(patrol.atk, 1, where);
-      assert.ok(patrol.hp <= 4 + 2 * (depth + 1), where);
+      // Patrols stay a speed bump: lighter than the curve a hero of its own level rides.
+      assert.ok(patrol.atk < levelCurve(HERO_ATK_BASE, patrol.level), where);
+      assert.ok(patrol.hp <= levelCurve(HERO_HP_BASE, patrol.level), where);
       // Each role is strictly tougher, harder hitting and better paid than the last.
       assert.ok(patrol.hp < guard.hp && guard.hp < lurker.hp, `${where}: hp ${patrol.hp} ${guard.hp} ${lurker.hp}`);
       assert.ok(patrol.atk < guard.atk && guard.atk < lurker.atk, `${where}: atk ${patrol.atk} ${guard.atk} ${lurker.atk}`);
@@ -348,9 +352,9 @@ test('spawn headroom over the hero grows with the hero level, and never digs bel
   assert.equal(monsterLevelCap(3, 3), 4);
   // ...and the headroom opens up as the hero climbs, to the full role lift.
   assert.equal(monsterLevelCap(4, 4), 6);
-  assert.equal(monsterLevelCap(8, 8), 11);
-  assert.equal(monsterLevelCap(12, 12), 15);
-  assert.equal(monsterLevelCap(20, 40), 43, 'never more than three levels over');
+  assert.equal(monsterLevelCap(8, 8), 10);
+  assert.equal(monsterLevelCap(12, 12), 14);
+  assert.equal(monsterLevelCap(20, 40), 42, 'never more than two levels over');
   // Falling behind does not make the dungeon shallower: the floor's own depth
   // is the floor of the cap.
   assert.equal(monsterLevelCap(9, 1), 9);
