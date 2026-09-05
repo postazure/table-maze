@@ -108,8 +108,9 @@ Play it at **https://postazure.github.io/table-maze/**
   pulls ahead of you, kill the lurkers too and you buy yourself a cushion. It is
   a cushion and not a runaway, because a monster below your level barely pays.
 - **Sound** is on by default; the speaker button in the HUD turns it and the
-  music off, and remembers your choice. Browsers won't let a page make a noise
-  until you touch it, so the first sound arrives with your first tap.
+  music off, and remembers your choice. It tries to start playing the moment
+  the game loads; where the browser won't allow that without a gesture, the
+  first sound arrives with your first tap instead.
   Everything you hear is generated as you play — square waves, triangles and
   filtered noise, the palette of a 1980s sound chip. The sounds you hear all
   day (a footstep, a swing, a hit) shift a fraction in pitch every time so a
