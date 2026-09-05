@@ -10,7 +10,8 @@ import { GameAudio } from '../audio/audio';
 export function useAudio() {
   const [audio] = useState(() => new GameAudio());
   const [soundOn, setSoundOn] = useState(() => audio.enabled);
-  const [volume, setVolumeState] = useState(() => audio.level);
+  const [sfxVolume, setSfxVolumeState] = useState(() => audio.sfxVolume);
+  const [musicVolume, setMusicVolumeState] = useState(() => audio.musicVolume);
 
   useEffect(() => {
     audio.attach();
@@ -22,13 +23,21 @@ export function useAudio() {
     setSoundOn(audio.enabled);
   }, [audio]);
 
-  const setVolume = useCallback(
+  const setSfxVolume = useCallback(
     (level: number) => {
-      audio.setLevel(level);
-      setVolumeState(audio.level);
+      audio.setSfxVolume(level);
+      setSfxVolumeState(audio.sfxVolume);
     },
     [audio],
   );
 
-  return { audio, soundOn, toggleSound, volume, setVolume };
+  const setMusicVolume = useCallback(
+    (level: number) => {
+      audio.setMusicVolume(level);
+      setMusicVolumeState(audio.musicVolume);
+    },
+    [audio],
+  );
+
+  return { audio, soundOn, toggleSound, sfxVolume, setSfxVolume, musicVolume, setMusicVolume };
 }
