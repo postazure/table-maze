@@ -69,6 +69,26 @@ Play it at **https://postazure.github.io/table-maze/**
     it through another passage. Kill one when you're well over its level and the
     reward is the biggest in the dungeon. The first floor has none — it is
     patrols and guards while you learn the controls.
+- Four **shrines** stand in alcoves on every maze floor, and no two are worth the
+  same walk. One sits in a dead end hanging straight off the route down, where you
+  cannot miss it. One or two are at the back of the longer **warrens**, so clearing
+  a loop is worth something beyond the xp. The rest are scattered across the map, as
+  far from each other as the floor allows. Nothing about them blocks — a shrine is
+  floor you walk over, so even the ones standing mid-corridor are stepped straight
+  across — which means you can note one on the way past and come back for it when a
+  fight actually needs it. Walk over one to light it and it hands you its gift, once, and then goes
+  dark for the rest of the floor. Every gift runs out. **Ward** hands you extra
+  temporary hearts, in blue on the end of your heart row; hits eat those first and
+  nothing ever refills them. **Fury** and **Stone Skin** buy you attack or defense
+  for twenty seconds. **Frost** throws an ice ball at the nearest monster in sight
+  every couple of seconds and freezes whatever it hits solid — no step, no swing —
+  for a moment. **Mending** refills a quarter heart on a fast beat, fighting or not.
+  **Time Bubble** drops every monster within six tiles to a crawl. What is running
+  shows twice over: a row of chips under your hearts, and a row of pips floating
+  above the hero. Neither counts down in numbers. The bar drains, and the last ten
+  seconds blink — the last five twice as fast. Get knocked down and every shrine
+  effect goes with it. They do survive the stairs, so a shrine near the way down is
+  a way to walk into the next floor, or a boss chamber, already buffed.
 - After every third floor you face a **boss** before you reach the shop. An intro card
   explains the fight, then the game is on: **The Necromancer** channels a spell in a
   central chamber while raising skeletons — smash all five crystals down his corridors

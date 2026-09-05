@@ -1,6 +1,7 @@
 import { memo, useCallback, useRef } from 'react';
 import type { ItemSlot } from '../engine/types';
-import type { HudModel } from './hudModel';
+import { BLINK_MS, SHRINE_COLORS, shrineName } from '../engine/shrines';
+import type { HudBuff, HudModel } from './hudModel';
 import { PixelIcon, type IconName } from './icons';
 import { Hearts } from './Hearts';
 
@@ -27,11 +28,45 @@ function steppedPct(value: number, max: number): number {
   return Math.floor(pct / 4) * 4;
 }
 
-function Stat({ icon, title, value }: { icon: IconName; title: string; value: number }) {
+function Stat({
+  icon,
+  title,
+  value,
+  buffed = false,
+}: {
+  icon: IconName;
+  title: string;
+  value: number;
+  /** A shrine is holding this number up: light it so the player can see why. */
+  buffed?: boolean;
+}) {
   return (
-    <div className="hud-stat" title={title}>
+    <div className={`hud-stat${buffed ? ' hud-stat-buffed' : ''}`} title={buffed ? `${title} (shrine)` : title}>
       <PixelIcon name={icon} size={14} title={title} />
       <span className="hud-stat-value">{value}</span>
+    </div>
+  );
+}
+
+/**
+ * One running shrine effect: its glyph, and a bar that drains as the effect
+ * does. No seconds anywhere — the bar is the clock, and the chip blinks for
+ * the last ten seconds and blinks twice as fast for the last five, in step
+ * with the pip floating over the hero's head.
+ */
+function Buff({ buff }: { buff: HudBuff }) {
+  const color = SHRINE_COLORS[buff.kind];
+  const blink = BLINK_MS[buff.phase];
+  return (
+    <div
+      className={`hud-buff hud-buff-${buff.phase}`}
+      style={blink > 0 ? { animationDuration: `${blink}ms` } : undefined}
+      title={shrineName(buff.kind)}
+    >
+      <PixelIcon name={buff.kind} size={14} title={shrineName(buff.kind)} />
+      <div className="hud-buff-track">
+        <div className="hud-buff-fill" style={{ width: `${buff.pct}%`, background: color }} />
+      </div>
     </div>
   );
 }
@@ -122,7 +157,13 @@ function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound, onOpenVolu
       <div className="hud-bars">
         <div className="hud-bar-row">
           <span className="hud-bar-label">HP</span>
-          <Hearts hp={model.hp} maxHp={model.maxHp} dim={model.stunned} />
+          <Hearts
+            hp={model.hp}
+            maxHp={model.maxHp}
+            dim={model.stunned}
+            tempHp={model.tempHp}
+            tempHpMax={model.tempHpMax}
+          />
         </div>
         <div className="hud-bar-row">
           <span className="hud-bar-label">XP</span>
@@ -133,11 +174,21 @@ function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound, onOpenVolu
             {Math.round(model.xp)}/{Math.round(model.xpToNext)}
           </span>
         </div>
+        {model.buffs.length > 0 && (
+          <div className="hud-bar-row">
+            <span className="hud-bar-label">FX</span>
+            <div className="hud-buffs">
+              {model.buffs.map((buff) => (
+                <Buff key={buff.kind} buff={buff} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="hud-stats">
-        <Stat icon="sword" title="Attack" value={model.atk} />
-        <Stat icon="shield" title="Defense" value={model.def} />
+        <Stat icon="sword" title="Attack" value={model.atk} buffed={model.atkBuffed} />
+        <Stat icon="shield" title="Defense" value={model.def} buffed={model.defBuffed} />
         <Stat icon="coin" title="Gold" value={model.gold} />
         <Stat icon="doorKey" title="Door keys" value={model.doorKeys} />
         <Stat icon="chestKey" title="Chest keys" value={model.chestKeys} />

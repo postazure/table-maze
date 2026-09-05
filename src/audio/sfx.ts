@@ -102,6 +102,14 @@ const SFX: Record<SfxId, Voice> = {
     tone(ctx, dest, { type: 'sawtooth', freq: 210 * f, to: 70, dur: 0.3, gain: 0.1 });
   },
 
+  /** A frost shrine's ice ball: a thin glassy whistle down onto a cold thud. */
+  iceball(ctx, dest, v) {
+    const f = bend(v, 4);
+    tone(ctx, dest, { type: 'sine', freq: 1750 * f, to: 620 * f, dur: 0.22, gain: 0.1 });
+    tone(ctx, dest, { type: 'triangle', freq: 500 * f, to: 180, dur: 0.18, gain: 0.07, at: 0.06 });
+    noise(ctx, dest, { filter: 'highpass', freq: 4200, to: 1800, dur: 0.16, gain: 0.05, q: 0.5 });
+  },
+
   /** Chain lightning: bright, thin, crackly. */
   zap(ctx, dest, v) {
     const f = bend(v, 5);
@@ -279,6 +287,26 @@ const SFX: Record<SfxId, Voice> = {
       attack: 0.35,
       detune: 8,
     });
+  },
+
+  /**
+   * An alcove lighting up. A soft bell swelling open — no fanfare, this is a
+   * gift you picked up, not a floor you beat.
+   */
+  shrine(ctx, dest) {
+    arpeggio(ctx, dest, [hz(69), hz(76), hz(81)], {
+      step: 0.08,
+      dur: 0.4,
+      gain: 0.1,
+      type: 'triangle',
+    });
+    tone(ctx, dest, { type: 'sine', freq: hz(88), dur: 0.8, gain: 0.07, at: 0.22, attack: 0.12 });
+  },
+
+  /** The last temporary heart going: the same shape as the shrine, downward. */
+  wardBreak(ctx, dest) {
+    tone(ctx, dest, { type: 'sine', freq: hz(81), to: hz(69), dur: 0.3, gain: 0.11 });
+    noise(ctx, dest, { filter: 'highpass', freq: 2600, to: 900, dur: 0.2, gain: 0.06 });
   },
 
   /** Boss down. The longest sound in the game, and the only real fanfare. */
