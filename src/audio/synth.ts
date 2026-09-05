@@ -50,6 +50,12 @@ export interface ToneOpts {
   gain?: number;
   /** Attack time in seconds. Short = percussive, longer = a swell. */
   attack?: number;
+  /**
+   * Seconds of fade at the end. Given, the note holds at full volume between
+   * the attack and the fade instead of decaying the whole way — which is the
+   * difference between a plucked note and a pad you can lie under.
+   */
+  release?: number;
   /** Detune in cents, for thickening two voices against each other. */
   detune?: number;
   /** Slow pitch wobble: how fast, and how wide in cents. */
@@ -79,6 +85,11 @@ export function tone(ctx: BaseAudioContext, dest: AudioNode, o: ToneOpts): void 
   const env = ctx.createGain();
   env.gain.setValueAtTime(0.0001, t0);
   env.gain.linearRampToValueAtTime(peak, t0 + attack);
+  if (o.release !== undefined) {
+    // Hold, then fade: no automation between these two points leaves the gain
+    // sitting at `peak`, which is the sustain.
+    env.gain.setValueAtTime(peak, t0 + Math.max(attack, dur - o.release));
+  }
   env.gain.exponentialRampToValueAtTime(peak * 0.02, t0 + dur);
   env.gain.linearRampToValueAtTime(0.0001, t0 + dur + 0.01);
 
@@ -98,6 +109,30 @@ export function tone(ctx: BaseAudioContext, dest: AudioNode, o: ToneOpts): void 
 
   osc.start(t0);
   osc.stop(t0 + dur + 0.02);
+}
+
+/**
+ * A room to put the sound in: noise decaying over `seconds`, in stereo, for a
+ * ConvolverNode. Made once per context and shared — building one is a second's
+ * worth of arithmetic.
+ */
+const IMPULSE = new WeakMap<BaseAudioContext, AudioBuffer>();
+
+export function reverbImpulse(ctx: BaseAudioContext, seconds = 2.8, decay = 2.6): AudioBuffer {
+  const cached = IMPULSE.get(ctx);
+  if (cached) return cached;
+  const n = Math.max(1, Math.floor(ctx.sampleRate * seconds));
+  const buf = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const data = buf.getChannelData(c);
+    for (let i = 0; i < n; i++) {
+      // A short silent head makes it read as a large space rather than a box.
+      const head = i < ctx.sampleRate * 0.02 ? i / (ctx.sampleRate * 0.02) : 1;
+      data[i] = (Math.random() * 2 - 1) * head * Math.pow(1 - i / n, decay);
+    }
+  }
+  IMPULSE.set(ctx, buf);
+  return buf;
 }
 
 export interface NoiseOpts {

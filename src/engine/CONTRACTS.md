@@ -234,9 +234,10 @@ no audio files, the same way there are no image files.
 ```ts
 export function midiToHz(midi: number): number;
 export function noiseBuffer(ctx: BaseAudioContext): AudioBuffer;  // one second of white noise, cached per context
-export function tone(ctx: BaseAudioContext, dest: AudioNode, o: ToneOpts): void;   // one pitched note
+export function tone(ctx: BaseAudioContext, dest: AudioNode, o: ToneOpts): void;   // one pitched note; `release` makes it a held pad instead of a pluck
 export function noise(ctx: BaseAudioContext, dest: AudioNode, o: NoiseOpts): void; // one filtered noise burst
 export function arpeggio(ctx: BaseAudioContext, dest: AudioNode, notes: number[], o): void; // a run of notes
+export function reverbImpulse(ctx: BaseAudioContext, seconds?, decay?): AudioBuffer; // a room for a ConvolverNode, cached per context
 ```
 Square/triangle/sawtooth oscillators, filtered white noise, short envelopes:
 the palette of a 1980s sound chip and nothing else. Every voice is
@@ -260,15 +261,26 @@ export class MusicPlayer {
   dispose(): void;
 }
 ```
+**This is ambience, not a tune, and it must stay that way.** A crawl is played
+in long stretches, so anything with a hook becomes an earworm and then the
+reason someone mutes the game. Every track is a low drone, a chord that changes
+every fifteen to twenty seconds, and at most a couple of long single notes a
+bar — with about a third of bars holding none at all. Most of the signal goes
+through a convolution reverb (`reverbImpulse`), so it reads as a large stone
+room rather than a sound chip. Nothing runs faster than 64 bpm, nothing plays
+anything shorter than a beat, and only `dread` and `ember` carry a pulse (one
+low thud a bar, a heartbeat, never a drum kit). Adding sixteenth-note
+arpeggios, a drum pattern, or a memorable melody line would undo the point.
+
 No loops and no files: a track is a description (key, scale, tempo, chord
-progression, melodic density, drums) and the player writes the parts bar by bar
-against it. Chords and bass cycle so the music has a shape; the melody is an
-eight-note motif re-written every four bars and nudged in between, and every
-eighth bar the lead rests. Notes are scheduled ~0.3s ahead on a 25ms interval,
-so a dropped frame never stutters the music; a throttled background tab is
-detected by the schedule falling behind and skipped forward rather than caught
-up. Boss floors get `dread`, shops `market`, and each dungeon theme maps to one
-of the five maze tracks (neighbouring themes never share one).
+progression, how many notes a bar may hold) and the player fills it in bar by
+bar. Chords cycle so the music has a shape; which notes land, and whether any
+land, is decided as it goes, stepping between chord tones rather than leaping.
+A whole bar is scheduled ~1.2s ahead on a 200ms interval, so a dropped frame
+never stutters the music; a throttled background tab is detected by the
+schedule falling behind and skipped forward rather than caught up. Boss floors
+get `dread`, shops `market`, and each dungeon theme maps to one of the five
+maze tracks (neighbouring themes never share one).
 
 ## audio/audio.ts
 ```ts
@@ -286,6 +298,22 @@ a frame from `MazeCanvas`, right after `Game.tick`, and always clears the queue
 — even with the sound off. It plays at most 5 sounds a frame, at most 2 of any
 one kind, and enforces a minimum gap per sound, so chain lightning hitting four
 monsters is one zap. Everything meets at a compressor before the destination.
+
+The mix lives in one `MIX` const at the top of the file, and the numbers in it
+were measured, not guessed. Two rules hold it together, and both are easy to
+break by nudging a gain:
+- **Everything is quiet.** The loudest sound in the game peaks around -24 dBFS,
+  so a player's own volume control has somewhere useful to sit. This is a phone
+  game played in long sittings, often near other people.
+- **Music sits ~6 dB under the effects**, comparing each one's level while it is
+  actually sounding (a continuous bed against a 100ms blip is what an ear
+  compares — not their averages over time). The effects carry information; the
+  music does not.
+
+Both busses are also set to stay under the compressor's threshold (0.126 at its
+input). Effects reach it only when several pile up or a long jingle plays, which
+is what it is for; the music must never reach it at all, or it ducks the effects
+every time it swells.
 
 ## ui/Hud.tsx + ui/hudModel.ts (React; supersedes the old hud.ts class)
 ```ts

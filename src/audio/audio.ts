@@ -22,11 +22,29 @@ import { MusicPlayer, trackForLevel } from './music';
 
 const STORAGE_KEY = 'table-maze:sound';
 
-/** Overall level, so a busy fight never clips. */
-const MASTER_GAIN = 0.9;
-/** Sound effects sit well over the music: they are information, the music is not. */
-const SFX_GAIN = 0.95;
-const MUSIC_GAIN = 0.38;
+/**
+ * The mix, in one place, measured rather than guessed.
+ *
+ * This is a phone game played in long sittings, often somewhere with other
+ * people in it, so the whole thing is deliberately quiet: the loudest sound in
+ * the game peaks around -24 dBFS, which leaves the player's own volume control
+ * somewhere useful to sit rather than pinned at its lowest notch.
+ *
+ * `music` is set about 6 dB under `sfx`, comparing each one's level while it is
+ * actually sounding — a continuous bed against a 100ms blip, which is what an
+ * ear compares. The effects carry information; the music does not.
+ *
+ * The other job these numbers do is keep the busses under the compressor's
+ * threshold (0.126 at its input). Sound effects touch it only when several
+ * pile up or a long jingle plays, which is what it is there for, and the music
+ * never reaches it at all — so the music can never duck the effects.
+ */
+const MIX = {
+  /** Overall trim, applied last, after the compressor. */
+  master: 0.5,
+  sfx: 0.44,
+  music: 0.06,
+} as const;
 
 /** At most this many sounds start in any one frame... */
 const MAX_PER_FRAME = 5;
@@ -119,7 +137,7 @@ export class GameAudio {
     const now = this.ctx.currentTime;
     master.gain.cancelScheduledValues(now);
     master.gain.setValueAtTime(master.gain.value, now);
-    master.gain.linearRampToValueAtTime(on ? MASTER_GAIN : 0.0001, now + 0.15);
+    master.gain.linearRampToValueAtTime(on ? MIX.master : 0.0001, now + 0.15);
   }
 
   /**
@@ -180,17 +198,17 @@ export class GameAudio {
     glue.release.value = 0.16;
 
     const master = ctx.createGain();
-    master.gain.value = this.on ? MASTER_GAIN : 0.0001;
+    master.gain.value = this.on ? MIX.master : 0.0001;
     glue.connect(master).connect(ctx.destination);
     this.master = master;
 
     const sfxBus = ctx.createGain();
-    sfxBus.gain.value = SFX_GAIN;
+    sfxBus.gain.value = MIX.sfx;
     sfxBus.connect(glue);
     this.sfxBus = sfxBus;
 
     const musicBus = ctx.createGain();
-    musicBus.gain.value = MUSIC_GAIN;
+    musicBus.gain.value = MIX.music;
     musicBus.connect(glue);
     this.music = new MusicPlayer(ctx, musicBus);
   }

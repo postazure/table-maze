@@ -1,24 +1,27 @@
 /**
- * The background music: a small chiptune band that writes its own parts as it
- * plays.
+ * The background music: slow, sparse, mostly held chords.
+ *
+ * This is ambience rather than a tune. A dungeon crawl is played in long
+ * stretches, so anything with a hook in it turns into an earworm and then into
+ * the reason someone hits mute. What plays instead is a low drone, a chord that
+ * changes every twenty seconds or so, and a handful of single notes an ear can
+ * wander past — all of it through a big reverb, so the dungeon sounds like a
+ * large stone room rather than a sound chip.
  *
  * Nothing here is a recorded loop. A track is a description — key, scale,
- * tempo, chord progression, how busy the melody is, what the drums do — and
- * the player fills that description in bar by bar. The chords and the bass
- * come round on a fixed cycle so the music always has a shape you can settle
- * into; the melody is a short motif that is re-written every few bars and
- * nudged in between, and every eighth bar the lead drops out entirely. So it
- * never plays the same eight bars twice, and it never demands your attention
- * either, which is the point: this is music to read a maze over.
+ * tempo, chord progression, how many notes a bar may hold — and the player
+ * fills it in bar by bar: the chords come round on a fixed cycle so the music
+ * has a shape, while which notes land, and whether any land at all, is decided
+ * as it goes. Roughly a third of bars are silent above the drone.
  *
  * There are seven tracks. The dungeon theme picks one (and the theme changes
- * every three floors), shops get their own, and boss chambers get the only
- * fast one.
+ * every three floors), shops get their own, and boss chambers get the one with
+ * a pulse under it.
  */
 
 import { hashSeed, makeRng } from '../engine/rng';
 import type { Rng } from '../engine/types';
-import { midiToHz as hz, noise, tone } from './synth';
+import { midiToHz as hz, noise, reverbImpulse, tone } from './synth';
 
 export type TrackId =
   | 'nocturne'
@@ -38,21 +41,23 @@ const MAJOR = [0, 2, 4, 5, 7, 9, 11];
 const HARMONIC_MINOR = [0, 2, 3, 5, 7, 8, 11];
 
 interface Track {
+  /** Slow. A bar lasts four beats, so 50 bpm is a bar every five seconds. */
   bpm: number;
-  /** MIDI note of the tonic, down in the bass octave. */
+  /** MIDI note of the tonic, down in the drone octave. */
   root: number;
   scale: readonly number[];
-  /** One scale degree per bar; wraps round for as long as the track plays. */
+  /** Scale degrees, one chord each; wraps for as long as the track plays. */
   progression: readonly number[];
+  /** Bars each chord is held for. Two or three, so nothing hurries. */
+  chordBars: number;
   lead: OscillatorType;
-  /** Chance any one melody slot holds a note instead of a rest. */
-  density: number;
-  /** Chord arpeggio underneath: 0 = none, 1 = eighths, 2 = sixteenths. */
-  arp: 0 | 1 | 2;
-  drums: 'none' | 'soft' | 'driving';
-  /** Octaves between the bass and the melody. */
+  /** Most single notes a bar may hold. 0 = no melody at all, just the chord. */
+  notes: number;
+  /** Octaves between the drone and those notes. */
   leadOctave: number;
-  /** Per-track level trim, so a busy track doesn't shout over a sparse one. */
+  /** A slow low pulse under everything, like a heartbeat. 0 = none. */
+  pulse: number;
+  /** Per-track level trim. */
   gain: number;
 }
 
@@ -68,96 +73,99 @@ const TRACK_IDS: readonly TrackId[] = [
 ];
 
 const TRACKS: Record<TrackId, Track> = {
-  /** Crypt and library: slow, minor, mostly space. */
+  /** Crypt and library: the quietest thing here. Long chords, almost no notes. */
   nocturne: {
-    bpm: 84,
+    bpm: 50,
     root: 45,
     scale: MINOR,
     progression: [0, 5, 3, 4],
+    chordBars: 3,
     lead: 'triangle',
-    density: 0.4,
-    arp: 1,
-    drums: 'none',
+    notes: 1,
     leadOctave: 2,
+    pulse: 0,
     gain: 1,
   },
-  /** Sewer and overgrown ruins: a walking pulse, damp and rolling. */
+  /** Sewer and overgrown ruins: damp and low, with the odd note dripping off it. */
   undertow: {
-    bpm: 100,
+    bpm: 54,
     root: 38,
     scale: DORIAN,
-    progression: [0, 3, 0, 6, 0, 3, 4, 3],
-    lead: 'square',
-    density: 0.42,
-    arp: 2,
-    drums: 'soft',
+    progression: [0, 3, 0, 6],
+    chordBars: 2,
+    lead: 'triangle',
+    notes: 1,
     leadOctave: 2,
-    gain: 0.9,
+    pulse: 0,
+    gain: 0.95,
   },
-  /** Magma cavern and hive: the closest this game gets to urgent. */
+  /** Magma cavern and hive: warmer, and the only maze track with a pulse. */
   ember: {
-    bpm: 116,
+    bpm: 58,
     root: 40,
     scale: MINOR,
-    progression: [0, 0, 5, 4, 0, 3, 5, 4],
-    lead: 'square',
-    density: 0.48,
-    arp: 2,
-    drums: 'driving',
+    progression: [0, 0, 5, 4, 0, 3],
+    chordBars: 2,
+    lead: 'triangle',
+    notes: 2,
     leadOctave: 2,
-    gain: 0.85,
+    pulse: 0.4,
+    gain: 0.9,
   },
-  /** Glacier: high, thin and very slow. Almost nothing happens. */
+  /** Glacier: high, thin and slower than anything else. Nearly empty. */
   frost: {
-    bpm: 72,
+    bpm: 44,
     root: 47,
     scale: MINOR,
     progression: [0, 5, 3, 6],
+    chordBars: 3,
     lead: 'triangle',
-    density: 0.3,
-    arp: 1,
-    drums: 'none',
+    notes: 1,
     leadOctave: 3,
+    pulse: 0,
     gain: 1,
   },
   /** Abyss: phrygian, so the second note of the scale sits a semitone up and sours everything. */
   descent: {
-    bpm: 92,
+    bpm: 48,
     root: 43,
     scale: PHRYGIAN,
-    progression: [0, 1, 0, 6, 0, 1, 5, 4],
+    progression: [0, 1, 0, 6],
+    chordBars: 3,
     lead: 'square',
-    density: 0.38,
-    arp: 1,
-    drums: 'soft',
+    notes: 1,
     leadOctave: 2,
+    pulse: 0,
     gain: 0.95,
   },
-  /** The shop: the one track in a major key. Warm, and shorter-breathed. */
+  /** The shop: the one track in a major key. Still slow, just not sad. */
   market: {
-    bpm: 96,
+    bpm: 60,
     root: 41,
     scale: MAJOR,
-    progression: [0, 3, 4, 0, 5, 3, 4, 4],
+    progression: [0, 3, 4, 5],
+    chordBars: 2,
     lead: 'triangle',
-    density: 0.5,
-    arp: 2,
-    drums: 'soft',
+    notes: 2,
     leadOctave: 2,
+    pulse: 0,
     gain: 0.9,
   },
-  /** Boss chambers: fast, harmonic minor, drums that don't let up. */
+  /**
+   * Boss chambers. Still slow — a fast tune would fight the fight — but a
+   * heartbeat under a harmonic-minor drone does the tension on its own.
+   */
   dread: {
-    bpm: 138,
+    bpm: 64,
     root: 45,
     scale: HARMONIC_MINOR,
-    progression: [0, 0, 5, 4, 0, 0, 1, 4],
+    progression: [0, 0, 1, 4],
+    chordBars: 2,
     lead: 'square',
-    density: 0.55,
-    arp: 2,
-    drums: 'driving',
+    notes: 2,
     leadOctave: 2,
-    gain: 0.85,
+    pulse: 1,
+    gain: 0.9,
   },
 };
 
@@ -180,30 +188,16 @@ export function trackForLevel(kind: 'maze' | 'shop' | 'boss', theme: string): Tr
   return THEME_TRACK[theme] ?? 'nocturne';
 }
 
-/**
- * Bass figures, one bar of sixteenths each. Numbers are scale steps above the
- * chord's root (0 root, 2 third, 4 fifth, 7 the octave); null is a rest. The
- * player holds one figure for two bars at a time so the bass line has a shape.
- */
-const BASS_FIGURES: readonly (number | null)[][] = [
-  [0, null, null, null, null, null, 4, null, 0, null, null, null, 4, null, null, null],
-  [0, null, 0, null, null, null, null, null, 4, null, null, null, null, null, 0, null],
-  [0, null, null, 0, null, null, 4, null, null, null, 0, null, null, 4, null, null],
-  [0, null, null, null, null, null, null, null, 0, null, null, null, null, null, 7, null],
-  [0, null, null, null, 7, null, null, null, 4, null, null, null, 2, null, null, null],
-];
-
-/** The notes an arpeggio walks, as scale steps above the chord root. */
-const ARP_SHAPE = [0, 2, 4, 7, 4, 2];
-
-/** Sixteenths per bar. Everything in here is in 4/4. */
-const STEPS = 16;
-/** How far ahead of the clock notes are scheduled, in seconds. */
-const LOOKAHEAD = 0.3;
+/** Beats per bar. Everything in here is in 4/4, slowly. */
+const BEATS = 4;
+/** How far ahead of the clock a bar is scheduled, in seconds. */
+const LOOKAHEAD = 1.2;
 /** How often the scheduler wakes up to top that up, in ms. */
-const TICK_MS = 25;
+const TICK_MS = 200;
 /** Seconds to fade the old track out and the new one in. */
-const FADE = 0.7;
+const FADE = 1.4;
+/** Chance a bar holds no melody note at all. Silence is most of the point. */
+const REST_CHANCE = 0.34;
 
 /** Where a scale degree lands as a MIDI note. Degrees below 0 or above 6 wrap octaves. */
 function scaleNote(track: Track, degree: number, octave: number): number {
@@ -213,44 +207,32 @@ function scaleNote(track: Track, degree: number, octave: number): number {
   return track.root + track.scale[i] + 12 * o;
 }
 
-/** Chord tones, as scale steps either side of the chord root. Strong beats land on these. */
+/** Chord tones, as scale steps either side of the chord root. Notes land on these. */
 const CHORD_TONES = [-3, 0, 2, 4, 7];
-
-function nearestChordTone(deg: number): number {
-  let best = CHORD_TONES[0];
-  for (const t of CHORD_TONES) {
-    if (Math.abs(t - deg) < Math.abs(best - deg)) best = t;
-  }
-  return best;
-}
 
 /**
  * Plays one track at a time and crossfades between them.
  *
- * Web Audio's clock runs independently of the browser's frame loop, so notes
- * are scheduled a fraction of a second ahead of time rather than "now": a
- * dropped frame or a busy render can never make the music stutter.
+ * Web Audio's clock runs independently of the browser's frame loop, so a whole
+ * bar is scheduled against it a second or so before it is due: a dropped frame
+ * or a busy render can never make the music stutter.
  */
 export class MusicPlayer {
   private readonly ctx: AudioContext;
   private readonly out: GainNode;
   private readonly voices: GainNode;
-  private readonly delay: DelayNode;
 
   private trackId: TrackId | null = null;
   private track: Track | null = null;
   private rng: Rng = makeRng(1);
 
   private timer: number | null = null;
-  /** AudioContext time the next sixteenth falls on. */
+  /** AudioContext time the next bar starts on. */
   private nextTime = 0;
-  private step = 0;
-  private bar = -1;
+  private bar = 0;
   private chord = 0;
-  private figure: (number | null)[] = BASS_FIGURES[0];
-  /** One entry per eighth note: a scale step above the chord root, or a rest. */
-  private motif: (number | null)[] = [];
-  private restBar = false;
+  /** Where the last melody note sat, so the next one is a step away, not a leap. */
+  private lastDegree = 0;
 
   /** Track queued behind the current fade-out, and the clock time to swap on. */
   private pending: TrackId | null = null;
@@ -265,31 +247,26 @@ export class MusicPlayer {
     this.out.gain.value = 0;
     this.out.connect(dest);
 
-    // A gentle lowpass takes the fizz off the square waves. Chip music without
-    // it is accurate but tiring, and this has to sit under an hour of play.
+    // A low lowpass takes the edge off the oscillators. Chip waveforms are
+    // accurate but tiring, and this has to sit under an hour of play.
     const soften = ctx.createBiquadFilter();
     soften.type = 'lowpass';
-    soften.frequency.value = 2700;
-    soften.Q.value = 0.7;
+    soften.frequency.value = 1800;
+    soften.Q.value = 0.6;
     soften.connect(this.out);
 
     this.voices = ctx.createGain();
     this.voices.gain.value = 1;
     this.voices.connect(soften);
 
-    // A short feedback delay: the cheapest way to make four bare oscillators
-    // sound like they are in a room rather than in a spreadsheet.
-    this.delay = ctx.createDelay(1);
-    this.delay.delayTime.value = 0.28;
-    const feedback = ctx.createGain();
-    feedback.gain.value = 0.26;
-    const send = ctx.createGain();
-    send.gain.value = 0.3;
-    this.voices.connect(send);
-    send.connect(this.delay);
-    this.delay.connect(feedback);
-    feedback.connect(this.delay);
-    this.delay.connect(soften);
+    // The reverb is what turns a few oscillators into a place. Most of the
+    // signal goes through it: the tail is the point, not the note.
+    const room = ctx.createConvolver();
+    room.buffer = reverbImpulse(ctx);
+    const wet = ctx.createGain();
+    wet.gain.value = 0.85;
+    this.voices.connect(room);
+    room.connect(wet).connect(soften);
   }
 
   /** The track currently playing (or fading in), if any. */
@@ -298,8 +275,8 @@ export class MusicPlayer {
   }
 
   /**
-   * Switch to `id`, or to silence when it is null. The change is a crossfade,
-   * so walking through a door never clips the music off mid-note.
+   * Switch to `id`, or to silence when it is null. The change is a long
+   * crossfade, so walking through a door never clips the music off mid-chord.
    */
   play(id: TrackId | null): void {
     if (this.current === id) return;
@@ -351,10 +328,8 @@ export class MusicPlayer {
     // recognisably the same music without being the same performance.
     this.rng = makeRng(hashSeed(Math.floor(at * 1000), TRACK_IDS.indexOf(id)));
     this.nextTime = at;
-    this.step = 0;
-    this.bar = -1;
-    this.motif = [];
-    this.delay.delayTime.value = Math.min(0.9, this.stepDur() * 3);
+    this.bar = 0;
+    this.lastDegree = 0;
 
     const g = this.out.gain;
     const now = this.ctx.currentTime;
@@ -365,10 +340,14 @@ export class MusicPlayer {
     if (this.timer === null) {
       this.timer = setInterval(() => this.pump(), TICK_MS) as unknown as number;
     }
+    // Lay the first bar down now. Waiting for the interval would drop it — and
+    // with it the chord, which only re-voices every few bars.
+    this.pump();
   }
 
-  private stepDur(): number {
-    return this.track ? 60 / this.track.bpm / 4 : 0.1;
+  /** Seconds in one bar. */
+  private barDur(): number {
+    return this.track ? (60 / this.track.bpm) * BEATS : 4;
   }
 
   /** Top up the schedule. Called on a plain interval; the audio clock does the rest. */
@@ -386,165 +365,135 @@ export class MusicPlayer {
     }
     if (!this.track) return;
 
-    // A backgrounded tab throttles this interval to about once a second, so we
-    // can come back to a schedule that is far behind. Never try to catch up by
-    // playing the missing bars at once: skip to the present.
-    if (this.nextTime < now - 0.5) {
-      this.nextTime = now + 0.05;
-      this.step = 0;
+    // A backgrounded tab throttles this interval, so we can come back to a
+    // schedule that is far behind. Never catch up by playing the missing bars
+    // at once: skip to the present.
+    if (this.nextTime < now - 0.5) this.nextTime = now + 0.05;
+
+    let guard = 0;
+    while (this.nextTime < now + LOOKAHEAD && guard < 4) {
+      guard += 1;
+      const dur = this.barDur();
+      this.playBar(this.nextTime, dur);
+      this.nextTime += dur;
+      this.bar += 1;
+    }
+  }
+
+  /** Everything that sounds in one bar, scheduled in one go. */
+  private playBar(at: number, dur: number): void {
+    const track = this.track;
+    if (!track) return;
+    // A bar the scheduler reached slightly late still plays, starting now; only
+    // one a whole bar stale is dropped (pump's catch-up covers that case).
+    const late = this.ctx.currentTime - at;
+    if (late > dur) return;
+    const offset = Math.max(0, -late);
+    const g = track.gain;
+
+    // The chord holds for several bars; only its first bar re-voices the pad.
+    const held = track.chordBars;
+    if (this.bar % held === 0) {
+      this.chord = track.progression[Math.floor(this.bar / held) % track.progression.length];
+      this.chordVoices(dur * held, offset, g);
     }
 
-    const dur = this.stepDur();
-    let guard = 0;
-    while (this.nextTime < now + LOOKAHEAD && guard < 64) {
-      guard += 1;
-      if (this.step === 0) this.newBar();
-      this.scheduleStep(this.nextTime, this.step);
-      this.nextTime += dur;
-      this.step = (this.step + 1) % STEPS;
+    this.melody(offset, dur, g);
+
+    if (track.pulse > 0) {
+      // One low thud a bar, on the downbeat. Not a drum kit — a heartbeat.
+      tone(this.ctx, this.voices, {
+        type: 'sine',
+        freq: 96,
+        to: 44,
+        at: offset,
+        dur: 0.5,
+        gain: 0.13 * track.pulse * g,
+        attack: 0.02,
+      });
+    }
+
+    // Every few bars, a breath of air moving through the stone.
+    if (this.rng.chance(0.25)) {
+      noise(this.ctx, this.voices, {
+        filter: 'bandpass',
+        freq: 240,
+        to: 620,
+        at: offset + this.rng.next() * dur * 0.5,
+        dur: dur * 0.8,
+        gain: 0.022 * g,
+        q: 0.6,
+        attack: dur * 0.3,
+      });
     }
   }
 
   /**
-   * Set up the bar about to start: move to the next chord, re-write or nudge
-   * the melody, and decide whether the lead sits this one out.
+   * The drone and the chord over it. Both run a fade longer than the chord's
+   * own span so that one chord's tail is still sounding under the next one's
+   * swell: the bed never breathes, it just changes colour.
    */
-  private newBar(): void {
+  private chordVoices(span: number, offset: number, g: number): void {
     const track = this.track;
     if (!track) return;
-    this.bar += 1;
-    this.chord = track.progression[this.bar % track.progression.length];
+    const fade = Math.min(2.2, span * 0.4);
+    const dur = span + fade;
 
-    // The bass holds a figure for two bars, so it reads as a line rather than
-    // a new idea every bar.
-    if (this.bar % 2 === 0) this.figure = this.rng.pick(BASS_FIGURES);
+    // The drone: the tonic, always, underneath whatever the chord is doing.
+    // It is what makes the floor feel like one continuous place.
+    tone(this.ctx, this.voices, {
+      type: 'triangle',
+      freq: hz(scaleNote(track, 0, 0)),
+      at: offset,
+      dur,
+      gain: 0.16 * g,
+      attack: fade,
+      release: fade,
+    });
 
-    // A fresh melody every four bars; in between, one or two notes move. That
-    // is enough to keep it from looping without losing the thread.
-    if (this.motif.length === 0 || this.bar % 4 === 0) this.motif = this.makeMotif();
-    else this.mutateMotif();
-
-    // Every eighth bar the lead drops out. Silence is what stops background
-    // music turning into foreground music.
-    this.restBar = this.bar % 8 === 7;
-  }
-
-  /** Eight eighth-notes: chord tones on the strong beats, a wandering line between. */
-  private makeMotif(): (number | null)[] {
-    const track = this.track;
-    if (!track) return [];
-    const out: (number | null)[] = [];
-    let cur = this.rng.pick([0, 2, 4]);
-    for (let i = 0; i < 8; i++) {
-      const strong = i % 2 === 0;
-      const chance = strong ? track.density + 0.22 : track.density - 0.1;
-      if (!this.rng.chance(chance)) {
-        out.push(null);
-        continue;
-      }
-      cur = Math.max(-3, Math.min(9, cur + this.rng.int(-2, 2)));
-      out.push(strong ? nearestChordTone(cur) : cur);
-    }
-    return out;
-  }
-
-  /** Re-roll a slot or two of the current motif: a variation, not a new tune. */
-  private mutateMotif(): void {
-    const track = this.track;
-    if (!track) return;
-    const changes = this.rng.int(1, 2);
-    for (let n = 0; n < changes; n++) {
-      const i = this.rng.int(0, this.motif.length - 1);
-      if (this.rng.chance(0.28)) {
-        this.motif[i] = null;
-      } else {
-        const near = this.motif.find((x) => x !== null) ?? 0;
-        const deg = Math.max(-3, Math.min(9, (near as number) + this.rng.int(-2, 2)));
-        this.motif[i] = i % 2 === 0 ? nearestChordTone(deg) : deg;
-      }
-    }
-  }
-
-  /** Everything that sounds on one sixteenth of the bar. */
-  private scheduleStep(t: number, step: number): void {
-    const track = this.track;
-    if (!track) return;
-    const at = t - this.ctx.currentTime;
-    if (at < -0.05) return;
-    const dur = this.stepDur();
-    const g = track.gain;
-
-    // --- bass ---------------------------------------------------------------
-    const b = this.figure[step];
-    if (b !== null && b !== undefined) {
-      tone(this.ctx, this.voices, {
-        type: 'triangle',
-        freq: hz(scaleNote(track, this.chord + b, 0)),
-        at,
-        dur: dur * 2.4,
-        gain: 0.2 * g,
-        attack: 0.008,
-      });
-    }
-
-    // --- chord arpeggio -----------------------------------------------------
-    if (track.arp > 0 && (track.arp === 2 || step % 2 === 0)) {
-      const idx = track.arp === 2 ? step : step / 2;
-      const deg = ARP_SHAPE[idx % ARP_SHAPE.length];
-      tone(this.ctx, this.voices, {
-        type: 'square',
-        freq: hz(scaleNote(track, this.chord + deg, 1)),
-        at,
-        dur: dur * 1.3,
-        gain: 0.045 * g,
-      });
-    }
-
-    // --- melody -------------------------------------------------------------
-    if (!this.restBar && step % 2 === 0) {
-      const deg = this.motif[step / 2];
-      if (deg !== null && deg !== undefined) {
+    // The chord itself: root, third and fifth, each doubled and detuned a
+    // few cents so the pair beats slowly against itself.
+    for (const step of [0, 2, 4]) {
+      const f = hz(scaleNote(track, this.chord + step, 1));
+      for (const cents of [-5, 5]) {
         tone(this.ctx, this.voices, {
-          type: track.lead,
-          freq: hz(scaleNote(track, this.chord + deg, track.leadOctave)),
-          at,
-          dur: dur * 2.2,
-          gain: 0.095 * g,
-          attack: 0.006,
+          type: 'triangle',
+          freq: f,
+          detune: cents,
+          at: offset + (step / 8) * fade,
+          dur,
+          gain: 0.055 * g,
+          attack: fade,
+          release: fade,
         });
       }
     }
+  }
 
-    // --- drums --------------------------------------------------------------
-    if (track.drums === 'none') return;
-    const driving = track.drums === 'driving';
-    if (step === 0 || step === 8 || (driving && step === 6)) {
+  /**
+   * The one thing in here that could be called a tune: at most a couple of long
+   * notes, on chord tones, on a beat — and a third of bars have none at all.
+   */
+  private melody(offset: number, dur: number, g: number): void {
+    const track = this.track;
+    if (!track || track.notes === 0 || this.rng.chance(REST_CHANCE)) return;
+    const beat = dur / BEATS;
+    const slots = this.rng.shuffle([0, 1, 2, 3]).slice(0, this.rng.int(1, track.notes));
+    slots.sort((a, b) => a - b);
+
+    for (const slot of slots) {
+      // Step to a neighbouring chord tone rather than leaping about.
+      const i = CHORD_TONES.indexOf(this.lastDegree);
+      const next = Math.max(0, Math.min(CHORD_TONES.length - 1, (i < 0 ? 1 : i) + this.rng.int(-1, 1)));
+      this.lastDegree = CHORD_TONES[next];
       tone(this.ctx, this.voices, {
-        type: 'sine',
-        freq: 130,
-        to: 45,
-        at,
-        dur: 0.14,
-        gain: 0.16 * g,
-      });
-    }
-    if (step % 4 === 2) {
-      noise(this.ctx, this.voices, {
-        filter: 'highpass',
-        freq: 6500,
-        at,
-        dur: 0.03,
-        gain: 0.026 * g,
-      });
-    }
-    if (driving && step === 8) {
-      noise(this.ctx, this.voices, {
-        filter: 'highpass',
-        freq: 1800,
-        to: 3200,
-        at,
-        dur: 0.09,
+        type: track.lead,
+        freq: hz(scaleNote(track, this.chord + this.lastDegree, track.leadOctave)),
+        at: offset + slot * beat,
+        dur: beat * 1.8,
         gain: 0.06 * g,
+        attack: 0.25,
+        release: beat,
       });
     }
   }
