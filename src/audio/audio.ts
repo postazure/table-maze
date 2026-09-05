@@ -30,20 +30,23 @@ const STORAGE_KEY = 'table-maze:sound';
  * the game peaks around -24 dBFS, which leaves the player's own volume control
  * somewhere useful to sit rather than pinned at its lowest notch.
  *
- * `music` is set about 6 dB under `sfx`, comparing each one's level while it is
+ * `music` is set about 2 dB under `sfx`, comparing each one's level while it is
  * actually sounding — a continuous bed against a 100ms blip, which is what an
- * ear compares. The effects carry information; the music does not.
+ * ear compares. Almost level with them, in other words: the ambience is meant
+ * to be heard, not merely detected, and it is sparse enough that it never
+ * competes with an effect for attention.
  *
  * The other job these numbers do is keep the busses under the compressor's
  * threshold (0.126 at its input). Sound effects touch it only when several
- * pile up or a long jingle plays, which is what it is there for, and the music
- * never reaches it at all — so the music can never duck the effects.
+ * pile up or a long jingle plays, which is what it is there for. The music
+ * must never reach it at all, or every swell ducks the effects: at this
+ * setting its worst peak lands around 0.07, which leaves 5 dB of room.
  */
 const MIX = {
   /** Overall trim, applied last, after the compressor. */
   master: 0.5,
   sfx: 0.44,
-  music: 0.06,
+  music: 0.1,
 } as const;
 
 /** At most this many sounds start in any one frame... */
