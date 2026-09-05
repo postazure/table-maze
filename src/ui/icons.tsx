@@ -44,21 +44,21 @@ const BASE_ICONS: Record<BaseIconName, { rows: Rows; palette: Palette }> = {
     rows: ['..GGGG..', '.GGYYGG.', 'GGYGGYGG', 'GGYGGGGG', 'GGYGGGGG', 'GGYGGYGG', '.GGYYGG.', '..GGGG..'],
     palette: { G: '#f5c451', Y: '#8a6a2a' },
   },
-  // Magic key: bold 16x16 bow-and-shaft silhouette, purple/magenta with two
-  // devil horns off the bow — matches the horned doors it opens. Same
-  // rows/palette as the map sprite in renderer.ts (DOOR_KEY_ROWS) so the HUD
-  // icon matches the map exactly.
+  // Magic key: bold 16x16 bow-and-shaft silhouette, purple/magenta, with the
+  // ring (bow) itself shaped into a watching eye — matches the eye doors it
+  // opens. Same rows/palette as the map sprite in renderer.ts
+  // (DOOR_KEY_ROWS) so the HUD icon matches the map exactly.
   doorKey: {
     rows: [
-      '..DTD......DTD..',
-      '..DHHD....DHHD..',
+      '................',
+      '................',
+      '......DDDD......',
+      '.....DWHTHD.....',
+      '....DWHHHHHD....',
       '...DHHDDDDHHD...',
-      '...DHHWPPPHHD...',
-      '....DWPPPPPD....',
-      '...DPPDDDDPPD...',
-      '...DPPD..DPPD...',
-      '...DPPD..DPPD...',
-      '...DPPDDDDPPD...',
+      '...DHHDDDDHHD...',
+      '...DHHDDDDHHD...',
+      '...DHHDDDDHHD...',
       '....DPPPPPPD....',
       '.....DPPPPD.....',
       '......DPPDDDDD..',
