@@ -664,8 +664,10 @@ doors / chests, deterministic for (depth, runSeed)):
   feather first (a free, cooldown-gated save); only when that is unworn or
   still cooling down does it spend one potion charge for the same
   burst-back-up (shared by `burstBackUp`: half max hp rounded up to a whole
-  heart, a gold ring, the `potion` sound, a retreat to a safe tile, hero stays
-  awake). Works in a boss chamber exactly like the feather does. `advanceLevel`
+  heart, a gold ring, a floating "Potion!" over the hero's head, the `potion`
+  sound, a retreat to a safe tile, hero stays awake — the feather's own burst
+  skips the floating text). Works in a boss chamber exactly like the feather
+  does. `advanceLevel`
   refills `potions` to `potionCapacity` at the start of every level (maze,
   boss or shop) but never raises the cap — only a chest does that.
 - Buffs and temporary hearts survive the stairs: `advanceLevel` does not touch
