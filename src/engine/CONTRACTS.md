@@ -299,6 +299,22 @@ a frame from `MazeCanvas`, right after `Game.tick`, and always clears the queue
 one kind, and enforces a minimum gap per sound, so chain lightning hitting four
 monsters is one zap. Everything meets at a compressor before the destination.
 
+The mix lives in one `MIX` const at the top of the file, and the numbers in it
+were measured, not guessed. Two rules hold it together, and both are easy to
+break by nudging a gain:
+- **Everything is quiet.** The loudest sound in the game peaks around -24 dBFS,
+  so a player's own volume control has somewhere useful to sit. This is a phone
+  game played in long sittings, often near other people.
+- **Music sits ~6 dB under the effects**, comparing each one's level while it is
+  actually sounding (a continuous bed against a 100ms blip is what an ear
+  compares — not their averages over time). The effects carry information; the
+  music does not.
+
+Both busses are also set to stay under the compressor's threshold (0.126 at its
+input). Effects reach it only when several pile up or a long jingle plays, which
+is what it is for; the music must never reach it at all, or it ducks the effects
+every time it swells.
+
 ## ui/Hud.tsx + ui/hudModel.ts (React; supersedes the old hud.ts class)
 ```ts
 export class Hud {
