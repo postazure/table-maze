@@ -37,7 +37,7 @@ export function bfsDistances(level: LevelData, from: Vec, opts?: { blocked?: (p:
 
 ## balance.ts
 ```ts
-export function levelDims(depth: number): { width: number; height: number }; // odd tile counts, portrait (height > width). depth 1 ≈ 21x31 (bigger than a phone screen; the renderer scrolls), grows to a cap ≈ 41x61.
+export function levelDims(depth: number): { width: number; height: number }; // the MAZE's odd tile counts, portrait (height > width). depth 1 ≈ 21x31 (bigger than a phone screen; the renderer scrolls), grows to a cap ≈ 41x61. The level itself is this plus whatever ground the warrens are dug out of.
 export function newHero(): Hero;                     // level 1 starting stats
 export function xpForLevel(level: number): number;   // xp needed to go from `level` to `level+1`
 export function applyLevelUp(hero: Hero): void;      // called when hero.xp >= hero.xpToNext; bumps stats, restores hp, sets new xpToNext (may loop if enough xp for multiple levels)
@@ -62,7 +62,12 @@ Requirements:
   `levelDims(depth)`, then braid it: open ~15% of dead ends to create loops so
   lurkers can be baited and out-run.
 - `start` near the top-left region, `exit` far from start (use BFS distance;
-  pick among the farthest tiles).
+  pick among the farthest tiles) AND at a dead end. Stepping onto the stairs
+  ends the floor, so the hero can never cross them: floor on the far side is
+  ground nobody will ever stand on, and anything generated out there is wasted.
+  Every floor tile must be reachable from `start` without passing through
+  `exit`. A far dead end exists on every floor and costs under two tiles of
+  distance on average, so this is close to free.
 - Doors: 1 + floor(depth / 3) doors (cap 4) placed ON the start→exit path at
   corridor tiles (both side neighbours are walls). Each door needs a matching
   door key placed somewhere reachable WITHOUT passing through that door (or
@@ -80,18 +85,23 @@ Requirements:
   share tiles with monsters or each other. The level must be solvable: exit
   reachable from start once all doors are open, and every key reachable in
   order.
-- Warrens. After the route is known, flood-fill the floor with the route
-  treated as a wall and braid the bigger pockets that fall out (>= 6 tiles) so
-  they loop back on themselves. A pocket only becomes a warren if it touches
-  the rest of the maze at exactly one point — that tile is its `mouth`. Only
-  open a wall when every floor tile it touches is already inside that pocket,
-  which is what stops a warren gaining a second junction and turning into a way
-  past a gate guard. Record them in `LevelData.warrens`; blocking every warren
-  tile must always leave the stairs reachable. Stock them with guards and
-  patrols (and the odd lurker) on top of the route's own budget, and keep the
-  route's monsters out of them. The renderer draws the mouth as a hole knocked
-  through the wall (broken blocks either side, rubble on the floor both sides
-  of the threshold); nothing in the UI names them.
+- Warrens are dug OUTSIDE the maze, not carved out of it. Lay the maze
+  (`levelDims`) into a grid with a margin of solid rock on every side, pick
+  start and exit inside the maze, then knock single tiles through the maze's
+  outer wall and dig a ring of corridor into the rock beyond each one. That
+  tile is the warren's `mouth`, and the ring is why it loops. Dig nothing
+  unless the whole shape and every tile it touches is rock: that is what
+  guarantees the one way in, so a warren can never become a route past a gate
+  guard. Trim the grid back to the ground actually used afterwards, so a floor
+  is only as big as its maze plus the warrens it got — `LevelData.width/height`
+  is therefore >= `levelDims(depth)` and <= that plus twice the margin, and no
+  longer equal to `levelDims`. Record them in `LevelData.warrens`; blocking
+  every warren tile must always leave the stairs reachable. Stock them with
+  guards and patrols (and the odd lurker) on top of the route's own budget,
+  never on the mouth itself, and keep the route's monsters out of them. The
+  renderer draws the mouth as a hole knocked through the wall (broken blocks
+  either side, rubble on the floor both sides of the threshold); nothing in the
+  UI names them.
 - No unwinnable gate. Guards never move and heal back to full between attempts,
   so a guard on the only way to the stairs must be beatable or the run is dead.
   After placing monsters, re-roll every guard `gateGuards` reports at the

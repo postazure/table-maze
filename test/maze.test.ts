@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HEART, Tile, key } from '../src/engine/types';
+import { HEART, Tile, eq, key } from '../src/engine/types';
 import type { Hero, LevelData, Monster, Rng, Vec } from '../src/engine/types';
 import {
   ROUTE_MONSTER_CAP,
+  WARREN_MARGIN,
   WARREN_MONSTER_CAP,
   WARREN_MONSTER_BUDGET,
   gateGuards,
@@ -90,7 +91,14 @@ test('generateLevel: structure, entities and solvability', () => {
       assert.equal(lv.depth, depth, where);
       assert.equal(lv.width % 2, 1, where);
       assert.equal(lv.height % 2, 1, where);
-      assert.ok(lv.width <= 41 && lv.height <= 61, where);
+      // The maze proper is `levelDims`; the warrens are dug out of rock around
+      // it, so the level can be up to a margin bigger on every side.
+      const maze = levelDims(depth);
+      assert.ok(lv.width >= maze.width && lv.height >= maze.height, `${where}: smaller than its maze`);
+      assert.ok(
+        lv.width <= maze.width + 2 * WARREN_MARGIN && lv.height <= maze.height + 2 * WARREN_MARGIN,
+        `${where}: ${lv.width}x${lv.height} is bigger than the maze plus its margin`,
+      );
       assert.equal(lv.tiles.length, lv.height, where);
       for (const row of lv.tiles) assert.equal(row.length, lv.width, where);
       // outer ring is solid wall
@@ -214,6 +222,7 @@ test('generateLevel never throws for depth 1..50', () => {
 
 test('the maze is braided (contains loops) and still has dead ends', () => {
   const lv = generateLevel(5, 42);
+  const warrenFloors = warrenTilesOf(lv).length;
   let floors = 0;
   let deadEnds = 0;
   for (let y = 0; y < lv.height; y++) {
@@ -223,10 +232,13 @@ test('the maze is braided (contains loops) and still has dead ends', () => {
       if (floorNeighbors(lv, { x, y }).length === 1) deadEnds++;
     }
   }
-  // A perfect maze on this grid has exactly (cells + walls-carved) floors; a
-  // braided one has more, so an extra loop shows up as an extra floor tile.
-  const cells = ((lv.width - 1) / 2) * ((lv.height - 1) / 2);
-  assert.ok(floors > cells * 2 - 1, 'braiding added at least one loop');
+  // A perfect maze has exactly (cells + walls-carved) floors; a braided one has
+  // more, so an extra loop shows up as an extra floor tile. Count the maze
+  // proper only: the warrens are rings by construction and would mask a maze
+  // that had stopped being braided at all.
+  const maze = levelDims(5);
+  const cells = ((maze.width - 1) / 2) * ((maze.height - 1) / 2);
+  assert.ok(floors - warrenFloors > cells * 2 - 1, 'braiding added at least one loop');
   assert.ok(deadEnds > 0, 'some dead ends survive for chests');
 });
 
@@ -458,7 +470,7 @@ function playedTo(depth: number, seed: number): Hero {
 test('the three roles still read the same against a hero who keeps pace', () => {
   const rng = makeRng(4242);
   // Averaged over several runs of the dungeon: one maze is not a balance point.
-  const RUN_SEEDS = [4242, 8080, 1717];
+  const RUN_SEEDS = [4242, 8080, 1717, 5150, 9001, 3141, 2718];
   for (const depth of [2, 5, 10, 16, 22]) {
     const heroes = RUN_SEEDS.map((seed) => playedTo(depth, seed));
     for (const hero of heroes) {
@@ -469,7 +481,7 @@ test('the three roles still read the same against a hero who keeps pace', () => 
       let wins = 0;
       let n = 0;
       for (const hero of heroes) {
-        for (let i = 0; i < 40; i++, n++) {
+        for (let i = 0; i < 25; i++, n++) {
           const r = headOn(hero, makeMonster(kind, depth, rng, { x: 1, y: 1 }, 'm'), rng);
           spent += 1 - r.heartsLeft;
           if (r.win) wins++;
@@ -591,6 +603,33 @@ test('a warren is never part of the route: wall them all off and the stairs rema
   }
 });
 
+test('nothing is generated beyond the stairs', () => {
+  // Walking onto the stairs ends the floor, so the hero can never cross them.
+  // Anything on the far side would be generated and never seen.
+  for (const depth of DEPTHS) {
+    for (const seed of SEEDS) {
+      const level = generateLevel(depth, seed);
+      const where = `depth ${depth} seed ${seed}`;
+      assert.equal(
+        floorNeighbors(level, level.exit).length,
+        1,
+        `${where}: the stairs have floor on more than one side`,
+      );
+      const chestTiles = new Set(level.chests.map((c) => key(c.pos)));
+      const reach = bfsDistances(level, level.start, {
+        blocked: (p) => chestTiles.has(key(p)) || eq(p, level.exit),
+      });
+      for (let y = 1; y < level.height - 1; y++) {
+        for (let x = 1; x < level.width - 1; x++) {
+          const p = { x, y };
+          if (!isFloor(level, p) || eq(p, level.exit) || chestTiles.has(key(p))) continue;
+          assert.ok(reach.has(key(p)), `${where}: ${key(p)} can only be reached through the stairs`);
+        }
+      }
+    }
+  }
+});
+
 test('a warren has exactly one way in, and the renderer can frame it', () => {
   for (const depth of DEPTHS) {
     for (const seed of SEEDS) {
@@ -656,9 +695,14 @@ test('warrens are stocked, and their patrols have a beat that stays inside', () 
     for (const seed of SEEDS) {
       const level = generateLevel(depth, seed);
       const inside = new Set(warrenTilesOf(level).map(key));
+      const mouths = new Set((level.warrens ?? []).map((w) => key(w.mouth)));
       for (const m of level.monsters) {
         if (!inside.has(key(m.pos))) continue;
         stocked++;
+        assert.ok(
+          !mouths.has(key(m.pos)),
+          `depth ${depth} seed ${seed}: ${m.id} is sitting in the only way into its warren`,
+        );
         if (m.kind !== 'patrol') continue;
         assert.ok(m.patrolPath && m.patrolPath.length >= 2, `depth ${depth} seed ${seed}: ${m.id} has no beat`);
         for (const t of m.patrolPath ?? []) {
