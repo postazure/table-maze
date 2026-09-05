@@ -32,7 +32,11 @@ Play it at **https://postazure.github.io/table-maze/**
   combat, hearts also refill slowly on their own. Monsters heal too, so finish
   a fight or walk away and expect them at full strength. Getting knocked down
   heals every monster on the floor back to full at once.
-- Every monster wears a level tag. Red means it's above your level, green below.
+- Every monster wears a level tag. Red means it's above your level, green below,
+  and the tag is also the price: a red monster pays over the odds — up to three
+  times its xp when you are badly behind — and a green one pays a fraction. So
+  falling behind the dungeon is something you can fight your way out of, and
+  running ahead of it stops paying. Gold is not scaled either way.
 - Monster types, from weakest to deadliest:
   - **Patrols** walk a fixed route. They're trash: a speed bump you cut down in
     a few swings, or time your run past.
@@ -43,6 +47,17 @@ Play it at **https://postazure.github.io/table-maze/**
     always enough to force your way past. Guards with something to protect — a
     chest, a door, the stairs themselves — hit far harder, and those you can
     walk around.
+  - **Warrens** are the side branches that loop back on themselves rather than
+    dead-ending. Each one branches off the maze at a single point and rejoins
+    nowhere, so walking one never carries you toward the stairs — it only costs
+    you the detour. You can always reach the stairs without setting foot in one.
+    They hold guards and patrols of their own. That is where you go when the guard on the critical path is
+    beating you: clear a warren, come back a level or two up, and take the
+    corridor. The loop is the point. It means you can break off a fight, let
+    your hearts come back on the far side, and come at it again, which you
+    cannot do in a dead end. A lurker turns up in one now and again, so they
+    are never free money. Nothing in the game labels them; look at the walls
+    where a passage opens.
   - **Lurkers** sit off the main path and chase you when you get close. They hit
     for whole hearts and outlast you at your level: fight one head-on and you'll
     be knocked down. Lure it away from the corridor it watches, then loop around
@@ -80,7 +95,8 @@ Play it at **https://postazure.github.io/table-maze/**
   the deeper you go. Your hero levels up from XP and keeps every stat and item.
   Clearing a floor's patrols, guards and chests is worth about one level, so the
   hero tracks the depth rather than outrunning it: skip fights and the dungeon
-  pulls ahead of you, kill the lurkers too and you buy yourself a cushion.
+  pulls ahead of you, kill the lurkers too and you buy yourself a cushion. It is
+  a cushion and not a runaway, because a monster below your level barely pays.
 - Progress is saved in your browser's local storage automatically.
 
 ## Development
