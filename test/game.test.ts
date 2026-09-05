@@ -16,7 +16,7 @@ import type {
 } from '../src/engine/types';
 import { makeRng } from '../src/engine/rng';
 import { Game } from '../src/engine/game';
-import { damageMonster, heroAttack, heroAttackValue, monsterAttack, pushSfx } from '../src/engine/combat';
+import { LOG_MAX, damageMonster, heroAttack, heroAttackValue, monsterAttack, pushLog, pushSfx } from '../src/engine/combat';
 import { updateMonsters } from '../src/engine/monsters';
 import { clearSave, loadGame, saveGame } from '../src/engine/save';
 import { equip, heroMoveMs, upgradeRandomItem } from '../src/engine/items';
@@ -2330,4 +2330,44 @@ test('a ward lit at high spirit hands out more hearts', () => {
   stepEast(g);
   assert.equal(g.state.hero.tempHp, wardTempHp(1, 8));
   assert.ok(g.state.hero.tempHp > wardTempHp(1, 0));
+});
+
+
+// ---------------------------------------------------------------------------
+// The run log
+// ---------------------------------------------------------------------------
+
+test('log lines no longer expire: the log is a history, not a set of toasts', () => {
+  const g = corridorGame();
+  pushLog(g.state, 'Picked up a chest key');
+  // Far longer than the six seconds the HUD used to fade a line out over.
+  for (let i = 0; i < 60; i++) g.tick(1000);
+  assert.ok(
+    g.state.log.some((l) => l.text === 'Picked up a chest key'),
+    'a line the player opens the log to find must still be there',
+  );
+});
+
+test('the log keeps the newest LOG_MAX lines and no more', () => {
+  const g = corridorGame();
+  g.state.log.length = 0;
+  for (let i = 0; i < LOG_MAX * 2; i++) {
+    pushLog(g.state, `line ${i}`);
+    g.tick(500); // clears the de-duplication window between pushes
+  }
+  assert.equal(g.state.log.length, LOG_MAX);
+  assert.equal(g.state.log[g.state.log.length - 1].text, `line ${LOG_MAX * 2 - 1}`, 'newest last');
+  assert.ok(!g.state.log.some((l) => l.text === 'line 0'), 'the oldest fell off');
+});
+
+test('the same event twice in a row is one line, but not forever', () => {
+  const g = corridorGame();
+  g.state.log.length = 0;
+  pushLog(g.state, 'Slew the Slime');
+  pushLog(g.state, 'Slew the Slime');
+  assert.equal(g.state.log.length, 1, 'one event, one line');
+
+  g.tick(1000);
+  pushLog(g.state, 'Slew the Slime');
+  assert.equal(g.state.log.length, 2, 'the same thing a second later really happened twice');
 });

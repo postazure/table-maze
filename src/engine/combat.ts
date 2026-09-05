@@ -72,12 +72,23 @@ export function pushSfx(state: GameState, id: SfxId): void {
 /** More than a couple of frames' worth of sounds is a backlog nobody wants to hear. */
 const SFX_QUEUE_MAX = 24;
 
-/** Push a log message, trimming to the newest 5. */
+/**
+ * How many log lines a run keeps. The log used to be three fading lines in the
+ * corner of the HUD, so five was plenty; it now lives on a tab of the help
+ * screen that the player opens after the fact, and a history that only went
+ * back five lines would rarely still hold what they came to look up.
+ */
+export const LOG_MAX = 30;
+
+/** Push a log message, trimming to the newest `LOG_MAX`. */
 export function pushLog(state: GameState, text: string): void {
   const last = state.log[state.log.length - 1];
+  // `t` still ages (see `ageLog`) purely to bound this de-duplication window:
+  // one event that fires twice in a frame is one line, the same event a minute
+  // later is two.
   if (last && last.text === text && last.t < 400) return;
   state.log.push({ text, t: 0 });
-  if (state.log.length > 5) state.log.splice(0, state.log.length - 5);
+  if (state.log.length > LOG_MAX) state.log.splice(0, state.log.length - LOG_MAX);
 }
 
 /** The live monster standing on `p`, if any. */

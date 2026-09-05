@@ -6,15 +6,18 @@ import { buffAtk, buffDef, buffPhase, type BuffPhase } from '../engine/shrines';
  * left, and how hard that should blink. Never a number — the timer is the bar
  * and the blink, the same rule the pip over the hero's head follows.
  */
+/**
+ * One running shrine effect, as the help screen shows it. Nothing about a buff
+ * reaches the HUD any more — the pips floating over the hero are the at-a-
+ * glance read, and the detail lives behind the help button.
+ */
 export interface HudBuff {
   kind: ShrineKind;
-  /** 0-100, stepped so the HUD is not re-rendered for every millisecond. */
-  pct: number;
   phase: BuffPhase;
   /**
-   * Whole seconds left, for the help screen — which is the one place that says
-   * how long in words, because the game is paused behind it. The HUD chip and
-   * the pip over the hero stay wordless. 0 for the ward, which has no clock.
+   * Whole seconds left. The help screen is the one place that says how long in
+   * words, because the game is paused behind it; the pip over the hero stays
+   * wordless. 0 for the ward, which has no clock.
    */
   secondsLeft: number;
   /** The depth the shrine was generated at; its numbers all come from this. */
@@ -41,7 +44,8 @@ export interface HudModel {
   chestKeys: number;
   kills: number;
   stunned: boolean;
-  log: string[]; // last 3 messages, oldest first
+  /** The run's log, oldest first. Read only by the help screen's Log tab. */
+  log: string[];
   /** Ward shrine: temporary quarter hearts left, and what they started at. */
   tempHp: number;
   tempHpMax: number;
@@ -55,13 +59,6 @@ export interface HudModel {
   modal: Modal | null;
 }
 
-/** Round a fraction to 2% steps: smooth enough to watch, cheap enough to diff. */
-function steppedPct(value: number, max: number): number {
-  if (max <= 0) return 0;
-  const pct = Math.max(0, Math.min(100, (value / max) * 100));
-  return Math.round(pct / 2) * 2;
-}
-
 export function deriveHudModel(state: GameState): HudModel {
   const hero = state.hero;
   const atkBonus = buffAtk(hero);
@@ -70,19 +67,10 @@ export function deriveHudModel(state: GameState): HudModel {
   const buffs: HudBuff[] = [];
   // The ward has no clock: its bar drains as the temporary hearts are spent,
   // and it never blinks.
-  if (tempHp > 0) {
-    buffs.push({
-      kind: 'ward',
-      pct: steppedPct(tempHp, hero.tempHpMax || tempHp),
-      phase: 'solid',
-      secondsLeft: 0,
-      level: 1,
-    });
-  }
+  if (tempHp > 0) buffs.push({ kind: 'ward', phase: 'solid', secondsLeft: 0, level: 1 });
   for (const b of hero.buffs ?? []) {
     buffs.push({
       kind: b.kind,
-      pct: steppedPct(b.ms, b.totalMs),
       phase: buffPhase(b.ms),
       secondsLeft: Math.ceil(b.ms / 1000),
       level: b.level,
@@ -111,7 +99,7 @@ export function deriveHudModel(state: GameState): HudModel {
     gear: hero.gear,
     levelKind: state.level.kind,
     modal: state.modal,
-    log: state.log.slice(-3).map((m) => m.text),
+    log: state.log.map((m) => m.text),
   };
 }
 
@@ -159,7 +147,7 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
   for (let i = 0; i < a.buffs.length; i++) {
     const x = a.buffs[i];
     const y = b.buffs[i];
-    if (x.kind !== y.kind || x.pct !== y.pct || x.phase !== y.phase) return false;
+    if (x.kind !== y.kind || x.phase !== y.phase) return false;
     if (x.secondsLeft !== y.secondsLeft || x.level !== y.level) return false;
   }
   return true;
