@@ -10,7 +10,7 @@ import { hashSeed, makeRng } from './rng';
 import { bfsDistances, bfsPath } from './pathfind';
 import { generateLevel } from './maze';
 import { themeForDepth } from './themes';
-import { newHero, applyLevelUp } from './balance';
+import { applyLevelUp, newHero, trinketGold } from './balance';
 import { angelsFollow, updateMonsters } from './monsters';
 import {
   GOLD,
@@ -496,6 +496,14 @@ export class Game {
     // Gold charm / xp tome swell the loot itself, so the popup shows what the
     // hero really pockets.
     const stats = heroStats(hero);
+    // One of each trinket is all the hero can carry: a second Rusty Sword is
+    // dead weight. A duplicate is melted down and the chest pays coins, so the
+    // pile of chest loot cannot quietly out-grow the hero's own levels.
+    const trinket = chest.loot.item;
+    if (trinket && hero.items.some((i) => i.name === trinket.name)) {
+      chest.loot.item = undefined;
+      chest.loot.gold += trinketGold(st.depth);
+    }
     chest.loot.gold = Math.round(chest.loot.gold * stats.goldMult);
     chest.loot.xp = Math.round(chest.loot.xp * stats.xpMult);
     hero.gold += chest.loot.gold;

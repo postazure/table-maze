@@ -41,14 +41,17 @@ export function levelDims(depth: number): { width: number; height: number }; // 
 export function newHero(): Hero;                     // level 1 starting stats
 export function xpForLevel(level: number): number;   // xp needed to go from `level` to `level+1`
 export function applyLevelUp(hero: Hero): void;      // called when hero.xp >= hero.xpToNext; bumps stats, restores hp, sets new xpToNext (may loop if enough xp for multiple levels)
-export function makeMonster(kind: MonsterKind, depth: number, rng: Rng, pos: Vec, id: string): Monster; // stats scale with depth; picks name/glyph from a themed table
+export function makeMonster(kind: MonsterKind, depth: number, rng: Rng, pos: Vec, id: string, opts?: MonsterOpts): Monster; // stats scale with depth; picks name/glyph from a themed table. `opts.gate` = the player has no way around this one: it sits at the floor's own level and takes neither the role lift nor the elite roll.
 export function rollChestLoot(depth: number, rng: Rng): Loot;
+export function trinketGold(depth: number): number;  // coins a duplicate chest trinket melts down for
 export function damage(attackerAtk: number, defenderDef: number, rng: Rng): number; // >= 1
 ```
 
 ## maze.ts
 ```ts
 export function generateLevel(depth: number, runSeed: number): LevelData;
+/** The guards the player has no way around: the cheapest start->exit route, counting one per guard walked through. */
+export function gateGuards(level: LevelData): Monster[];
 ```
 Requirements:
 - Perfect maze (recursive backtracker or similar) on the tile grid from
@@ -73,6 +76,11 @@ Requirements:
   share tiles with monsters or each other. The level must be solvable: exit
   reachable from start once all doors are open, and every key reachable in
   order.
+- No unwinnable gate. Guards never move and heal back to full between attempts,
+  so a guard on the only way to the stairs must be beatable or the run is dead.
+  After placing monsters, re-roll every guard `gateGuards` reports at the
+  floor's own level (`makeMonster(..., { gate: true })`), and reject any level
+  where one still sits above it. Floor 1 carries no lurkers.
 - Must be deterministic for a given (depth, runSeed).
 
 ## combat.ts

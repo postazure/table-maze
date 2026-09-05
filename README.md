@@ -17,7 +17,9 @@ Play it at **https://postazure.github.io/table-maze/**
   carry over to the next level.
 - Chests are solid. Walk into one with a chest key and the game pauses while the
   chest opens and your prize floats out: a sword, a shield, a heart, or coins.
-  Tap to keep playing. Without a key the chest just blinks red.
+  Tap to keep playing. Without a key the chest just blinks red. You carry one
+  of each trinket, so a second Rusty Sword is melted down and the chest pays
+  coins instead — which is what gold is for.
 - Monsters are solid: you can't walk through one. Drag into a monster to attack
   it. Stop next to a monster (or within reach of your weapon) and the hero
   fights it too. Once engaged, the hero keeps swinging on their own until the
@@ -35,12 +37,18 @@ Play it at **https://postazure.github.io/table-maze/**
   - **Patrols** walk a fixed route. They're trash: a speed bump you cut down in
     a few swings, or time your run past.
   - **Guards** never move. They block a tile until you beat them, and beating
-    one at your level costs about half your hearts. Untouched, they doze.
+    one at your level costs a third of your hearts or more. Untouched, they doze.
+    A guard standing on the only way down is a **gate**: it fights at the
+    floor's own level and swings no harder, so keeping pace with the depth is
+    always enough to force your way past. Guards with something to protect — a
+    chest, a door, the stairs themselves — hit far harder, and those you can
+    walk around.
   - **Lurkers** sit off the main path and chase you when you get close. They hit
     for whole hearts and outlast you at your level: fight one head-on and you'll
     be knocked down. Lure it away from the corridor it watches, then loop around
     it through another passage. Kill one when you're well over its level and the
-    reward is the biggest in the dungeon.
+    reward is the biggest in the dungeon. The first floor has none — it is
+    patrols and guards while you learn the controls.
 - After every third floor you face a **boss** before you reach the shop. An intro card
   explains the fight, then the game is on: **The Necromancer** channels a spell in a
   central chamber while raising skeletons — smash all five crystals down his corridors
@@ -70,6 +78,9 @@ Play it at **https://postazure.github.io/table-maze/**
   its own colours and its own monsters, but they always fill the same three roles.
 - Step on the 🪜 stairs to descend. Levels get bigger and monsters get stronger
   the deeper you go. Your hero levels up from XP and keeps every stat and item.
+  Clearing a floor's patrols, guards and chests is worth about one level, so the
+  hero tracks the depth rather than outrunning it: skip fights and the dungeon
+  pulls ahead of you, kill the lurkers too and you buy yourself a cushion.
 - Progress is saved in your browser's local storage automatically.
 
 ## Development

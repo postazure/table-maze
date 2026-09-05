@@ -28,10 +28,18 @@ export function levelDims(depth: number): { width: number; height: number } {
 // Hero
 // ---------------------------------------------------------------------------
 
-/** XP needed to go from `level` to `level + 1`. */
+/**
+ * XP needed to go from `level` to `level + 1`.
+ *
+ * Tuned against what one floor actually holds (see the pacing test in
+ * test/maze.test.ts): clearing the patrols, guards and chests of floor `d` is
+ * worth about one level, so the hero tracks the depth instead of racing ahead
+ * of it. Lurkers are the surplus — the monster you kill when you want a
+ * cushion, not the one you have to kill.
+ */
 export function xpForLevel(level: number): number {
   const l = Math.max(1, Math.floor(level));
-  return Math.round(10 * Math.pow(l, 1.5));
+  return Math.round(45 * Math.pow(l, 1.1));
 }
 
 export function newHero(): Hero {
@@ -86,6 +94,19 @@ function tierOf(depth: number): number {
   return 4;
 }
 
+/** First depth on which a monster may roll a level above its role's. */
+const ELITE_FROM_DEPTH = 3;
+
+export interface MonsterOpts {
+  /**
+   * This monster is the only way past. A gate never takes the role lift or the
+   * elite roll: it sits at the floor's own level, so a hero who is keeping up
+   * with the depth can always get through. Guards are rooted and heal back to
+   * full between attempts, so a gate the hero cannot out-fight is a dead run.
+   */
+  gate?: boolean;
+}
+
 /** Fully-formed monster of `kind` sitting on `pos`, scaled to `depth`. */
 export function makeMonster(
   kind: RosterKind,
@@ -93,13 +114,17 @@ export function makeMonster(
   rng: Rng,
   pos: Vec,
   id: string,
+  opts: MonsterOpts = {},
 ): Monster {
   const depthN = Math.max(1, Math.floor(depth));
   const look = rng.pick(themeForDepth(depthN).roster[kind]);
   // Patrols match the dungeon depth, guards sit a level above it, lurkers
-  // two above. Every level, a few monsters roll one level higher to stand out.
+  // two above. From the third floor down, a few monsters roll one level higher
+  // to stand out; the first two floors are read-the-controls floors and never
+  // do. A gate takes neither: see MonsterOpts.gate.
   const lift = kind === 'patrol' ? 0 : kind === 'guard' ? 1 : 2;
-  const level = depthN + lift + (rng.chance(0.2) ? 1 : 0);
+  const elite = depthN >= ELITE_FROM_DEPTH && rng.chance(0.2);
+  const level = opts.gate ? depthN : depthN + lift + (elite ? 1 : 0);
   const d = level;
 
   let hp: number;
@@ -112,19 +137,25 @@ export function makeMonster(
   let xp: number;
   let gold: number;
 
-  // The three roles are tuned against a hero whose level matches the depth
-  // (see the head-on fight simulation in the PR that set these numbers):
-  //  - patrol: a speed bump. Three swings to kill, a quarter heart or so lost.
-  //  - guard:  a real fight. Won at parity, but for roughly half the hearts;
-  //            a hero a couple of levels under gets knocked down.
-  //  - lurker: not a fight to pick. At parity it knocks the hero down before
-  //            it dies; two or three levels over it is winnable and costly.
-  //            The intended answer is to bait it away and loop around.
+  // The three roles are tuned against the hero the game actually produces: one
+  // who clears each floor's patrols, guards and chests, so runs a level or so
+  // over the depth and carries a handful of chest trinkets (see the head-on
+  // fight test in test/maze.test.ts, which holds these numbers in place):
+  //  - patrol: a speed bump. A few swings to kill, a quarter heart or so lost.
+  //  - guard:  a real fight, won but for a third of the hearts or more. A hero
+  //            a couple of levels under gets knocked down. The exception is a
+  //            gate (see MonsterOpts.gate), which is deliberately softer.
+  //  - lurker: not a fight to pick. At level it knocks the hero down before it
+  //            dies, and it stays that way all the way down; the answer is to
+  //            bait it away and loop around, or to come back far stronger.
   switch (kind) {
     case 'guard':
-      // Rooted, tanky, hits hard but slowly.
+      // Rooted, tanky, hits hard but slowly. A guard with something to protect
+      // swings well above its level; a gate — the one you have no way around —
+      // swings at its level, so a hero who is a little behind can still force
+      // their way down.
       hp = 10 + 5 * d;
-      atk = d;
+      atk = d + (opts.gate ? 0 : Math.floor((2 * d) / 3));
       def = Math.floor((d - 1) / 2);
       moveInterval = 100000; // never moves
       attackInterval = 900;
@@ -148,14 +179,14 @@ export function makeMonster(
     default:
       // Lurker: fast enough to punish a careless hero, slower than a running
       // one, and far too strong to trade blows with at level.
-      hp = 8 + 7 * d;
-      atk = 1 + Math.floor(1.2 * d);
+      hp = 8 + 8 * d;
+      atk = 1 + Math.floor(1.9 * d);
       def = Math.floor(d / 2);
       moveInterval = 260;
       attackInterval = 700;
       sightRange = 4;
       leash = 7;
-      xp = 12 + 6 * d;
+      xp = 10 + 4 * d;
       gold = rng.int(3, 6 + 2 * d);
       break;
   }
@@ -201,6 +232,15 @@ const SHIELDS = ['Cracked Shield', 'Wooden Shield', 'Iron Shield', 'Tower Shield
 const AMULETS = ['Copper Amulet', 'Jade Amulet', 'Ruby Amulet', 'Star Amulet', 'Heartstone Amulet'];
 const RINGS = ['Tin Ring', 'Bone Ring', 'Gold Ring', 'Opal Ring', 'Ring of Ages'];
 
+/**
+ * Coins a duplicate trinket is melted down for. The hero carries one of each
+ * (see `openChest`), so past the first of a kind a chest pays gold instead —
+ * which is the point of gold: it buys the magic items in the shop.
+ */
+export function trinketGold(depth: number): number {
+  return 8 * Math.max(1, Math.floor(depth));
+}
+
 export function rollChestLoot(depth: number, rng: Rng): Loot {
   const d = Math.max(1, Math.floor(depth));
   const tier = tierOf(d);
@@ -208,13 +248,17 @@ export function rollChestLoot(depth: number, rng: Rng): Loot {
     gold: rng.int(5, 15) * d,
     xp: 3 * d,
   };
+  // Trinket bonuses are deliberately small: the hero only ever carries one of
+  // each name (see `openChest`), and even a full set is worth a fraction of
+  // what levelling up gives. Chests pay in gold; the shop is where gold turns
+  // into power.
   if (rng.chance(0.45)) {
     const roll = rng.int(0, 3);
     let item: LootItem;
-    if (roll === 0) item = { name: SWORDS[tier], atk: 1 + Math.floor(d / 5) };
-    else if (roll === 1) item = { name: SHIELDS[tier], def: 1 + Math.floor(d / 7) };
-    else if (roll === 2) item = { name: AMULETS[tier], maxHp: HEART * (1 + Math.floor(d / 4)) }; // whole hearts
-    else item = { name: RINGS[tier], maxHp: HEART * (1 + Math.floor(d / 6)) };
+    if (roll === 0) item = { name: SWORDS[tier], atk: 1 + Math.floor(d / 10) };
+    else if (roll === 1) item = { name: SHIELDS[tier], def: 1 + Math.floor(d / 14) };
+    else if (roll === 2) item = { name: AMULETS[tier], maxHp: HEART * (1 + Math.floor(d / 8)) }; // whole hearts
+    else item = { name: RINGS[tier], maxHp: HEART * (1 + Math.floor(d / 12)) };
     loot.item = item;
   }
   return loot;
