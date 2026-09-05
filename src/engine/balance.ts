@@ -71,14 +71,36 @@ export function xpShare(heroLevel: number, monsterLevel: number): number {
   return Math.min(MAX_XP_SHARE, Math.max(MIN_XP_SHARE, 1 + XP_PER_LEVEL_GAP * gap));
 }
 
+/**
+ * Level is its own axis of power, separate from the atk/def stats gear and
+ * chests hand out. Both a hero's and a monster's base attack and max HP ride
+ * this curve; a single point of atk or def from a trinket is deliberately
+ * worth a fraction of what one level is worth, so gear tunes a fight instead
+ * of deciding it. `LEVEL_GROWTH` is picked, and checked against a "guard" (see
+ * the role tables below and the balance tests in `test/maze.test.ts`), so the
+ * shape of a fight tracks the level gap and nothing else: something your own
+ * level is a real fight you comfortably win, one level down is safer still,
+ * one level up you can lose, and two levels up you lose outright — the same
+ * shape whether that gap opens up at level 2 or level 20.
+ */
+const LEVEL_GROWTH = 1.2;
+export const HERO_ATK_BASE = 2;
+export const HERO_HP_BASE = 16; // quarter hearts: four hearts at level one
+
+/** Base attack or HP a combatant of `level` carries before role and gear. */
+export function levelCurve(base: number, level: number): number {
+  const l = Math.max(1, Math.floor(level));
+  return Math.max(1, Math.round(base * Math.pow(LEVEL_GROWTH, l - 1)));
+}
+
 export function newHero(): Hero {
   return {
     pos: { x: 1, y: 1 },
     rpos: { x: 1, y: 1 },
     facing: 'S',
-    hp: 3 * HEART,
-    maxHp: 3 * HEART,
-    atk: 2,
+    hp: levelCurve(HERO_HP_BASE, 1),
+    maxHp: levelCurve(HERO_HP_BASE, 1),
+    atk: levelCurve(HERO_ATK_BASE, 1),
     def: 0,
     level: 1,
     xp: 0,
@@ -97,15 +119,21 @@ export function newHero(): Hero {
   };
 }
 
-/** Spend banked xp on as many level-ups as it covers. */
+/**
+ * Spend banked xp on as many level-ups as it covers. Atk and max HP move by
+ * the curve's delta for the new level, so gear bonuses already folded into
+ * those fields (see `equip` in items.ts) are carried forward rather than
+ * overwritten. Defense is never granted by a level: it is a gear-only stat,
+ * kept deliberately small next to what a level of atk/HP is worth.
+ */
 export function applyLevelUp(hero: Hero): void {
   let guard = 0;
   while (hero.xp >= hero.xpToNext && guard++ < 200) {
     hero.xp -= hero.xpToNext;
+    const from = hero.level;
     hero.level += 1;
-    hero.maxHp += HEART; // one more heart
-    hero.atk += 1;
-    if (hero.level % 2 === 0) hero.def += 1;
+    hero.atk += levelCurve(HERO_ATK_BASE, hero.level) - levelCurve(HERO_ATK_BASE, from);
+    hero.maxHp += levelCurve(HERO_HP_BASE, hero.level) - levelCurve(HERO_HP_BASE, from);
     hero.hp = hero.maxHp;
     hero.xpToNext = xpForLevel(hero.level);
   }
@@ -158,8 +186,8 @@ export interface MonsterOpts {
  */
 const SPAWN_OVER_BASE = 1;
 const SPAWN_OVER_PER_LEVELS = 4;
-/** The biggest natural lift there is: lurker (+2) that rolled elite (+1). */
-const SPAWN_OVER_MAX = 3;
+/** Never more than two levels over: a fight the hero can lose, not one they can't win. */
+const SPAWN_OVER_MAX = 2;
 
 /** Highest level a monster may spawn at on `depth` for a hero of `heroLevel`. */
 export function monsterLevelCap(depth: number, heroLevel: number | undefined): number {
@@ -214,13 +242,14 @@ export function makeMonster(
   //            bait it away and loop around, or to come back far stronger.
   switch (kind) {
     case 'guard':
-      // Rooted, tanky, hits hard but slowly. A guard with something to protect
-      // swings well above its level; a gate — the one you have no way around —
-      // swings at its level, so a hero who is a little behind can still force
-      // their way down.
-      hp = 10 + 5 * d;
-      atk = d + (opts.gate ? 0 : Math.floor((2 * d) / 3));
-      def = Math.floor((d - 1) / 2);
+      // Rooted, tanky, hits hard but slowly. A guard is the "fair fight"
+      // role: at the hero's own level it rides the same atk/HP curve the
+      // hero does. A guard with something to protect swings at the full
+      // curve; a gate — the one you have no way around — swings softer, so
+      // a hero who is a little behind can still force their way down.
+      hp = Math.round(levelCurve(HERO_HP_BASE, d) * 1.35);
+      atk = Math.round(levelCurve(HERO_ATK_BASE, d) * (opts.gate ? 0.6 : 1));
+      def = 0;
       moveInterval = 100000; // never moves
       attackInterval = 900;
       sightRange = 2;
@@ -229,10 +258,10 @@ export function makeMonster(
       gold = rng.int(2, 5 + d);
       break;
     case 'patrol':
-      // Walks its beat; squishy trash.
-      hp = 4 + 2 * d;
-      atk = Math.max(1, Math.floor(d / 3));
-      def = Math.floor((d - 1) / 4);
+      // Walks its beat; squishy trash next to the hero's own curve.
+      hp = Math.round(levelCurve(HERO_HP_BASE, d) * 0.6);
+      atk = Math.max(1, Math.round(levelCurve(HERO_ATK_BASE, d) * 0.55));
+      def = 0;
       moveInterval = 450;
       attackInterval = 800;
       sightRange = 3;
@@ -243,9 +272,9 @@ export function makeMonster(
     default:
       // Lurker: fast enough to punish a careless hero, slower than a running
       // one, and far too strong to trade blows with at level.
-      hp = 8 + 8 * d;
-      atk = 1 + Math.floor(1.9 * d);
-      def = Math.floor(d / 2);
+      hp = Math.round(levelCurve(HERO_HP_BASE, d) * 1.5);
+      atk = Math.round(levelCurve(HERO_ATK_BASE, d) * 2.1);
+      def = Math.round(levelCurve(HERO_ATK_BASE, d) * 0.3);
       moveInterval = 260;
       attackInterval = 700;
       sightRange = 4;
