@@ -437,32 +437,45 @@ function causeOfDeath(m: Monster | null): string {
  * over recently and fall asleep there; the game hands control back once they
  * have slept themselves back to full health.
  */
+/**
+ * Heal to half max hp (rounded up to a whole heart), hop to a nearby safe
+ * tile and stay on your feet instead of napping. The shared shape of a
+ * phoenix feather's burst and a health potion's swig — only the cause, the
+ * colour, the sound and the log line differ.
+ */
+function burstBackUp(state: GameState, color: string, sfx: SfxId, log: string): void {
+  const hero = state.hero;
+  const half = Math.ceil(hero.maxHp / 2);
+  hero.hp = Math.min(hero.maxHp, Math.ceil(half / HEART) * HEART);
+  hero.stun = 0;
+  hero.sleeping = false;
+  state.path.length = 0;
+  state.fx.push({ kind: 'ring', pos: { x: hero.pos.x, y: hero.pos.y }, radius: 1.5, color, t: 0, ttl: 500 });
+  pushShake(state, 10, 420);
+  pushSfx(state, sfx);
+  const spot = retreatTile(state);
+  if (spot) hero.pos = spot;
+  state.trail.add(key(hero.pos));
+  pushLog(state, log);
+}
+
 function knockDown(state: GameState, attacker: Monster | null = null): void {
   const hero = state.hero;
   const stats = heroStats(hero);
 
   // Phoenix feather: burst back up instead of sleeping (once per cooldown).
   if (stats.phoenixCooldownMs > 0 && hero.timers.phoenix <= 0) {
-    const half = Math.ceil(hero.maxHp / 2);
-    hero.hp = Math.min(hero.maxHp, Math.ceil(half / HEART) * HEART);
     hero.timers.phoenix = stats.phoenixCooldownMs;
-    hero.stun = 0;
-    hero.sleeping = false;
-    state.path.length = 0;
-    state.fx.push({
-      kind: 'ring',
-      pos: { x: hero.pos.x, y: hero.pos.y },
-      radius: 1.5,
-      color: ORANGE,
-      t: 0,
-      ttl: 500,
-    });
-    pushShake(state, 10, 420);
-    pushSfx(state, 'phoenix');
-    const spot = retreatTile(state);
-    if (spot) hero.pos = spot;
-    state.trail.add(key(hero.pos));
-    pushLog(state, 'The feather burns!');
+    burstBackUp(state, ORANGE, 'phoenix', 'The feather burns!');
+    return;
+  }
+
+  // Health potion: the same burst back up, spending one charge instead of
+  // waiting on a cooldown. Checked after the feather so a hero wearing both
+  // spends the free one first and saves the potion for when it is on cooldown.
+  if (hero.potions > 0) {
+    hero.potions -= 1;
+    burstBackUp(state, GOLD, 'potion', 'A health potion saves you!');
     return;
   }
 

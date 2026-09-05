@@ -192,11 +192,46 @@ button {
   flex: 1 1 auto;
   min-height: 14px;
   align-items: center;
+  min-width: 0;
 }
 
 .hud-heart {
   display: block;
   image-rendering: pixelated;
+}
+
+/* Hearts and potions share the HP row: hearts get 2/3 of it, potions the
+   other 1/3, right-justified. Each wraps onto its own extra line rather than
+   stealing the other's space when it runs out of room. */
+.hud-hp-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hud-hp-content .hud-hearts {
+  flex: 2 1 0%;
+}
+
+.hud-potions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  flex: 1 1 0%;
+  min-height: 14px;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.hud-potion .pixel-icon {
+  opacity: 0.3;
+}
+
+.hud-potion.hud-potion-filled .pixel-icon {
+  opacity: 1;
 }
 
 .hud-bar-fill.hud-xp {

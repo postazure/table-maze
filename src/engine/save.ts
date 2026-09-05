@@ -83,6 +83,8 @@ export function loadGame(): GameState | null {
     if (!hero.rpos) hero.rpos = { x: hero.pos.x, y: hero.pos.y };
     if (!hero.keys) hero.keys = { door: 0, chest: 0 };
     if (!Array.isArray(hero.items)) hero.items = [];
+    if (typeof hero.potionCapacity !== 'number') hero.potionCapacity = 0;
+    if (typeof hero.potions !== 'number') hero.potions = 0;
     hero.stun = 0;
     if (typeof hero.sleeping !== 'boolean') hero.sleeping = false;
     hero.hitFlash = 0;

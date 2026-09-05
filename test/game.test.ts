@@ -1146,6 +1146,47 @@ test('the phoenix feather skips one knockdown, then needs its cooldown', () => {
   assert.equal(hero.hp, 1);
 });
 
+test('a health potion bursts the hero back up instead of a knockdown', () => {
+  const g = corridorGame();
+  const st = g.state;
+  const hero = st.hero;
+  hero.maxHp = 20;
+  hero.hp = 1;
+  hero.potionCapacity = 2;
+  hero.potions = 2;
+  st.trail = new Set(['1,1', '2,1', '3,1', '4,1', '5,1']);
+  hero.pos = { x: 5, y: 1 };
+  const m = mkMonster({ pos: { x: 6, y: 1 }, atk: 50 });
+  st.level.monsters.push(m);
+
+  monsterAttack(st, m, makeRng(3));
+  assert.equal(hero.sleeping, false, 'the potion kept the hero up');
+  assert.equal(hero.hp, 12, 'half the hearts, rounded up to whole ones');
+  assert.equal(hero.potions, 1, 'one charge spent');
+  assert.ok(st.fx.some((f) => f.kind === 'ring'));
+  assert.ok(st.log.some((l) => l.text.includes('potion')));
+});
+
+test('the phoenix feather is spent before a health potion', () => {
+  const g = corridorGame();
+  const st = g.state;
+  const hero = st.hero;
+  hero.maxHp = 20;
+  hero.hp = 1;
+  equip(hero, { kind: 'phoenixFeather', level: 1 });
+  hero.potionCapacity = 1;
+  hero.potions = 1;
+  st.trail = new Set(['1,1', '2,1', '3,1', '4,1', '5,1']);
+  hero.pos = { x: 5, y: 1 };
+  const m = mkMonster({ pos: { x: 6, y: 1 }, atk: 50 });
+  st.level.monsters.push(m);
+
+  monsterAttack(st, m, makeRng(3));
+  assert.equal(hero.sleeping, false);
+  assert.equal(hero.potions, 1, 'the free feather went first, the potion is untouched');
+  assert.ok(st.log.some((l) => l.text.includes('feather')));
+});
+
 test('speed boots quicken every step', () => {
   const plain = corridorGame();
   plain.pointerAt({ x: 2, y: 1 });
@@ -1208,6 +1249,45 @@ test('the hero carries one of each trinket; a duplicate is coins instead', () =>
   assert.equal(hero.atk, atk + 2, 'a second Rusty Sword adds nothing');
   assert.ok(hero.gold > 20, `the duplicate is melted down for coins (${hero.gold})`);
   assert.equal(chest.loot.item, undefined, 'and the popup shows coins');
+});
+
+test('a health potion trinket always raises capacity, even a repeat', () => {
+  const potion = () => ({ name: 'Health Potion', potionCapacity: 1 });
+  const g = corridorGame({
+    chests: [{ id: 'c1', pos: { x: 2, y: 1 }, opened: false, loot: { gold: 10, xp: 4, item: potion() } }],
+  });
+  const hero = g.state.hero;
+  const chest = g.state.level.chests[0];
+
+  hero.keys.chest = 1;
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(150);
+  assert.equal(hero.potionCapacity, 1);
+  assert.equal(hero.potions, 1);
+  g.dismissModal();
+
+  // The same name out of a second chest: unlike a sword, it is never a
+  // duplicate. Capacity keeps rising and no gold is melted out of it.
+  chest.opened = false;
+  chest.loot = { gold: 10, xp: 4, item: potion() };
+  hero.keys.chest = 1;
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(150);
+  assert.equal(hero.potionCapacity, 2, 'capacity keeps rising on a repeat');
+  assert.equal(hero.potions, 2);
+  assert.equal(chest.loot.item?.potionCapacity, 1, 'never melted down for coins');
+});
+
+test('health potions refill to capacity at the start of the next level', () => {
+  const g = corridorGame();
+  g.state.level.exit = { x: 2, y: 1 };
+  g.state.hero.potionCapacity = 3;
+  g.state.hero.potions = 0;
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(150);
+  g.tick(800);
+  assert.equal(g.state.depth, 2);
+  assert.equal(g.state.hero.potions, 3);
 });
 
 test('the key compass points at the nearest key, then at the stairs', () => {
@@ -1734,6 +1814,27 @@ test('a minotaur hit takes a third of the hearts and three of them end the run',
   assert.equal(modal.kind, 'gameOver');
   assert.equal(modal.cause, 'The Minotaur caught you.');
   assert.equal(modal.boss, 'minotaur');
+});
+
+test('a health potion also saves the hero in a boss chamber', () => {
+  const g = Game.forTest(11);
+  const level = mkBossLevel(LONG_CORRIDOR, { kind: 'minotaur', defeated: false });
+  const bull = makeBossMonster('minotaur', 3, { x: 6, y: 1 }, 'minotaur');
+  level.monsters.push(bull);
+  install(g, level, { x: 7, y: 1 });
+  const st = g.state;
+  const hero = st.hero;
+  hero.maxHp = 12;
+  hero.hp = 4; // one more hit would otherwise end the run
+  hero.def = 99;
+  hero.potionCapacity = 1;
+  hero.potions = 1;
+
+  monsterAttack(st, bull, makeRng(3));
+  assert.equal(hero.hp, 8, 'half of 12, rounded up to a whole heart');
+  assert.equal(hero.sleeping, false);
+  assert.equal(hero.potions, 0, 'the potion is spent');
+  assert.equal(st.over, false, 'the run goes on');
 });
 
 test('an angel only moves when the hero moves', () => {

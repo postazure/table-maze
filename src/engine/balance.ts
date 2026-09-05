@@ -122,6 +122,8 @@ export function newHero(): Hero {
     gold: 0,
     keys: { door: 0, chest: 0 },
     items: [],
+    potions: 0,
+    potionCapacity: 0,
     hitFlash: 0,
     stun: 0,
     sleeping: false,
@@ -399,14 +401,16 @@ export function rollChestLoot(depth: number, rng: Rng): Loot {
   // Trinket bonuses are deliberately small: the hero only ever carries one of
   // each name (see `openChest`), and even a full set is worth a fraction of
   // what levelling up gives. Chests pay in gold; the shop is where gold turns
-  // into power.
+  // into power. A health potion is the one trinket kind exempt from the
+  // one-per-name rule: every one found is a real gain.
   if (rng.chance(0.45)) {
-    const roll = rng.int(0, 3);
+    const roll = rng.int(0, 4);
     let item: LootItem;
     if (roll === 0) item = { name: SWORDS[tier], atk: 1 + Math.floor(d / 10) };
     else if (roll === 1) item = { name: SHIELDS[tier], def: 1 + Math.floor(d / 14) };
     else if (roll === 2) item = { name: AMULETS[tier], maxHp: HEART * (1 + Math.floor(d / 8)) }; // whole hearts
-    else item = { name: RINGS[tier], maxHp: HEART * (1 + Math.floor(d / 12)) };
+    else if (roll === 3) item = { name: RINGS[tier], maxHp: HEART * (1 + Math.floor(d / 12)) };
+    else item = { name: 'Health Potion', potionCapacity: 1 };
     loot.item = item;
   }
   return loot;

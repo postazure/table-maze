@@ -43,8 +43,8 @@ export function spiritForLevel(level: number): number; // the hero's own spirit,
 export function xpForLevel(level: number): number;   // xp needed to go from `level` to `level+1`
 export function applyLevelUp(hero: Hero): void;      // called when hero.xp >= hero.xpToNext; bumps stats, restores hp, sets new xpToNext (may loop if enough xp for multiple levels)
 export function makeMonster(kind: MonsterKind, depth: number, rng: Rng, pos: Vec, id: string, opts?: MonsterOpts): Monster; // stats scale with depth; picks name/glyph from a themed table. `opts.gate` = the player has no way around this one: it sits at the floor's own level and takes neither the role lift nor the elite roll.
-export function rollChestLoot(depth: number, rng: Rng): Loot;
-export function trinketGold(depth: number): number;  // coins a duplicate chest trinket melts down for
+export function rollChestLoot(depth: number, rng: Rng): Loot; // item, if any, is a sword/shield/amulet/ring trinket or (one roll in five) a health potion (`LootItem.potionCapacity`)
+export function trinketGold(depth: number): number;  // coins a duplicate chest trinket melts down for (a potion trinket is exempt: see openChest in game.ts)
 export function xpShare(heroLevel: number, monsterLevel: number): number; // share of a kill's xp banked, from the level difference: >1 when the hero is behind (capped at 3), <1 when ahead (floored at 0.05). Gold is never scaled.
 export function damage(attackerAtk: number, defenderDef: number, rng: Rng): number; // >= 1
 ```
@@ -373,8 +373,11 @@ export class Hud {
   update(state: GameState): void;   // cheap; called every frame, only touch DOM when values change
 }
 ```
-Shows: depth, hero level, hearts (with the ward's temporary ones on the end),
-XP bar, seven stat readouts (attack, defense, spirit, gold, door keys, chest
+Shows: depth, hero level, hearts (with the ward's temporary ones on the end)
+sharing their row with health potion pips (hearts get 2/3 of the row,
+potions the other 1/3, right-justified — each wraps onto its own line rather
+than crowding the other out; hidden entirely until `potionCapacity > 0`), XP
+bar, seven stat readouts (attack, defense, spirit, gold, door keys, chest
 keys, kills), the three gear slots, and the sound / help / new-game buttons.
 Compact, fits below the maze on a phone in portrait.
 
@@ -654,7 +657,17 @@ doors / chests, deterministic for (depth, runSeed)):
   (`tempHpMax` is zeroed with it). The floating damage number turns ward-blue
   whenever the ward soaked any of it.
 - A knockdown clears `hero.buffs` and both `tempHp` fields, alongside healing
-  every monster. The phoenix feather's burst-back-up keeps them.
+  every monster. The phoenix feather's burst-back-up keeps them, and so does a
+  health potion.
+- Health potions (`Hero.potions`/`potionCapacity`): found in chests only (see
+  `rollChestLoot`), never bought. `knockDown` (combat.ts) checks the phoenix
+  feather first (a free, cooldown-gated save); only when that is unworn or
+  still cooling down does it spend one potion charge for the same
+  burst-back-up (shared by `burstBackUp`: half max hp rounded up to a whole
+  heart, a gold ring, the `potion` sound, a retreat to a safe tile, hero stays
+  awake). Works in a boss chamber exactly like the feather does. `advanceLevel`
+  refills `potions` to `potionCapacity` at the start of every level (maze,
+  boss or shop) but never raises the cap — only a chest does that.
 - Buffs and temporary hearts survive the stairs: `advanceLevel` does not touch
   them, so a shrine taken near the way down carries into the next floor (or a
   boss chamber). Shrines themselves only exist on maze floors.
