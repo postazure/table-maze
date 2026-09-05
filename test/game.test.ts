@@ -1572,30 +1572,79 @@ test('a minotaur hit takes a third of the hearts and three of them end the run',
   assert.equal(modal.boss, 'minotaur');
 });
 
-test('an angel is stone while the hero looks at it', () => {
+test('an angel only moves when the hero moves', () => {
   const g = Game.forTest(13);
+  const level = mkBossLevel(LONG_CORRIDOR, { kind: 'angels', defeated: false, rooms: [] });
+  const angel = makeBossMonster('angel', 3, { x: 9, y: 1 }, 'angel1');
+  angel.state = 'chasing';
+  level.monsters.push(angel);
+  install(g, level, { x: 5, y: 1 });
+  const st = g.state;
+  const hero = st.hero;
+  hero.maxHp = 12;
+  hero.hp = 12;
+
+  // Stand still for a long while: nothing happens, whichever way you face.
+  hero.facing = 'W';
+  for (let i = 0; i < 20; i++) g.tick(200);
+  assert.deepEqual(angel.pos, { x: 9, y: 1 }, 'a still hero is a safe hero');
+  assert.equal(hero.hp, 12);
+
+  // One step west: the angel answers with one step of its own.
+  g.pointerAt({ x: 4, y: 1 });
+  g.tick(heroMoveMs(hero));
+  assert.deepEqual(hero.pos, { x: 4, y: 1 });
+  assert.deepEqual(angel.pos, { x: 8, y: 1 }, 'one hero step, one angel step');
+  g.pointerAt(null);
+  for (let i = 0; i < 20; i++) g.tick(200);
+  assert.deepEqual(angel.pos, { x: 8, y: 1 }, 'and then it waits again');
+
+  // Walk toward it: it closes one tile per tile until it is at your side.
+  g.pointerAt({ x: 5, y: 1 });
+  g.tick(heroMoveMs(hero));
+  assert.deepEqual(hero.pos, { x: 5, y: 1 });
+  assert.deepEqual(angel.pos, { x: 7, y: 1 });
+  g.pointerAt({ x: 6, y: 1 });
+  g.tick(heroMoveMs(hero));
+  assert.deepEqual(angel.pos, { x: 7, y: 1 }, 'already adjacent after your step: it stays put');
+  assert.equal(hero.hp, 8, 'and its touch takes a third of the hearts');
+  assert.ok(st.fx.some((f) => f.kind === 'flash'), 'and greys the tile');
+  assert.deepEqual(hero.pos, { x: 5, y: 1 }, 'the touch shoves you back');
+  g.pointerAt(null);
+  for (let i = 0; i < 20; i++) g.tick(200);
+  assert.ok(hero.hp >= 8, 'a shove is not a step, and standing next to it is safe (regen may tick up)');
+  assert.deepEqual(angel.pos, { x: 7, y: 1 });
+});
+
+test('stepping away from an angel at your side is safe, stepping past it is not', () => {
+  const g = Game.forTest(29);
   const level = mkBossLevel(LONG_CORRIDOR, { kind: 'angels', defeated: false, rooms: [] });
   const angel = makeBossMonster('angel', 3, { x: 7, y: 1 }, 'angel1');
   angel.state = 'chasing';
   level.monsters.push(angel);
-  install(g, level, { x: 5, y: 1 });
-  const hero = g.state.hero;
+  install(g, level, { x: 6, y: 1 });
+  const st = g.state;
+  const hero = st.hero;
   hero.maxHp = 12;
   hero.hp = 12;
-  hero.facing = 'E'; // straight at it
-  const rng = makeRng(4);
 
-  for (let i = 0; i < 5; i++) updateMonsters(g.state, 200, rng);
-  assert.deepEqual(angel.pos, { x: 7, y: 1 }, 'watched, it cannot move');
-  assert.equal(hero.hp, 12, 'nor touch you');
+  // Adjacent, and walking away: it follows, one tile behind, never touching.
+  g.pointerAt({ x: 3, y: 1 });
+  for (let i = 0; i < 3; i++) g.tick(heroMoveMs(hero));
+  assert.deepEqual(hero.pos, { x: 3, y: 1 });
+  assert.deepEqual(angel.pos, { x: 4, y: 1 }, 'right on your heels');
+  assert.equal(hero.hp, 12, 'but a step away is always out of reach');
 
-  hero.facing = 'W'; // back turned
-  updateMonsters(g.state, 200, rng);
-  assert.deepEqual(angel.pos, { x: 6, y: 1 }, 'look away and it closes in');
-
-  updateMonsters(g.state, 200, rng);
-  assert.equal(hero.hp, 8, 'its touch takes a third of the hearts');
-  assert.ok(g.state.fx.some((f) => f.kind === 'flash'), 'and greys the tile');
+  // Turn and try to walk into it: the hero swings instead of stepping, so
+  // no step is taken and the angel does not act at all.
+  g.pointerAt({ x: 4, y: 1 });
+  g.tick(heroMoveMs(hero));
+  assert.deepEqual(hero.pos, { x: 3, y: 1 }, 'nobody walks through an angel');
+  assert.deepEqual(angel.pos, { x: 4, y: 1 });
+  assert.equal(hero.hp, 12, 'a swing is not a step');
+  assert.ok(st.fx.some((f) => f.kind === 'text' && f.text === 'Immune'), 'and it cannot be hurt');
+  g.pointerAt(null);
+  st.path.length = 0;
 });
 
 test('an idle angel wakes when the hero walks into its room', () => {

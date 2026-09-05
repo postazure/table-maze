@@ -4,7 +4,7 @@
  * on the tile grid, gated by `moveCooldown`.
  */
 import type { GameState, LevelData, Monster, Rng, Vec } from './types';
-import { eq, inFrontOf, key, manhattan } from './types';
+import { eq, key, manhattan } from './types';
 import { bfsDistances, bfsPath } from './pathfind';
 import { GREEN, chestAt, closedDoorAt, damageMonster, keyAt, liveMonsterAt, monsterAttack } from './combat';
 import type { ItemStats } from './items';
@@ -36,6 +36,10 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
     if (!m.alive) continue; // poison finished it off
 
     if (state.descending > 0) continue;
+
+    // Angels have no clock of their own: they act once per hero step, from
+    // `angelsFollow` (game.ts calls it). Standing still is safe.
+    if (m.kind === 'angel') continue;
 
     const heroPos = state.hero.pos;
 
@@ -75,13 +79,32 @@ function cooldownFor(state: GameState, m: Monster, stats: ItemStats, base: numbe
 }
 
 /**
+ * Angels move in lock-step with the hero. Called once per hero step (never
+ * for a shove, and never while the hero stands still). Every awake angel
+ * already touching the hero grabs them; every other awake angel takes one
+ * tile along its route. So an angel at your side is a threat only if your
+ * next step keeps you within its reach — step away and it merely follows.
+ */
+export function angelsFollow(state: GameState, rng: Rng): void {
+  for (const m of state.level.monsters) {
+    if (!m.alive || m.kind !== 'angel' || m.state !== 'chasing') continue;
+    if (state.over) return;
+    if (manhattan(m.pos, state.hero.pos) === 1) {
+      monsterAttack(state, m, rng);
+      continue;
+    }
+    const step = stepToward(state, m, state.hero.pos, HUNT_MAX_LEN);
+    if (step) m.pos = { x: step.x, y: step.y };
+  }
+}
+
+/**
  * Guards are furniture until you poke them: they only swing at an adjacent
  * hero while the fight they were dragged into is still fresh. Patrols and
  * lurkers always attack whoever stands next to them.
  *
- * In a boss chamber: crystals and the necromancer never lift a finger, and an
- * angel is stone while the hero is looking at it — including its attack, so
- * standing face to face with one is safe.
+ * In a boss chamber: crystals and the necromancer never lift a finger.
+ * Angels never reach this: they act from `angelsFollow` instead.
  */
 function willFight(state: GameState, m: Monster): boolean {
   switch (m.kind) {
@@ -89,17 +112,11 @@ function willFight(state: GameState, m: Monster): boolean {
       return m.sinceCombat < GUARD_ENGAGE_MS;
     case 'crystal':
     case 'boss':
-      return false;
     case 'angel':
-      return m.state === 'chasing' && !frozenByGaze(state, m);
+      return false;
     default:
       return true;
   }
-}
-
-/** An angel in front of the hero (a half-plane, see `inFrontOf`) cannot act. */
-function frozenByGaze(state: GameState, m: Monster): boolean {
-  return inFrontOf(state.hero.pos, state.hero.facing, m.pos);
 }
 
 /** How long a struck guard keeps fighting back. */
@@ -223,8 +240,7 @@ function chooseStep(state: GameState, m: Monster, stats: ItemStats): Vec | null 
     case 'minion':
     case 'minotaur':
       return hunterStep(state, m);
-    case 'angel':
-      return angelStep(state, m);
+    case 'angel': // lock-step with the hero, see angelsFollow
     case 'crystal':
     case 'boss':
       return null;
@@ -247,17 +263,6 @@ const HUNT_MAX_LEN = 4096;
  */
 function hunterStep(state: GameState, m: Monster): Vec | null {
   m.state = 'chasing';
-  return stepToward(state, m, state.hero.pos, HUNT_MAX_LEN);
-}
-
-/**
- * Angels: statues until the hero walks into their room (game.ts wakes them),
- * then relentless hunters — but only while the hero's back is turned. Being
- * looked at freezes them where they stand.
- */
-function angelStep(state: GameState, m: Monster): Vec | null {
-  if (m.state !== 'chasing') return null;
-  if (frozenByGaze(state, m)) return null;
   return stepToward(state, m, state.hero.pos, HUNT_MAX_LEN);
 }
 

@@ -11,7 +11,7 @@ import { bfsDistances, bfsPath } from './pathfind';
 import { generateLevel } from './maze';
 import { themeForDepth } from './themes';
 import { newHero, applyLevelUp } from './balance';
-import { updateMonsters } from './monsters';
+import { angelsFollow, updateMonsters } from './monsters';
 import {
   GOLD,
   GREEN,
@@ -233,7 +233,11 @@ export class Game {
       while (st.path.length > 0 && this.moveTimer >= moveMs && guard < 8) {
         guard += 1;
         this.moveTimer -= moveMs;
+        const from = hero.pos;
         this.stepOnce(stats);
+        if (st.descending > 0 || st.modal) break;
+        // Every real step the hero takes, the angels take one back.
+        if (!eq(hero.pos, from)) this.angelsFollow();
         if (st.descending > 0 || st.modal || hero.stun > 0) break;
       }
       if (st.path.length === 0) this.moveTimer = Math.min(this.moveTimer, moveMs);
@@ -854,6 +858,21 @@ export class Game {
       st.fx.push({ kind: 'flash', pos: { x: m.pos.x, y: m.pos.y }, color: GREY, t: 0, ttl: 320 });
     }
     this.winBoss();
+  }
+
+  /**
+   * Angels move only when the hero does: one hero step, one angel step (or a
+   * touch, if the angel is already at the hero's side). Called right after
+   * each step, before `wakeAngels`, so an angel woken by this very step
+   * stirs but does not move until the next one.
+   */
+  private angelsFollow(): void {
+    const st = this.state;
+    const boss = st.level.boss;
+    if (st.level.kind !== 'boss' || !boss || boss.kind !== 'angels' || boss.defeated) return;
+    const hpBefore = st.hero.hp;
+    angelsFollow(st, this.rng);
+    if (st.hero.hp !== hpBefore) this.dirty = true;
   }
 
   /** Every idle angel in the room the hero just walked into opens its eyes. */

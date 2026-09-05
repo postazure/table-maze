@@ -254,7 +254,7 @@ Shared types: `RosterKind` (the three maze roles) vs `BossMonsterKind`
 (`minion | crystal | boss | minotaur | angel`); `MonsterKind` is the union.
 `Monster.invulnerable`, `Monster.roomId`, `LevelData.kind: 'boss'`,
 `LevelData.boss: BossData` (a union keyed on `BossKind`), `Rect`, `inRect`,
-`inFrontOf`, `BOSS_HIT_FRACTION`, `Modal` kinds `bossIntro | bossWon | gameOver`,
+`BOSS_HIT_FRACTION`, `Modal` kinds `bossIntro | bossWon | gameOver`,
 `RunStats`, `GameState.over`, `stats.bosses`. See types.ts.
 
 ## Level flow
@@ -320,6 +320,11 @@ doors / chests, deterministic for (depth, runSeed)):
   true`, reward + `bossWon` modal, then the normal descent.
 - **angels**: each tick, `roomAt(rooms, hero.pos)`; every idle angel whose
   `roomId` equals it wakes (`state = 'chasing'`, never goes back to idle).
+  Angels move in lock-step with the hero: right after every step the hero
+  actually takes (a real tile change from `stepOnce`, not a knockback shove,
+  and not while the hero stands still) `angelsFollow(state, rng)` runs once,
+  before the wake check, so an angel woken by that step does not move until
+  the next one. Nothing angel-related runs on `dt`.
 - Reward: `upgradeRandomItem(hero, rng)` (items.ts): pick one of the filled
   gear slots at random, bump `level` by one and re-apply its constant bonuses
   (same maths as `equip`, timers untouched). Returns the item, or null when
@@ -345,9 +350,12 @@ doors / chests, deterministic for (depth, runSeed)):
 - `minion`: `chasing` from birth; BFS toward the hero with no distance limit
   (normal `moveBlocked`), attack when adjacent. Never returns/idles.
 - `minotaur`: same as minion, never stops. Attack when adjacent.
-- `angel`: idle = never moves or attacks. `chasing`: if
-  `inFrontOf(hero.pos, hero.facing, angel.pos)` it is frozen: no move, no
-  attack. Otherwise BFS toward the hero with no limit and attack when adjacent.
+- `angel`: skipped entirely by `updateMonsters` (no cooldowns, no clock).
+  `angelsFollow`, once per hero step: idle = nothing. `chasing`: if adjacent
+  to the hero (manhattan 1) it attacks; otherwise one BFS step toward the
+  hero with no limit (normal `moveBlocked`). So an adjacent angel only lands
+  a touch when the hero's step keeps them within reach; stepping away means
+  it merely follows. Stops early once `state.over`.
 - `crystal`, `boss`: never move, never attack.
 - Nothing about sleeping heroes matters here (no sleeping in boss levels).
 
@@ -357,9 +365,8 @@ doors / chests, deterministic for (depth, runSeed)):
 - Boss monsters have their own 8x8 sprites keyed by name: `necromancer`,
   `crystal`, `minotaur`, `angel` (plus the existing `skeleton`). Crystals draw
   with no ring and no level badge, just an hp bar when hurt. The necromancer
-  gets a pulsing purple channelling ring. Angels: idle = weeping pose,
-  chasing + frozen (in front of the hero) = grey ring, chasing + free = red
-  pulsing ring. Minotaur: red pulsing ring, slightly bigger sprite.
+  gets a pulsing purple channelling ring. Angels: idle = weeping pose with a
+  dim grey ring, chasing = red pulsing ring. Minotaur: red pulsing ring, slightly bigger sprite.
 - Necromancer spell clock: a screen-space bar across the top of the viewport
   (purple, shrinking with `spellMs / spellTotalMs`, seconds left as text),
   hidden once defeated. The exit is not drawn while the necromancer stands on it.

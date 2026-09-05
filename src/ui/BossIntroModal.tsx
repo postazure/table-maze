@@ -40,9 +40,9 @@ const BOSS_COPY: Record<BossKind, { objective: string; tips: string[]; verb: str
     objective: 'Weeping angels haunt these rooms. Find the stairs.',
     tips: [
       'Enter a room with an angel and it wakes. It follows you anywhere after that.',
-      'An angel only moves while your back is turned. Face it and it freezes.',
+      'An angel only moves when you move. Take a step and it takes one too.',
+      'Stand still and nothing moves. Plan your route.',
       'Three touches turn you to stone.',
-      'The hero faces the way they last walked.',
     ],
     verb: 'Go!',
   },
