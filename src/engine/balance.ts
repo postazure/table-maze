@@ -259,9 +259,12 @@ export function makeMonster(
   //  - guard:  a real fight, won but for a third of the hearts or more. A hero
   //            a couple of levels under gets knocked down. The exception is a
   //            gate (see MonsterOpts.gate), which is deliberately softer.
-  //  - lurker: not a fight to pick. At level it knocks the hero down before it
-  //            dies, and it stays that way all the way down; the answer is to
-  //            bait it away and loop around, or to come back far stronger.
+  //  - lurker: not a fight to pick early on — at level it knocks the hero
+  //            down before it dies, so the first several floors it is still
+  //            "bait it away and loop around". A hero who has kept pace with
+  //            the depth (see `playedTo` in the balance test) gets a real,
+  //            if costly, shot at one from partway through the run; either
+  //            way it spends most of your hearts even when you win.
   switch (kind) {
     case 'guard':
       // Rooted, tanky, hits hard but slowly. A guard is the "fair fight"
@@ -293,10 +296,12 @@ export function makeMonster(
       break;
     default:
       // Lurker: fast enough to punish a careless hero, slower than a running
-      // one, and far too strong to trade blows with at level.
-      hp = Math.round(levelCurve(HERO_HP_BASE, d) * 1.5);
-      atk = Math.round(levelCurve(HERO_ATK_BASE, d) * 2.1);
-      def = Math.round(levelCurve(HERO_ATK_BASE, d) * 0.3);
+      // one, and, early on, far too strong to trade blows with at level. A
+      // hero who has kept pace with the depth starts to have a real (if
+      // costly) shot at one from partway through the run.
+      hp = Math.round(levelCurve(HERO_HP_BASE, d) * 1.4);
+      atk = Math.round(levelCurve(HERO_ATK_BASE, d) * 1.85);
+      def = Math.round(levelCurve(HERO_ATK_BASE, d) * 0.25);
       moveInterval = 260;
       attackInterval = 700;
       sightRange = 4;
