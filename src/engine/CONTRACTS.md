@@ -286,14 +286,17 @@ maze tracks (neighbouring themes never share one).
 ```ts
 export class GameAudio {
   get enabled(): boolean;
+  get level(): number;               // the player's own volume trim, 0..1
   attach(): void;                    // listen for the first gesture and for the tab hiding
   setEnabled(on: boolean): void;     // persisted in localStorage, key "table-maze:sound"
+  setLevel(level: number): void;     // persisted in localStorage, key "table-maze:volume"
   update(state: GameState): void;    // drain state.sfx, keep the music on the right track
   dispose(): void;
 }
 ```
-The AudioContext is built on the first pointer/key event, never at start up
-(browsers forbid it), and suspended while the page is hidden. `update` runs once
+`attach` tries to start the AudioContext right away, since some browsers allow
+that with no gesture at all; where they don't, it is built on the first
+pointer/key event instead, and suspended while the page is hidden. `update` runs once
 a frame from `MazeCanvas`, right after `Game.tick`, and always clears the queue
 — even with the sound off. It plays at most 5 sounds a frame, at most 2 of any
 one kind, and enforces a minimum gap per sound, so chain lightning hitting four
@@ -305,17 +308,27 @@ break by nudging a gain:
 - **Everything is quiet.** The loudest sound in the game peaks around -24 dBFS,
   so a player's own volume control has somewhere useful to sit. This is a phone
   game played in long sittings, often near other people.
-- **Music sits ~2 dB under the effects**, comparing each one's level while it is
+- **Music sits level with the effects**, comparing each one's level while it is
   actually sounding (a continuous bed against a 100ms blip is what an ear
-  compares — not their averages over time). Almost level with them: the
-  ambience is meant to be heard rather than merely detected, and it is sparse
-  enough that it never competes with an effect for attention.
+  compares — not their averages over time). The ambience is meant to be heard
+  rather than merely detected, and it is sparse enough that it never competes
+  with an effect for attention.
 
 Both busses are also set to stay under the compressor's threshold (0.126 at its
 input). Effects reach it only when several pile up or a long jingle plays, which
 is what it is for; the music must never reach it at all, or it ducks the effects
-every time it swells. Its worst peak currently lands around 0.07, so there is
-about 5 dB of room — raising `music` much past 0.13 would spend it.
+every time it swells. Its worst peak currently lands around 0.09, so there is
+about 3 dB of room — raising `music` much past 0.18 would spend it.
+
+`level` is the player's own trim on top of all of that (`MIX.master * level`),
+0..1, defaulting to 1 — it only ever scales the mix down, never past it.
+`setLevel` glides the master gain to the new value over 50ms so dragging a
+slider never clicks. It is independent of `enabled`/`setEnabled`: muting via
+the speaker button still stops the band outright (see `setEnabled`'s comment),
+while dragging the volume to 0 just leaves it silent without touching the
+on/off preference. `ui/VolumeModal.tsx` is the one UI for it, opened by a long
+press on the speaker button (`ui/Hud.tsx`); a plain tap on that button still
+toggles `enabled`, unaffected by the volume UI.
 
 ## ui/Hud.tsx + ui/hudModel.ts (React; supersedes the old hud.ts class)
 ```ts
