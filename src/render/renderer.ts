@@ -76,6 +76,13 @@ const COMPASS_COLOR = '#f5c451';
 const FROZEN_TINT = '#7fd3ff';
 /** A spent shrine is scenery: drawn this faint, with no glow at all. */
 const SHRINE_SPENT_ALPHA = 0.45;
+/**
+ * An alcove is drawn a little smaller than its tile, so a rim of floor shows
+ * all the way round it. A shrine standing in a corridor (the back of a warren,
+ * say) must never read as a wall plugging the passage: the hero walks straight
+ * over one.
+ */
+const ALCOVE_SCALE = 0.88;
 
 // Shop podium / price tag.
 const PEDESTAL_DIM_ALPHA = 0.35;
@@ -973,15 +980,19 @@ export class Renderer implements TileMapper {
       ctx.restore();
     }
 
+    const box = Math.round(t * ALCOVE_SCALE);
+    const bx = Math.round(sh.pos.x * t + (t - box) / 2);
+    const by = Math.round(sh.pos.y * t + (t - box) / 2);
+
     ctx.save();
     if (sh.used) ctx.globalAlpha = SHRINE_SPENT_ALPHA;
-    this.drawTileSprite(ctx, this.alcoveSprite, sh.pos, t, 1);
+    ctx.drawImage(this.alcoveSprite, bx, by, box, box);
 
     const sprite = this.shrineSprites.get(sh.kind);
     if (sprite) {
-      const size = Math.round(t * ALCOVE_NICHE.size);
-      const x = Math.round(sh.pos.x * t + t * ALCOVE_NICHE.x);
-      const y = Math.round(sh.pos.y * t + t * ALCOVE_NICHE.y);
+      const size = Math.round(box * ALCOVE_NICHE.size);
+      const x = Math.round(bx + box * ALCOVE_NICHE.x);
+      const y = Math.round(by + box * ALCOVE_NICHE.y);
       if (!sh.used) ctx.globalAlpha = 0.75 + 0.25 * (0.5 + 0.5 * Math.sin(now / 520));
       ctx.drawImage(sprite, x, y, size, size);
     }

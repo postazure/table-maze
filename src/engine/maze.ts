@@ -13,7 +13,7 @@
  *    side branches next to the main path.
  * 8. Validate solvability; retry with a re-mixed seed, relax as a last resort.
  */
-import { Tile, key, parseKey, eq } from './types';
+import { Tile, key, parseKey, eq, manhattan } from './types';
 import type {
   Chest,
   Door,
@@ -250,8 +250,9 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
   }
 
   // Shrines get first pick of the dead ends: an alcove nobody walks past is an
-  // alcove nobody chooses to skip. Chests are happier tucked further away.
-  level.shrines = placeShrines(level, depth, onMain, used, distFromStart, rng);
+  // alcove nobody chooses to skip. Chests are happier tucked further away, and
+  // there are far more dead ends on a floor than either wants.
+  level.shrines = placeShrines(level, depth, warrens, onMain, used, distFromStart, rng);
   for (const sh of level.shrines) used.add(key(sh.pos));
 
   if (opts.chests) {
@@ -450,42 +451,119 @@ function pickFreeTile(
 // ---------------------------------------------------------------------------
 
 /** How many alcoves a floor carries. */
-const SHRINE_COUNT = 3;
+const SHRINE_COUNT = 4;
 /** Never light one right on top of the hero's first few steps. */
 const SHRINE_MIN_DIST = 4;
+/** A warren shorter than this is not enough of a walk to hide a shrine at the back of. */
+const WARREN_SHRINE_MIN_TILES = 16;
+/** At most this many of a floor's shrines are buried in warrens. */
+const WARREN_SHRINE_MAX = 2;
 
 /**
- * Shrine alcoves: dead ends, and by preference the ones whose single way out
- * lands straight back on the route to the stairs. A dead end can never block
- * anything — you step in, you step out — which is the whole point: a shrine is
- * something to walk past now and come back for later, not a gate.
+ * Where a floor's shrine alcoves go.
  *
- * Each floor rolls a different kind per alcove where it can, so one floor is
- * rarely three of the same thing.
+ * A shrine is walkable floor, not furniture: the hero steps onto the tile to
+ * light it and straight off again, so an alcove can never block anything
+ * wherever it stands. That frees the placement to be about the *walk* instead,
+ * and a floor's shrines are deliberately spread across three different kinds of
+ * walk so no two are worth the same detour:
+ *
+ *  1. One **wayside** alcove: a dead end hanging straight off the route to the
+ *     stairs. You cannot miss it, and taking it costs two steps — this is the
+ *     one that teaches the player what an alcove is.
+ *  2. Up to `WARREN_SHRINE_MAX` at the **back of the longer warrens**, on the
+ *     tile furthest from the mouth. A warren is already a detour that leads
+ *     nowhere and holds monsters of its own; this gives clearing one a reason
+ *     beyond the xp.
+ *  3. The rest **scattered**, each placed as far from the shrines already down
+ *     as the floor allows, so what is left is spread over the map rather than
+ *     bunched along the route.
+ *
+ * Kinds come off a shuffle of `SHRINE_KINDS`, so a floor rarely rolls the same
+ * one twice.
  */
 function placeShrines(
   level: LevelData,
   depth: number,
+  warrens: Warren[],
   onMain: Set<string>,
   used: Set<string>,
   dist: Map<string, number>,
   rng: Rng,
 ): Shrine[] {
+  const taken = new Set<string>(used);
+  const spots: Vec[] = [];
+  const free = (p: Vec): boolean => {
+    const k = key(p);
+    if (taken.has(k)) return false;
+    const d = dist.get(k);
+    return d !== undefined && d >= SHRINE_MIN_DIST;
+  };
+  const claim = (p: Vec): void => {
+    taken.add(key(p));
+    spots.push(p);
+  };
+
+  // Every dead end worth standing an alcove in, split by whether its one way
+  // out lands back on the route to the stairs.
+  const wayside: Vec[] = [];
   const offRoute: Vec[] = [];
-  const rest: Vec[] = [];
   for (const [k, d] of dist) {
-    if (used.has(k) || d < SHRINE_MIN_DIST) continue;
+    if (taken.has(k) || d < SHRINE_MIN_DIST) continue;
     const p = parseKey(k);
     const nb = floorNeighbors(level, p);
-    if (nb.length !== 1) continue; // dead ends only: nothing else is safe to stand a shrine in
-    if (onMain.has(key(nb[0]))) offRoute.push(p);
-    else rest.push(p);
+    if (nb.length !== 1) continue;
+    (onMain.has(key(nb[0])) ? wayside : offRoute).push(p);
   }
+  rng.shuffle(wayside);
   rng.shuffle(offRoute);
-  rng.shuffle(rest);
+
+  // 1. The one you walk past.
+  const first = wayside.pop();
+  if (first) claim(first);
+
+  // 2. The back of the longer warrens, biggest first. `dist` grows with the
+  //    walk in, so the furthest tile from the start inside a warren is the
+  //    furthest from its mouth too — a warren only joins the maze at one tile.
+  const longest = warrens
+    .filter((w) => w.tiles.length >= WARREN_SHRINE_MIN_TILES)
+    .slice()
+    .sort((a, b) => b.tiles.length - a.tiles.length)
+    .slice(0, WARREN_SHRINE_MAX);
+  for (const w of longest) {
+    if (spots.length >= SHRINE_COUNT) break;
+    let best: Vec | null = null;
+    let bestD = -1;
+    for (const p of w.tiles) {
+      if (eq(p, w.mouth) || !free(p)) continue; // never on the threshold itself
+      const d = dist.get(key(p)) ?? -1;
+      if (d > bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    if (best) claim(best);
+  }
+
+  // 3. Whatever is left, spread out: each pick is the dead end furthest from
+  //    every alcove already down.
+  const pool = [...wayside, ...offRoute].filter(free);
+  while (spots.length < SHRINE_COUNT && pool.length > 0) {
+    let bestI = 0;
+    let bestD = -1;
+    for (let i = 0; i < pool.length; i++) {
+      let d = Infinity;
+      for (const s of spots) d = Math.min(d, manhattan(s, pool[i]));
+      if (d === Infinity) d = 0;
+      if (d > bestD) {
+        bestD = d;
+        bestI = i;
+      }
+    }
+    claim(pool.splice(bestI, 1)[0]);
+  }
 
   const kinds: ShrineKind[] = rng.shuffle([...SHRINE_KINDS]);
-  const spots = [...offRoute, ...rest].slice(0, SHRINE_COUNT);
   return spots.map((pos, i) => ({
     id: `sh${i + 1}`,
     pos,

@@ -69,10 +69,14 @@ Play it at **https://postazure.github.io/table-maze/**
     it through another passage. Kill one when you're well over its level and the
     reward is the biggest in the dungeon. The first floor has none — it is
     patrols and guards while you learn the controls.
-- A few **shrines** stand in alcoves off the corridors of every maze floor. Nothing
-  about them blocks: each sits in a dead end you step into and straight back out of,
-  so you can note one on the way past and come back for it when a fight actually
-  needs it. Walk over one to light it and it hands you its gift, once, and then goes
+- Four **shrines** stand in alcoves on every maze floor, and no two are worth the
+  same walk. One sits in a dead end hanging straight off the route down, where you
+  cannot miss it. One or two are at the back of the longer **warrens**, so clearing
+  a loop is worth something beyond the xp. The rest are scattered across the map, as
+  far from each other as the floor allows. Nothing about them blocks — a shrine is
+  floor you walk over, so even the ones standing mid-corridor are stepped straight
+  across — which means you can note one on the way past and come back for it when a
+  fight actually needs it. Walk over one to light it and it hands you its gift, once, and then goes
   dark for the rest of the floor. Every gift runs out. **Ward** hands you extra
   temporary hearts, in blue on the end of your heart row; hits eat those first and
   nothing ever refills them. **Fury** and **Stone Skin** buy you attack or defense

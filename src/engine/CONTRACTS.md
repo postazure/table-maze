@@ -102,15 +102,23 @@ Requirements:
   renderer draws the mouth as a hole knocked through the wall (broken blocks
   either side, rubble on the floor both sides of the threshold); nothing in the
   UI names them.
-- Shrines: a fixed few per maze floor (3), each on a dead-end floor tile — a
-  tile with exactly one floor neighbour — so a shrine can never block the way.
-  Dead ends whose one neighbour is ON the start->exit route come first, so the
-  alcoves the player walks past are the ones they get to choose about; the rest
-  fall back to any dead end at least 4 tiles from `start`. Shrines get first
-  pick of the dead ends and chests take what is left. Kinds are drawn from a
-  shuffle of `SHRINE_KINDS`, so a floor rarely rolls the same one twice.
-  Shrines share tiles with nothing and are never generated on boss or shop
-  floors. Recorded in `LevelData.shrines`.
+- Shrines: 4 per maze floor, all at least 4 tiles from `start`, sharing a tile
+  with nothing else, and spread across three different kinds of detour so no
+  two are worth the same walk:
+    1. one **wayside** alcove — a dead end whose single floor neighbour is on
+       the start->exit route, so it cannot be missed;
+    2. up to 2 at the **back of the longer warrens** (>= 16 tiles), on the free
+       warren tile with the largest `distFromStart` — a warren joins the maze at
+       one tile, so that is also the tile furthest from its mouth. Never on the
+       mouth itself;
+    3. the rest **scattered**: greedily, the remaining dead end whose smallest
+       manhattan distance to the shrines already placed is largest.
+  A shrine is walkable floor, not furniture, so unlike a chest it never has to
+  sit in a dead end — the warren ones stand mid-corridor. Shrines get first pick
+  of the dead ends and chests take what is left; there are far more dead ends on
+  a floor than either needs. Kinds come off a shuffle of `SHRINE_KINDS`, so a
+  floor rarely rolls the same one twice. Never generated on boss or shop floors.
+  Recorded in `LevelData.shrines`.
 - No unwinnable gate. Guards never move and heal back to full between attempts,
   so a guard on the only way to the stairs must be beatable or the run is dead.
   After placing monsters, re-roll every guard `gateGuards` reports at the
@@ -628,7 +636,9 @@ doors / chests, deterministic for (depth, runSeed)):
   with no ring and no level badge, just an hp bar when hurt. The necromancer
   gets a pulsing purple channelling ring. Angels: idle = weeping pose with a
   dim grey ring, chasing = red pulsing ring. Minotaur: red pulsing ring, slightly bigger sprite.
-- Shrine alcoves: `ALCOVE_ART` scaled to one tile with the kind's `SHRINE_ART`
+- Shrine alcoves: `ALCOVE_ART` at `ALCOVE_SCALE` of a tile — deliberately under
+  full size, so a rim of floor shows all round and a shrine standing in a
+  corridor never reads as a wall plugging it — with the kind's `SHRINE_ART`
   glyph in the niche. Unlit = a breathing colour wash behind the stone, a
   brightening glyph and a slow square aura. Spent = the same stonework at
   `SHRINE_SPENT_ALPHA` with no glow at all, so "already taken" reads from

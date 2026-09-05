@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ANGEL_CREEP_MS, HEART, ITEM_SLOT, Tile, key } from '../src/engine/types';
+import { ANGEL_CREEP_MS, HEART, ITEM_SLOT, Tile, key, manhattan } from '../src/engine/types';
 import type {
   BossData,
   GameState,
@@ -2043,7 +2043,17 @@ function stepEast(g: Game): void {
   g.tick(140);
 }
 
-test('generated floors carry shrines, all in dead ends and off every other entity', () => {
+/** Floor neighbours of `p`, straight off the tile grid. */
+function floorNbs(level: LevelData, p: Vec): Vec[] {
+  return [
+    { x: p.x + 1, y: p.y },
+    { x: p.x - 1, y: p.y },
+    { x: p.x, y: p.y + 1 },
+    { x: p.x, y: p.y - 1 },
+  ].filter((n) => level.tiles[n.y]?.[n.x] === Tile.Floor);
+}
+
+test('generated floors carry shrines that share no tile with anything else', () => {
   for (const depth of [1, 2, 5, 9]) {
     const level = generateLevel(depth, 4242 + depth, depth);
     const shrines = level.shrines ?? [];
@@ -2064,16 +2074,54 @@ test('generated floors carry shrines, all in dead ends and off every other entit
       assert.ok(!taken.has(k), `shrine at ${k} shares a tile with something else`);
       assert.ok(!seen.has(k), `two shrines on ${k}`);
       seen.add(k);
-      // A dead end can never block the way: one step in, one step back out.
-      const nbs = [
-        { x: sh.pos.x + 1, y: sh.pos.y },
-        { x: sh.pos.x - 1, y: sh.pos.y },
-        { x: sh.pos.x, y: sh.pos.y + 1 },
-        { x: sh.pos.x, y: sh.pos.y - 1 },
-      ].filter((p) => level.tiles[p.y][p.x] === Tile.Floor);
-      assert.equal(nbs.length, 1, `shrine at ${k} is not in a dead end`);
     }
   }
+});
+
+test('a floor spreads its shrines over the route, its long warrens and the map', () => {
+  for (const depth of [1, 3, 6, 11]) {
+    for (const salt of [0, 1, 2]) {
+      const level = generateLevel(depth, 909 + salt * 7919, depth);
+      const shrines = level.shrines ?? [];
+
+      // At least one wayside alcove: a dead end you step into and back out of.
+      assert.ok(
+        shrines.some((sh) => floorNbs(level, sh.pos).length === 1),
+        `depth ${depth}/${salt} has no dead-end shrine`,
+      );
+
+      // A floor with a long warren always buries one at the back of it.
+      const warrenTiles = new Set((level.warrens ?? []).flatMap((w) => w.tiles.map(key)));
+      const hasLongWarren = (level.warrens ?? []).some((w) => w.tiles.length >= 16);
+      if (hasLongWarren) {
+        assert.ok(
+          shrines.some((sh) => warrenTiles.has(key(sh.pos))),
+          `depth ${depth}/${salt} has a long warren but no shrine in one`,
+        );
+      }
+
+      // And none of them are bunched together.
+      for (let i = 0; i < shrines.length; i++) {
+        for (let j = i + 1; j < shrines.length; j++) {
+          const d = manhattan(shrines[i].pos, shrines[j].pos);
+          assert.ok(d >= 4, `shrines ${i} and ${j} are only ${d} tiles apart`);
+        }
+      }
+    }
+  }
+});
+
+test('a shrine in a corridor is walked over, not walked into', () => {
+  // The warren shrines stand mid-corridor. Nothing about a shrine is solid, so
+  // a drag routes straight through one and the hero lights it in passing.
+  const shrine: Shrine = { id: 'sh1', pos: { x: 3, y: 1 }, kind: 'mend', used: false, level: 1 };
+  const g = corridorGame({ shrines: [shrine] });
+  g.pointerAt({ x: 5, y: 1 });
+  for (let i = 0; i < 6; i++) g.tick(140);
+
+  assert.deepEqual(g.state.hero.pos, { x: 5, y: 1 }, 'the hero should have walked on past');
+  assert.equal(shrine.used, true, 'and lit the shrine on the way');
+  assert.equal(g.state.hero.buffs.length, 1);
 });
 
 test('walking over a shrine lights it once and starts the effect', () => {
