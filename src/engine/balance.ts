@@ -134,6 +134,39 @@ export interface MonsterOpts {
    * full between attempts, so a gate the hero cannot out-fight is a dead run.
    */
   gate?: boolean;
+  /**
+   * The hero's level as they step onto the floor. Caps the role lift (see
+   * `monsterLevelCap`). Left out, nothing is capped — which is what the
+   * generator tests and the balance tables want.
+   */
+  heroLevel?: number;
+}
+
+/**
+ * How far above the hero a freshly spawned monster may sit.
+ *
+ * A level is worth much more at the bottom of the ladder than further up: two
+ * levels over a level-one hero is a monster with three times the health and
+ * four times the swing, while two over a level-nine hero is a slightly harder
+ * fight. So the headroom starts at one level and opens up as the hero climbs,
+ * one more level of it every `SPAWN_OVER_PER_LEVELS`, up to the full role lift
+ * — past that point the cap never bites and floors generate as they always did.
+ *
+ * The cap never reaches below the floor's own depth: diving past your level
+ * does not make the dungeon shallower, it just stops the floor stacking elites
+ * and lurkers on top of a hero who is already behind.
+ */
+const SPAWN_OVER_BASE = 1;
+const SPAWN_OVER_PER_LEVELS = 4;
+/** The biggest natural lift there is: lurker (+2) that rolled elite (+1). */
+const SPAWN_OVER_MAX = 3;
+
+/** Highest level a monster may spawn at on `depth` for a hero of `heroLevel`. */
+export function monsterLevelCap(depth: number, heroLevel: number | undefined): number {
+  if (heroLevel === undefined) return Infinity;
+  const h = Math.max(1, Math.floor(heroLevel));
+  const over = Math.min(SPAWN_OVER_MAX, SPAWN_OVER_BASE + Math.floor(h / SPAWN_OVER_PER_LEVELS));
+  return Math.max(Math.max(1, Math.floor(depth)), h + over);
 }
 
 /** Fully-formed monster of `kind` sitting on `pos`, scaled to `depth`. */
@@ -153,7 +186,9 @@ export function makeMonster(
   // do. A gate takes neither: see MonsterOpts.gate.
   const lift = kind === 'patrol' ? 0 : kind === 'guard' ? 1 : 2;
   const elite = depthN >= ELITE_FROM_DEPTH && rng.chance(0.2);
-  const level = opts.gate ? depthN : depthN + lift + (elite ? 1 : 0);
+  // The lift is what the floor wants; the cap is what the hero can take.
+  const cap = monsterLevelCap(depthN, opts.heroLevel);
+  const level = opts.gate ? depthN : Math.min(depthN + lift + (elite ? 1 : 0), cap);
   const d = level;
 
   let hp: number;

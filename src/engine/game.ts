@@ -290,8 +290,8 @@ export class Game {
 
   private startRun(seed: number): void {
     const depth = 1;
-    const level = generateLevel(depth, seed);
     const hero = newHero();
+    const level = generateLevel(depth, seed, hero.level);
     hero.pos = { x: level.start.x, y: level.start.y };
     hero.rpos = { x: level.start.x, y: level.start.y };
     this.state = {
@@ -341,7 +341,7 @@ export class Game {
     } else {
       st.depth += 1;
       st.stats.deepest = Math.max(st.stats.deepest, st.depth);
-      st.level = generateLevel(st.depth, st.seed);
+      st.level = generateLevel(st.depth, st.seed, hero.level);
     }
     hero.pos = { x: st.level.start.x, y: st.level.start.y };
     hero.rpos = { x: st.level.start.x, y: st.level.start.y };
