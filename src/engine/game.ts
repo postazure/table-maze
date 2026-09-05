@@ -96,6 +96,10 @@ const MAX_PATH = 40;
 const DRAG_PATH_MAX = 8;
 const REGEN_DELAY = 3000;
 const REGEN_MS = 600;
+/** How long the hero must stand still (not knocked out) before regen speeds up. */
+const STILL_REGEN_DELAY = 3000;
+/** Regen rate multiplier while the hero has been standing still long enough. */
+const STILL_REGEN_MULT = 1.25;
 /** salt so the per-level rng differs from the generator's stream. */
 const RNG_SALT = 7919;
 /** Red blink for "you cannot do that" (locked door / chest). */
@@ -127,6 +131,8 @@ export class Game {
   private engagedId: string | null = null;
   private regenTimer = 0;
   private sleepTimer = 0;
+  /** ms the hero has been standing still (not knocked out); drives the still-regen bonus. */
+  private stillTimer = 0;
   private berserkTimer = 0;
   /** ms toward the next time-bubble ripple (see tickBuffs). */
   private timePulseTimer = 0;
@@ -281,6 +287,8 @@ export class Game {
 
     this.checkLevelUp();
     this.lerpHero(dt);
+    const stoodStill = !hero.sleeping && st.path.length === 0 && eq(hero.pos, posBeforeStep);
+    this.stillTimer = stoodStill ? this.stillTimer + dt : 0;
     this.updateCompass(stats, dt, !eq(hero.pos, posBeforeStep));
 
     // --- monsters ----------------------------------------------------------
@@ -299,8 +307,9 @@ export class Game {
     }
 
     // --- out of combat regen ------------------------------------------------
-    // The regen ring shortens both the wait and the gap between hearts.
-    const regenMult = Math.max(1, stats.regenMult);
+    // The regen ring and standing still both shorten the wait and the gap between hearts.
+    const stillBonus = this.stillTimer >= STILL_REGEN_DELAY ? STILL_REGEN_MULT : 1;
+    const regenMult = Math.max(1, stats.regenMult) * stillBonus;
     const regenDelay = REGEN_DELAY / regenMult;
     const regenMs = REGEN_MS / regenMult;
     if (!hero.sleeping && hero.sinceCombat > regenDelay && hero.hp < hero.maxHp) {

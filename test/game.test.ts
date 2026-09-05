@@ -441,6 +441,42 @@ test('out-of-combat regen ticks 1hp every 600ms', () => {
   assert.equal(g.state.hero.hp, 7);
 });
 
+test('standing still for 3s speeds up regen from 600ms/hp to 480ms/hp', () => {
+  const g = corridorGame();
+  g.state.hero.maxHp = 20;
+  g.state.hero.hp = 20; // full: regen is a no-op while we prime the still timer
+  g.state.hero.sinceCombat = 5000;
+  g.state.path.length = 0;
+
+  g.tick(3000); // stand still for exactly the 3s threshold
+  assert.equal(g.state.hero.hp, 20, 'still full, nothing to regen yet');
+
+  g.state.hero.hp = 10;
+  g.tick(480);
+  assert.equal(g.state.hero.hp, 11, '480ms is enough once the still bonus is active');
+  g.tick(480);
+  assert.equal(g.state.hero.hp, 12);
+});
+
+test('moving resets the standing-still regen bonus', () => {
+  const g = corridorGame();
+  g.state.hero.maxHp = 20;
+  g.state.hero.hp = 20;
+  g.state.hero.sinceCombat = 5000;
+  g.state.path.length = 0;
+
+  g.tick(3000); // stand still long enough to earn the bonus
+  g.pointerAt({ x: 2, y: 1 }); // queue a single step
+  g.tick(heroMoveMs(g.state.hero));
+  assert.deepEqual(g.state.hero.pos, { x: 2, y: 1 }, 'the hero actually moved');
+
+  g.state.hero.hp = 10;
+  g.tick(480);
+  assert.equal(g.state.hero.hp, 10, 'the step reset the still timer: 480ms is not enough at the normal rate');
+  g.tick(120);
+  assert.equal(g.state.hero.hp, 11, 'normal rate resumes: 600ms after the step');
+});
+
 test('a lurker starts chasing when the hero comes within sightRange', () => {
   // 7x5 with a single corridor along y = 2, floors at x = 1..5.
   const level = mkLevel(['#######', '#######', '#.....#', '#######', '#######']);
