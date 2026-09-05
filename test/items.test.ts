@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { HEART, ITEM_KINDS, ITEM_SLOT, Tile } from '../src/engine/types';
 import type { Hero, ItemSlot, MagicItem } from '../src/engine/types';
 import { makeRng } from '../src/engine/rng';
-import { newHero } from '../src/engine/balance';
+import { applyLevelUp, newHero, spiritForLevel } from '../src/engine/balance';
 import {
   NEUTRAL,
   equip,
@@ -14,8 +14,12 @@ import {
   itemName,
   itemPrice,
   itemStats,
+  itemDescription,
   kindsForSlot,
+  reviveGear,
   rollShopOffers,
+  spiritSlotBonus,
+  upgradeRandomItem,
 } from '../src/engine/items';
 import { PEDESTAL_SIZE, PEDESTAL_TILES, generateShopLevel, offerAt, offerTiles } from '../src/engine/shop';
 
@@ -258,4 +262,80 @@ test('every item has a description that mentions its real numbers', async () => 
   }
   const lvl9 = itemStats({ kind: 'fireStaff', level: 9 });
   assert.ok(itemDescription({ kind: 'fireStaff', level: 9 }).includes(String(lvl9.fireDmg)));
+});
+
+
+// ---------------------------------------------------------------------------
+// Spirit
+// ---------------------------------------------------------------------------
+
+test('spirit starts at one and creeps up every third level', () => {
+  assert.equal(spiritForLevel(1), 1);
+  assert.equal(spiritForLevel(2), 1);
+  assert.equal(spiritForLevel(3), 2);
+  assert.equal(spiritForLevel(9), 4);
+  // It grows, but nowhere near as fast as attack: the point is a nudge, not a
+  // third combat stat.
+  assert.ok(spiritForLevel(20) < 10);
+
+  const hero = newHero();
+  assert.equal(hero.spirit, spiritForLevel(1));
+  hero.xp = hero.xpToNext;
+  applyLevelUp(hero);
+  assert.equal(hero.spirit, spiritForLevel(hero.level));
+});
+
+test('every spirit-slot item carries spirit, and no other slot does', () => {
+  for (const kind of ITEM_KINDS) {
+    const s = itemStats(item(kind, 6));
+    if (ITEM_SLOT[kind] === 'spirit') {
+      assert.equal(s.spiritBonus, spiritSlotBonus(6), `${kind} should carry spirit`);
+      assert.ok(s.spiritBonus > 0);
+    } else {
+      assert.equal(s.spiritBonus, 0, `${kind} is not a spirit item`);
+    }
+  }
+});
+
+test('equipping, replacing and upgrading a spirit item all move the stat', () => {
+  const hero = newHero();
+  const base = hero.spirit;
+
+  equip(hero, item('goldCharm', 6));
+  assert.equal(hero.spirit, base + spiritSlotBonus(6));
+
+  // Swapping within the slot takes the old bonus off before adding the new.
+  equip(hero, item('xpTome', 1));
+  assert.equal(hero.spirit, base + spiritSlotBonus(1));
+
+  // A boss upgrade re-applies at the new level. The spirit slot is the only
+  // one filled, so it is the one that gets the bump.
+  const worn = hero.gear.spirit as MagicItem;
+  assert.equal(upgradeRandomItem(hero, makeRng(3)), worn);
+  assert.equal(worn.level, 2);
+  assert.equal(hero.spirit, base + spiritSlotBonus(2));
+
+  // And an item in another slot leaves spirit alone.
+  const before = hero.spirit;
+  equip(hero, item('longSword', 9));
+  assert.equal(hero.spirit, before);
+});
+
+test('a hero loaded from before the stat existed gets their spirit rebuilt', () => {
+  const hero = newHero();
+  equip(hero, item('vampireFang', 7));
+  const expected = hero.spirit;
+
+  // A save written before spirit existed: the field is simply absent.
+  delete (hero as Partial<Hero>).spirit;
+  reviveGear(hero);
+  assert.equal(hero.spirit, expected, 'level curve plus the worn item');
+  assert.equal(hero.spirit, spiritForLevel(hero.level) + spiritSlotBonus(7));
+});
+
+test('a spirit item says what it does for shrines', () => {
+  const text = itemDescription(item('keyCompass', 6));
+  assert.ok(/spirit/i.test(text), 'a spirit item mentions spirit');
+  assert.ok(/shrine/i.test(text), '...and what spirit is for');
+  assert.ok(!/spirit/i.test(itemDescription(item('longSword', 6))), 'other slots do not');
 });

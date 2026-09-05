@@ -77,6 +77,54 @@ export interface Chest {
 }
 
 /**
+ * Shrines: small alcoves off the corridors, a few on every maze floor.
+ *
+ * Nothing about them blocks: the hero walks over one to light it, so a shrine
+ * can be walked past now and come back to later. Each lights once and then
+ * stays dark for the rest of the floor.
+ *
+ * Every gift runs out on its own. Five of them are timers; the ward is spent
+ * instead, a pool of temporary hearts that soaks damage until it is gone.
+ *  - ward:  temporary hearts on top of the hero's own, spent before real ones
+ *  - fury:  more attack for a while
+ *  - stone: more defense for a while
+ *  - frost: for a while, an ice ball flies at the nearest monster in sight
+ *           every few seconds and freezes it solid for a moment
+ *  - mend:  hearts refill fast for a while, fighting or not
+ *  - time:  monsters near the hero crawl for a while
+ */
+export type ShrineKind = 'ward' | 'fury' | 'stone' | 'frost' | 'mend' | 'time';
+
+export const SHRINE_KINDS: readonly ShrineKind[] = ['ward', 'fury', 'stone', 'frost', 'mend', 'time'];
+
+/** Every shrine but the ward hands out a `Buff` that counts down. */
+export type TimedShrineKind = Exclude<ShrineKind, 'ward'>;
+
+export interface Shrine {
+  id: string;
+  pos: Vec; // a Floor tile the hero can stand on; never solid
+  kind: ShrineKind;
+  /** Set once the hero has stepped on it. A spent shrine goes dark. */
+  used: boolean;
+  /** The depth it was generated at. All of its numbers scale from this. */
+  level: number;
+}
+
+/**
+ * One running shrine effect. `ms` counts down to 0 and the buff is dropped;
+ * `totalMs` is what it started with, which is what the on-screen timer fills
+ * against. `timer` is the buff's own cadence (frost's ice balls, mend's
+ * pulses) and means nothing for the others.
+ */
+export interface Buff {
+  kind: TimedShrineKind;
+  ms: number;
+  totalMs: number;
+  level: number;
+  timer: number;
+}
+
+/**
  * Monster behaviours:
  *  - guard:  never leaves its tile and blocks it. Dozes until provoked: it
  *            only attacks an adjacent hero while it has been in combat
@@ -157,6 +205,11 @@ export interface Monster {
   poisonDmg: number;
   /** Slow: remaining ms. While > 0 the monster moves and attacks at half speed. */
   slowMs: number;
+  /**
+   * Frozen solid: remaining ms. While > 0 the monster does not move and does
+   * not attack at all (a shrine ice ball, not the frost blade's half speed).
+   */
+  frozenMs: number;
   hitFlash: number; // ms remaining of "just got hit" flash (renderer reads, game decrements)
   lunge?: Vec; // unit vector of a short attack lunge animation, set by game when it attacks
   lungeT: number; // ms remaining of lunge
@@ -211,6 +264,11 @@ export interface LevelData {
    * floors, and on levels saved before warrens existed.
    */
   warrens?: Warren[];
+  /**
+   * The floor's shrine alcoves (see maze.ts). Optional: maze floors only, and
+   * absent on boss and shop floors.
+   */
+  shrines?: Shrine[];
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +463,13 @@ export interface Hero {
   maxHp: number;
   atk: number;
   def: number;
+  /**
+   * Spirit: the hero's hold on the dungeon's magic. It creeps up with their
+   * level and every spirit-slot item adds to it, the way the stone ring adds
+   * defense. Nothing in a fight reads it — what it buys is shrines: every
+   * point makes a shrine's gift bigger (see `engine/shrines.ts`).
+   */
+  spirit: number;
   level: number;
   xp: number;
   xpToNext: number;
@@ -428,6 +493,16 @@ export interface Hero {
   shieldReady: boolean;
   /** Per-item timers in ms (shield recharge, fireball, life pulse, phoenix cooldown...). */
   timers: { shield: number; fire: number; life: number; phoenix: number; bane: number };
+  /**
+   * Ward shrine: temporary quarter-hearts stacked on top of `hp`. Every hit
+   * eats these first, and they never come back on their own — once they are
+   * spent the ward is over.
+   */
+  tempHp: number;
+  /** What `tempHp` started at, so the HUD can show how much of the ward is left. */
+  tempHpMax: number;
+  /** Shrine effects still running, newest last. See `engine/shrines.ts`. */
+  buffs: Buff[];
 }
 
 // ---------------------------------------------------------------------------
@@ -473,6 +548,7 @@ export type SfxId =
   | 'rise'
   | 'fireball'
   | 'zap'
+  | 'iceball'
   // One meaning each: always the same sound.
   | 'keyDoor'
   | 'keyChest'
@@ -489,6 +565,8 @@ export type SfxId =
   | 'phoenix'
   | 'crystal'
   | 'immune'
+  | 'shrine'
+  | 'wardBreak'
   | 'angel'
   | 'bossWin'
   | 'gameOver';
@@ -503,6 +581,7 @@ export const VARIED_SFX: readonly SfxId[] = [
   'rise',
   'fireball',
   'zap',
+  'iceball',
 ];
 
 export interface Message {
@@ -627,7 +706,7 @@ export interface Rng {
   chance(p: number): boolean;
 }
 
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 /** Health is measured in quarter-hearts. One heart = 4 hp. */
 export const HEART = 4;

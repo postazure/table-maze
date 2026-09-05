@@ -27,9 +27,20 @@ function steppedPct(value: number, max: number): number {
   return Math.floor(pct / 4) * 4;
 }
 
-function Stat({ icon, title, value }: { icon: IconName; title: string; value: number }) {
+function Stat({
+  icon,
+  title,
+  value,
+  buffed = false,
+}: {
+  icon: IconName;
+  title: string;
+  value: number;
+  /** A shrine is holding this number up: light it so the player can see why. */
+  buffed?: boolean;
+}) {
   return (
-    <div className="hud-stat" title={title}>
+    <div className={`hud-stat${buffed ? ' hud-stat-buffed' : ''}`} title={buffed ? `${title} (shrine)` : title}>
       <PixelIcon name={icon} size={14} title={title} />
       <span className="hud-stat-value">{value}</span>
     </div>
@@ -122,7 +133,13 @@ function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound, onOpenVolu
       <div className="hud-bars">
         <div className="hud-bar-row">
           <span className="hud-bar-label">HP</span>
-          <Hearts hp={model.hp} maxHp={model.maxHp} dim={model.stunned} />
+          <Hearts
+            hp={model.hp}
+            maxHp={model.maxHp}
+            dim={model.stunned}
+            tempHp={model.tempHp}
+            tempHpMax={model.tempHpMax}
+          />
         </div>
         <div className="hud-bar-row">
           <span className="hud-bar-label">XP</span>
@@ -136,8 +153,9 @@ function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound, onOpenVolu
       </div>
 
       <div className="hud-stats">
-        <Stat icon="sword" title="Attack" value={model.atk} />
-        <Stat icon="shield" title="Defense" value={model.def} />
+        <Stat icon="sword" title="Attack" value={model.atk} buffed={model.atkBuffed} />
+        <Stat icon="shield" title="Defense" value={model.def} buffed={model.defBuffed} />
+        <Stat icon="spirit" title="Spirit (shrines give more)" value={model.spirit} />
         <Stat icon="coin" title="Gold" value={model.gold} />
         <Stat icon="doorKey" title="Door keys" value={model.doorKeys} />
         <Stat icon="chestKey" title="Chest keys" value={model.chestKeys} />
@@ -151,17 +169,6 @@ function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound, onOpenVolu
             <div key={slot} className={`hud-gear-slot${item ? ' hud-gear-filled' : ''}`} title={slot}>
               <PixelIcon name={item ? item.kind : slot} size={20} />
               {item && <span className="hud-gear-level">{item.level}</span>}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="hud-log">
-        {model.log.map((text, i) => {
-          const age = Math.min(2, model.log.length - 1 - i);
-          return (
-            <div key={i} className={`hud-log-line hud-age-${age}`}>
-              {text}
             </div>
           );
         })}

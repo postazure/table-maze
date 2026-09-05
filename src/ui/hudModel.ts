@@ -1,4 +1,28 @@
-import type { GameState, ItemSlot, MagicItem, Modal } from '../engine/types';
+import type { GameState, ItemSlot, MagicItem, Modal, ShrineKind } from '../engine/types';
+import { buffAtk, buffDef, buffPhase, type BuffPhase } from '../engine/shrines';
+
+/**
+ * One running shrine effect, as the HUD shows it: a glyph, how much of it is
+ * left, and how hard that should blink. Never a number — the timer is the bar
+ * and the blink, the same rule the pip over the hero's head follows.
+ */
+/**
+ * One running shrine effect, as the help screen shows it. Nothing about a buff
+ * reaches the HUD any more — the pips floating over the hero are the at-a-
+ * glance read, and the detail lives behind the help button.
+ */
+export interface HudBuff {
+  kind: ShrineKind;
+  phase: BuffPhase;
+  /**
+   * Whole seconds left. The help screen is the one place that says how long in
+   * words, because the game is paused behind it; the pip over the hero stays
+   * wordless. 0 for the ward, which has no clock.
+   */
+  secondsLeft: number;
+  /** The depth the shrine was generated at; its numbers all come from this. */
+  level: number;
+}
 
 export interface HudModel {
   depth: number;
@@ -7,14 +31,26 @@ export interface HudModel {
   maxHp: number;
   xp: number;
   xpToNext: number;
+  /** Attack and defense as they stand right now, shrine bonuses included. */
   atk: number;
   def: number;
+  /** True while a shrine is what is propping that number up. */
+  atkBuffed: boolean;
+  defBuffed: boolean;
+  /** Spirit: how much further this hero's shrines go. */
+  spirit: number;
   gold: number;
   doorKeys: number;
   chestKeys: number;
   kills: number;
   stunned: boolean;
-  log: string[]; // last 3 messages, oldest first
+  /** The run's log, oldest first. Read only by the help screen's Log tab. */
+  log: string[];
+  /** Ward shrine: temporary quarter hearts left, and what they started at. */
+  tempHp: number;
+  tempHpMax: number;
+  /** Running shrine effects, ward first. Empty when nothing is running. */
+  buffs: HudBuff[];
   /** One magic item per slot, or null if empty. */
   gear: Record<ItemSlot, MagicItem | null>;
   /** The kind of level the hero is currently on (drives the depth badge). */
@@ -25,6 +61,21 @@ export interface HudModel {
 
 export function deriveHudModel(state: GameState): HudModel {
   const hero = state.hero;
+  const atkBonus = buffAtk(hero);
+  const defBonus = buffDef(hero);
+  const tempHp = hero.tempHp ?? 0;
+  const buffs: HudBuff[] = [];
+  // The ward has no clock: its bar drains as the temporary hearts are spent,
+  // and it never blinks.
+  if (tempHp > 0) buffs.push({ kind: 'ward', phase: 'solid', secondsLeft: 0, level: 1 });
+  for (const b of hero.buffs ?? []) {
+    buffs.push({
+      kind: b.kind,
+      phase: buffPhase(b.ms),
+      secondsLeft: Math.ceil(b.ms / 1000),
+      level: b.level,
+    });
+  }
   return {
     depth: state.depth,
     level: hero.level,
@@ -32,17 +83,23 @@ export function deriveHudModel(state: GameState): HudModel {
     maxHp: hero.maxHp,
     xp: hero.xp,
     xpToNext: hero.xpToNext,
-    atk: hero.atk,
-    def: hero.def,
+    atk: hero.atk + atkBonus,
+    def: hero.def + defBonus,
+    atkBuffed: atkBonus > 0,
+    defBuffed: defBonus > 0,
+    spirit: hero.spirit,
     gold: hero.gold,
     doorKeys: hero.keys.door ?? 0,
     chestKeys: hero.keys.chest ?? 0,
     kills: state.stats.kills,
     stunned: hero.sleeping || hero.stun > 0,
+    tempHp,
+    tempHpMax: hero.tempHpMax ?? 0,
+    buffs,
     gear: hero.gear,
     levelKind: state.level.kind,
     modal: state.modal,
-    log: state.log.slice(-3).map((m) => m.text),
+    log: state.log.map((m) => m.text),
   };
 }
 
@@ -69,6 +126,12 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     a.chestKeys !== b.chestKeys ||
     a.kills !== b.kills ||
     a.stunned !== b.stunned ||
+    a.atkBuffed !== b.atkBuffed ||
+    a.defBuffed !== b.defBuffed ||
+    a.spirit !== b.spirit ||
+    a.tempHp !== b.tempHp ||
+    a.tempHpMax !== b.tempHpMax ||
+    a.buffs.length !== b.buffs.length ||
     a.levelKind !== b.levelKind ||
     a.modal !== b.modal ||
     a.log.length !== b.log.length ||
@@ -80,6 +143,12 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
   }
   for (let i = 0; i < a.log.length; i++) {
     if (a.log[i] !== b.log[i]) return false;
+  }
+  for (let i = 0; i < a.buffs.length; i++) {
+    const x = a.buffs[i];
+    const y = b.buffs[i];
+    if (x.kind !== y.kind || x.phase !== y.phase) return false;
+    if (x.secondsLeft !== y.secondsLeft || x.level !== y.level) return false;
   }
   return true;
 }

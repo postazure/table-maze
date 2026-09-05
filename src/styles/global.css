@@ -105,21 +105,25 @@ button {
   margin-bottom: 8px;
 }
 
+/* Flat text now, so the gap is the only thing keeping "DEPTH 1" and "LV 1"
+   from reading as one run-on label. */
 .hud-badges {
   display: flex;
-  gap: 6px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 
+/* Everything in the HUD that is not a control is flat. Only the three real
+   buttons on the right carry the raised bevel, so "this is pressable" is a
+   thing the player can read off the panel instead of having to learn. */
 .hud-badge {
-  border: 2px solid var(--border);
-  box-shadow: inset 1px 1px 0 var(--border-light), inset -2px -2px 0 var(--border-dark);
-  background: var(--panel-2);
-  padding: 4px 6px;
+  background: transparent;
+  padding: 4px 0;
   font-size: 9px;
   line-height: 1.6;
   color: var(--muted);
   white-space: nowrap;
+  letter-spacing: 1px;
 }
 
 .hud-badge b {
@@ -169,10 +173,9 @@ button {
 
 .hud-bar-track {
   flex: 1 1 auto;
-  height: 12px;
+  height: 10px;
   background: #050509;
-  border: 2px solid var(--border);
-  box-shadow: inset 1px 1px 0 var(--border-dark), inset -1px -1px 0 var(--border-light);
+  border: 1px solid var(--border);
   overflow: hidden;
   position: relative;
 }
@@ -211,20 +214,18 @@ button {
 
 .hud-stats {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
   margin-bottom: 8px;
 }
 
 .hud-stat {
-  border: 2px solid var(--border);
-  box-shadow: inset 1px 1px 0 var(--border-light), inset -2px -2px 0 var(--border-dark);
-  background: var(--panel-2);
-  padding: 5px 2px 4px;
+  background: transparent;
+  padding: 2px 1px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   font-size: 9px;
   line-height: 1;
   color: var(--text);
@@ -241,6 +242,11 @@ button {
   display: block;
 }
 
+/* A shrine is propping this number up right now. */
+.hud-stat.hud-stat-buffed .hud-stat-value {
+  color: var(--gold);
+}
+
 
 .hud-gear {
   display: grid;
@@ -251,8 +257,7 @@ button {
 
 .hud-gear-slot {
   position: relative;
-  border: 2px solid var(--border);
-  box-shadow: inset 1px 1px 0 var(--border-dark), inset -1px -1px 0 var(--border-light);
+  border: 1px solid var(--border);
   background: #050509;
   padding: 3px;
   display: flex;
@@ -267,7 +272,6 @@ button {
 
 .hud-gear-slot.hud-gear-filled {
   border-color: var(--border-light);
-  box-shadow: inset 1px 1px 0 var(--border-light), inset -2px -2px 0 var(--border-dark);
   background: var(--panel-2);
 }
 
@@ -284,45 +288,6 @@ button {
   color: var(--bg);
   background: var(--gold);
   padding: 1px 2px;
-}
-
-.hud-log {
-  border: 2px solid var(--border);
-  box-shadow: inset 1px 1px 0 var(--border-dark), inset -1px -1px 0 var(--border-light);
-  background: #050509;
-  padding: 4px 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-family: 'Press Start 2P', 'Courier New', monospace;
-  font-size: 8px;
-  line-height: 1.6;
-  /* Always three lines tall. If the log grew and shrank with its messages the
-     maze above would resize every time a line expired, and each resize wipes
-     the canvas for a frame: a visible flicker. 3 lines + 2 gaps + padding +
-     border (box-sizing is border-box). */
-  height: calc(3 * 1.6em + 2 * 3px + 2 * 4px + 2 * 2px);
-  justify-content: flex-end;
-  overflow: hidden;
-}
-
-.hud-log-line {
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.hud-log-line.hud-age-0 {
-  opacity: 1;
-}
-
-.hud-log-line.hud-age-1 {
-  opacity: 0.6;
-}
-
-.hud-log-line.hud-age-2 {
-  opacity: 0.35;
 }
 
 @media (min-width: 480px) {
@@ -772,10 +737,46 @@ button {
 
 .help-head {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 8px 8px;
   border-bottom: 2px solid var(--border);
+}
+
+/* Tabs, not buttons: an underline says which one you are on. The same rule as
+   the HUD applies here — the raised bevel is reserved for X and OK, the two
+   things on this screen that actually do something. */
+.help-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.help-tab {
+  flex: 0 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 9px;
+  line-height: 1.4;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 8px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.help-tab-on {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
 }
 
 .help-title {
@@ -854,8 +855,56 @@ button {
   color: var(--gold);
 }
 
+/* Rows on the help screen for the shrine effects the hero has running. The
+   game is paused behind this screen, so unlike the HUD chip and the pip over
+   the hero this one spells the time out. The chip is only tinted by how close
+   the effect is to lapsing; nothing blinks at a reader. */
+.help-buff .help-gear-level {
+  padding: 2px 4px;
+  background: var(--border);
+  color: var(--text);
+}
+
+.help-buff-warn .help-gear-level {
+  background: var(--gold);
+  color: var(--bg);
+}
+
+.help-buff-urgent .help-gear-level {
+  background: #e53b3b;
+  color: var(--text);
+}
+
 .help-muted {
   color: var(--muted);
+}
+
+/* The run log, newest first. */
+.help-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.help-log-line {
+  font-size: 9px;
+  line-height: 1.6;
+  color: var(--text);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.help-log-line:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* The newest line is the one you opened the tab for. */
+.help-log-line:first-child {
+  color: var(--gold);
 }
 
 .help-gear-desc,

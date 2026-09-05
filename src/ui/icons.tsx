@@ -5,9 +5,9 @@
  */
 
 import type { ReactElement } from 'react';
-import type { ItemKind, ItemSlot } from '../engine/types';
-import { ITEM_KINDS } from '../engine/types';
-import { ITEM_ART, SLOT_ART } from '../render/itemArt';
+import type { ItemKind, ItemSlot, ShrineKind } from '../engine/types';
+import { ITEM_KINDS, SHRINE_KINDS } from '../engine/types';
+import { ITEM_ART, SHRINE_ART, SLOT_ART } from '../render/itemArt';
 
 type Rows = readonly string[];
 type Palette = Readonly<Record<string, string>>;
@@ -22,8 +22,12 @@ type BaseIconName =
   | 'heart'
   | 'sound'
   | 'soundOff';
-/** Every magic item kind and every gear slot are also valid icon names, drawn from itemArt.ts. */
-export type IconName = BaseIconName | ItemKind | ItemSlot;
+/**
+ * Every magic item kind, gear slot and shrine kind is also a valid icon name,
+ * drawn from itemArt.ts — so the HUD, the help screen and the map all show the
+ * same picture for the same thing.
+ */
+export type IconName = BaseIconName | ItemKind | ItemSlot | ShrineKind;
 
 const ITEM_SLOTS: readonly ItemSlot[] = ['offense', 'defense', 'spirit'];
 
@@ -109,10 +113,11 @@ const BASE_ICONS: Record<BaseIconName, { rows: Rows; palette: Palette }> = {
   },
 };
 
-/** BASE_ICONS plus every ItemKind (from ITEM_ART) and ItemSlot (from SLOT_ART). */
+/** BASE_ICONS plus every ItemKind, ItemSlot and ShrineKind from itemArt.ts. */
 const ICONS = { ...BASE_ICONS } as Record<IconName, { rows: Rows; palette: Palette }>;
 for (const kind of ITEM_KINDS) ICONS[kind] = ITEM_ART[kind];
 for (const slot of ITEM_SLOTS) ICONS[slot] = SLOT_ART[slot];
+for (const kind of SHRINE_KINDS) ICONS[kind] = SHRINE_ART[kind];
 
 export interface PixelIconProps {
   name: IconName;

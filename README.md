@@ -69,6 +69,36 @@ Play it at **https://postazure.github.io/table-maze/**
     it through another passage. Kill one when you're well over its level and the
     reward is the biggest in the dungeon. The first floor has none — it is
     patrols and guards while you learn the controls.
+- Four **shrines** stand in alcoves on every maze floor, and no two are worth the
+  same walk. One sits in a dead end hanging straight off the route down, where you
+  cannot miss it. One or two are at the back of the longer **warrens**, so clearing
+  a loop is worth something beyond the xp. The rest are scattered across the map, as
+  far from each other as the floor allows. Nothing about them blocks — a shrine is
+  floor you walk over, so even the ones standing mid-corridor are stepped straight
+  across — which means you can note one on the way past and come back for it when a
+  fight actually needs it. Walk over one to light it and it hands you its gift, once, and then goes
+  dark for the rest of the floor. Every gift runs out. **Ward** hands you extra
+  temporary hearts, in blue on the end of your heart row; hits eat those first and
+  nothing ever refills them. **Fury** and **Stone Skin** buy you attack or defense
+  for twenty seconds. **Frost** throws an ice ball at the nearest monster in sight
+  every couple of seconds and freezes whatever it hits solid — no step, no swing —
+  for a moment. **Mending** refills a quarter heart on a fast beat, fighting or not.
+  **Time Bubble** drops every monster within six tiles to a crawl. What is running
+  shows as a row of pips floating above the hero. They never count down in numbers:
+  a pip is solid while there is time on it, blinks for the last ten seconds, and
+  blinks twice as fast for the last five. For the actual seconds, open the help
+  screen: its Hero tab lists exactly what you have running and how long is left on
+  each, and nothing else — it is a read on your hero, not a catalogue. Get knocked down and
+  every shrine effect goes with it. They do survive the stairs, so a shrine near the
+  way down is a way to walk into the next floor, or a boss chamber, already buffed.
+- **Spirit** is your third stat, next to attack and defense, and the only thing it
+  does is make shrines go further. Every point is ten percent more, up to double.
+  The timed shrines run longer; the ward, which has no clock, hands out more hearts
+  instead — each one gets more of the only currency it has, so nothing is made both
+  longer and stronger. Spirit creeps up a point every third hero level, and
+  *anything* you wear in the spirit slot adds to it, whatever else that item does.
+  So the star podium in the shop is not only a gold charm or an XP tome: it is also
+  a standing bet on the alcoves of every floor after it.
 - After every third floor you face a **boss** before you reach the shop. An intro card
   explains the fight, then the game is on: **The Necromancer** channels a spell in a
   central chamber while raising skeletons — smash all five crystals down his corridors
@@ -128,6 +158,11 @@ Play it at **https://postazure.github.io/table-maze/**
   all, is different every time. About a third of bars hold nothing but the
   drone, which is what keeps the music somewhere behind you rather than in
   front.
+- The **help button** (`?`) pauses the game and opens three tabs: **Hero** (what you
+  are wearing and what you have running), **Log** (everything that has happened this
+  run, newest first) and **How to play**. The panel under the maze deliberately
+  keeps none of that — it is hearts, XP, seven numbers and your three gear slots,
+  and the only things on it that look pressable are the three buttons that are.
 - Progress is saved in your browser's local storage automatically.
 
 ## Development

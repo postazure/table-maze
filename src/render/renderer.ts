@@ -16,9 +16,21 @@ import {
   type ItemKind,
   type ItemSlot,
   type ShopOffer,
+  type Shrine,
+  type ShrineKind,
+  SHRINE_KINDS,
   key,
 } from '../engine/types';
-import { ITEM_ART, SLOT_ART, PODIUM_ART, PODIUM_NICHE } from './itemArt';
+import {
+  ITEM_ART,
+  SLOT_ART,
+  PODIUM_ART,
+  PODIUM_NICHE,
+  SHRINE_ART,
+  ALCOVE_ART,
+  ALCOVE_NICHE,
+} from './itemArt';
+import { BLINK_MS, SHRINE_COLORS, buffPhase } from '../engine/shrines';
 import { themeById } from '../engine/themes';
 import { MONSTER_CFGS, creatureRows, monsterSpriteKey } from './monsterArt';
 
@@ -60,6 +72,17 @@ const ICE_PIXEL = '#bfe3ff';
 const SHIELD_BUBBLE_COLOR = '#5aa9ff';
 const BERSERK_RING_COLOR = '#e53b3b';
 const COMPASS_COLOR = '#f5c451';
+/** A monster frozen by an ice ball: a hard ice tint over the whole sprite. */
+const FROZEN_TINT = '#7fd3ff';
+/** A spent shrine is scenery: drawn this faint, with no glow at all. */
+const SHRINE_SPENT_ALPHA = 0.45;
+/**
+ * An alcove is drawn a little smaller than its tile, so a rim of floor shows
+ * all the way round it. A shrine standing in a corridor (the back of a warren,
+ * say) must never read as a wall plugging the passage: the hero walks straight
+ * over one.
+ */
+const ALCOVE_SCALE = 0.88;
 
 // Shop podium / price tag.
 const PEDESTAL_DIM_ALPHA = 0.35;
@@ -421,6 +444,8 @@ export class Renderer implements TileMapper {
   private itemSprites: Map<ItemKind, HTMLCanvasElement> = new Map();
   private slotSprites: Map<ItemSlot, HTMLCanvasElement> = new Map();
   private arrowSprites: Map<(typeof ARROW_ORDER)[number], HTMLCanvasElement> = new Map();
+  private shrineSprites: Map<ShrineKind, HTMLCanvasElement> = new Map();
+  private alcoveSprite: HTMLCanvasElement;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -442,6 +467,11 @@ export class Renderer implements TileMapper {
     this.exitSprite = buildIcon(EXIT_ROWS, EXIT_PALETTE);
     this.shieldBadgeSprite = buildIcon(SHIELD_BADGE_ROWS, { S: '#9a97ad' });
     this.podiumSprite = buildIcon(PODIUM_ART.rows, PODIUM_ART.palette);
+    this.alcoveSprite = buildIcon(ALCOVE_ART.rows, ALCOVE_ART.palette);
+    for (const kind of SHRINE_KINDS) {
+      const art = SHRINE_ART[kind];
+      this.shrineSprites.set(kind, buildIcon(art.rows, art.palette));
+    }
 
     for (const [kind, cfg] of Object.entries(MONSTER_CFGS)) {
       const { rows, palette } = creatureRows(cfg);
@@ -734,6 +764,12 @@ export class Renderer implements TileMapper {
       if (!k.taken && this.inRange(k.pos, startX, endX, startY, endY)) this.drawKey(ctx, k, t);
     }
 
+    // Shrine alcoves. Drawn before the chests and monsters because they are
+    // ground, not furniture: the hero walks over one to light it.
+    for (const sh of state.level.shrines ?? []) {
+      if (this.inRange(sh.pos, startX, endX, startY, endY)) this.drawShrine(ctx, sh, t);
+    }
+
     // Chests.
     for (const c of state.level.chests) {
       if (this.inRange(c.pos, startX, endX, startY, endY)) this.drawChest(ctx, c, t);
@@ -775,6 +811,10 @@ export class Renderer implements TileMapper {
 
     // Effects on top.
     for (const fx of state.fx) this.drawEffect(ctx, fx, t);
+
+    // Shrine timers last of all: an alcove the hero is standing next to sits
+    // in exactly the space these pips float in, so they go over everything.
+    this.drawBuffs(ctx, state.hero, t);
 
     // Necromancer spell clock — screen space, top of the viewport, hidden
     // once he's beaten. Resets the transform itself (like the descend fade
@@ -911,6 +951,60 @@ export class Renderer implements TileMapper {
 
   private drawChest(ctx: CanvasRenderingContext2D, c: Chest, t: number): void {
     this.drawTileSprite(ctx, c.opened ? this.chestOpenSprite : this.chestClosedSprite, c.pos, t, 0.8);
+  }
+
+  /**
+   * A shrine alcove: a stone arch sunk into the tile with the shrine's glyph
+   * glowing in the niche. An unlit one breathes — a slow ring around it and
+   * the glyph brightening and dimming — so it reads as "worth a detour" from
+   * across the room. A spent one is left as faint stonework with no glow, so
+   * the player can see at a glance which alcoves they have already taken.
+   */
+  private drawShrine(ctx: CanvasRenderingContext2D, sh: Shrine, t: number): void {
+    const color = SHRINE_COLORS[sh.kind];
+    const cx = sh.pos.x * t + t / 2;
+    const cy = sh.pos.y * t + t / 2;
+    const now = performance.now();
+
+    // The unlit glow sits behind the stone, so the arch reads as backlit.
+    if (!sh.used) {
+      const glow = 0.18 + 0.14 * (0.5 + 0.5 * Math.sin(now / 700));
+      ctx.save();
+      ctx.globalAlpha = glow;
+      ctx.fillStyle = color;
+      ctx.fillRect(Math.round(sh.pos.x * t), Math.round(sh.pos.y * t), t, t);
+      ctx.restore();
+    }
+
+    const box = Math.round(t * ALCOVE_SCALE);
+    const bx = Math.round(sh.pos.x * t + (t - box) / 2);
+    const by = Math.round(sh.pos.y * t + (t - box) / 2);
+
+    ctx.save();
+    if (sh.used) ctx.globalAlpha = SHRINE_SPENT_ALPHA;
+    ctx.drawImage(this.alcoveSprite, bx, by, box, box);
+
+    const sprite = this.shrineSprites.get(sh.kind);
+    if (sprite) {
+      const size = Math.round(box * ALCOVE_NICHE.size);
+      const x = Math.round(bx + box * ALCOVE_NICHE.x);
+      const y = Math.round(by + box * ALCOVE_NICHE.y);
+      if (!sh.used) ctx.globalAlpha = 0.75 + 0.25 * (0.5 + 0.5 * Math.sin(now / 520));
+      ctx.drawImage(sprite, x, y, size, size);
+    }
+    ctx.restore();
+
+    if (sh.used) return;
+
+    // A slow ring breathing outward, the same square outline every other aura
+    // in the game uses.
+    const ringSize = Math.round(t * (0.9 + 0.16 * (0.5 + 0.5 * Math.sin(now / 700))));
+    ctx.save();
+    ctx.globalAlpha = 0.35 + 0.3 * (0.5 + 0.5 * Math.sin(now / 700));
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(Math.round(cx - ringSize / 2) + 0.5, Math.round(cy - ringSize / 2) + 0.5, ringSize - 1, ringSize - 1);
+    ctx.restore();
   }
 
   /**
@@ -1121,6 +1215,32 @@ export class Renderer implements TileMapper {
       ctx.fillRect(dx + size - iceSize, dy, iceSize, iceSize);
     }
 
+    // Frost shrine: frozen solid is a whole block of ice, not a tint — a
+    // hard-edged pale box over the sprite with a bright rim, so "this one is
+    // not moving" reads instantly across a crowded corridor.
+    if (m.frozenMs > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = FROZEN_TINT;
+      ctx.fillRect(dx, dy, size, size);
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = ICE_PIXEL;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(dx + 0.5, dy + 0.5, size - 1, size - 1);
+      // Two glints on the block, drifting on a slow cycle.
+      const now = performance.now();
+      const glint = Math.max(1, Math.round(sub));
+      for (let i = 0; i < 2; i++) {
+        const phase = (((now / 1300 + i / 2) % 1) + 1) % 1;
+        const gx = Math.round((dx + size * (0.2 + i * 0.5)) / sub) * sub;
+        const gy = Math.round((dy + size * phase) / sub) * sub;
+        ctx.globalAlpha = 0.8 * (1 - phase);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(gx, gy, glint, glint);
+      }
+      ctx.restore();
+    }
+
     if (m.kind === 'guard') {
       const bsize = Math.round(t * 0.32);
       const bx = Math.round(cx + size / 2 - bsize * 0.6);
@@ -1281,6 +1401,61 @@ export class Renderer implements TileMapper {
     const x = Math.round((cx - size / 2) / sub) * sub;
     const y = Math.round((topY - size + bob) / sub) * sub;
     ctx.drawImage(sprite, x, y, size, size);
+  }
+
+  /**
+   * The shrine timer: one pip per running effect, in a row floating over the
+   * hero's head, above the compass arrow so the two never collide.
+   *
+   * There is no number anywhere. A pip is solid while the effect has time on
+   * it, blinks for the last ten seconds, and blinks twice as fast for the last
+   * five — so "it is about to go" is something you see out of the corner of
+   * your eye mid-fight rather than something you read.
+   *
+   * The ward's temporary hearts have no clock (they are spent, not timed), so
+   * their pip sits at the front of the row and never blinks.
+   */
+  private drawBuffs(ctx: CanvasRenderingContext2D, hero: Hero, t: number): void {
+    const buffs = hero.buffs ?? [];
+    const ward = (hero.tempHp ?? 0) > 0;
+    if (buffs.length === 0 && !ward) return;
+
+    const sub = Math.max(1, t / SUB);
+    const now = performance.now();
+    const size = Math.max(6, Math.round(t * 0.34));
+    const gap = Math.max(1, Math.round(sub));
+    const pips: { kind: ShrineKind; alpha: number }[] = [];
+    if (ward) pips.push({ kind: 'ward', alpha: 1 });
+    for (const b of buffs) {
+      const period = BLINK_MS[buffPhase(b.ms)];
+      // A blink never fades all the way out: a pip you cannot see is a pip you
+      // cannot count.
+      const alpha = period > 0 ? 0.3 + 0.7 * (0.5 + 0.5 * Math.sin((now / period) * Math.PI * 2)) : 1;
+      pips.push({ kind: b.kind, alpha });
+    }
+
+    const cx = hero.rpos.x * t + t / 2;
+    const rowW = pips.length * size + (pips.length - 1) * gap;
+    const bottom = hero.rpos.y * t + t / 2 - t * 1.32;
+    const y = Math.round((bottom - size) / sub) * sub;
+    let x = Math.round((cx - rowW / 2) / sub) * sub;
+
+    for (const pip of pips) {
+      const sprite = this.shrineSprites.get(pip.kind);
+      ctx.save();
+      // The dark plate stays nearly solid through the blink: a pip has to read
+      // as HUD floating over the floor, never as something lying on it.
+      ctx.globalAlpha = 0.6 + 0.4 * pip.alpha;
+      ctx.fillStyle = '#050509';
+      ctx.fillRect(x - 1, y - 1, size + 2, size + 2);
+      ctx.globalAlpha = pip.alpha;
+      ctx.strokeStyle = SHRINE_COLORS[pip.kind];
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - 0.5, y - 0.5, size + 1, size + 1);
+      if (sprite) ctx.drawImage(sprite, x, y, size, size);
+      ctx.restore();
+      x += size + gap;
+    }
   }
 
   /**

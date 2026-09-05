@@ -39,6 +39,7 @@ export function bfsDistances(level: LevelData, from: Vec, opts?: { blocked?: (p:
 ```ts
 export function levelDims(depth: number): { width: number; height: number }; // the MAZE's odd tile counts, portrait (height > width). depth 1 ≈ 21x31 (bigger than a phone screen; the renderer scrolls), grows to a cap ≈ 41x61. The level itself is this plus whatever ground the warrens are dug out of.
 export function newHero(): Hero;                     // level 1 starting stats
+export function spiritForLevel(level: number): number; // the hero's own spirit, before gear: 1 + floor(level/3)
 export function xpForLevel(level: number): number;   // xp needed to go from `level` to `level+1`
 export function applyLevelUp(hero: Hero): void;      // called when hero.xp >= hero.xpToNext; bumps stats, restores hp, sets new xpToNext (may loop if enough xp for multiple levels)
 export function makeMonster(kind: MonsterKind, depth: number, rng: Rng, pos: Vec, id: string, opts?: MonsterOpts): Monster; // stats scale with depth; picks name/glyph from a themed table. `opts.gate` = the player has no way around this one: it sits at the floor's own level and takes neither the role lift nor the elite roll.
@@ -102,6 +103,23 @@ Requirements:
   renderer draws the mouth as a hole knocked through the wall (broken blocks
   either side, rubble on the floor both sides of the threshold); nothing in the
   UI names them.
+- Shrines: 4 per maze floor, all at least 4 tiles from `start`, sharing a tile
+  with nothing else, and spread across three different kinds of detour so no
+  two are worth the same walk:
+    1. one **wayside** alcove — a dead end whose single floor neighbour is on
+       the start->exit route, so it cannot be missed;
+    2. up to 2 at the **back of the longer warrens** (>= 16 tiles), on the free
+       warren tile with the largest `distFromStart` — a warren joins the maze at
+       one tile, so that is also the tile furthest from its mouth. Never on the
+       mouth itself;
+    3. the rest **scattered**: greedily, the remaining dead end whose smallest
+       manhattan distance to the shrines already placed is largest.
+  A shrine is walkable floor, not furniture, so unlike a chest it never has to
+  sit in a dead end — the warren ones stand mid-corridor. Shrines get first pick
+  of the dead ends and chests take what is left; there are far more dead ends on
+  a floor than either needs. Kinds come off a shuffle of `SHRINE_KINDS`, so a
+  floor rarely rolls the same one twice. Never generated on boss or shop floors.
+  Recorded in `LevelData.shrines`.
 - No unwinnable gate. Guards never move and heal back to full between attempts,
   so a guard on the only way to the stairs must be beatable or the run is dead.
   After placing monsters, re-roll every guard `gateGuards` reports at the
@@ -116,7 +134,18 @@ export function heroAttack(state: GameState, m: Monster, rng: Rng): void;
 /** Monster attacks hero. Applies damage, knockback (hero pushed one tile away from the monster
  *  if that tile is free floor), and "knock down" when hp reaches 0 (see below). */
 export function monsterAttack(state: GameState, m: Monster, rng: Rng): void;
+/** The unlit shrine on `p`, or null. Shrines are floor, so nothing else looks them up. */
+export function shrineAt(level: LevelData, p: Vec): Shrine | null;
+/** Append to `state.log`, trimming to the newest LOG_MAX. */
+export function pushLog(state: GameState, text: string): void;
+export const LOG_MAX: number;   // 30
 ```
+`state.log` is a run history, not a set of toasts. It used to be three lines
+fading out in the corner of the HUD, so five entries and a six-second TTL were
+plenty; it is now read on the help screen's Log tab, after the fact, so lines
+never expire and the newest `LOG_MAX` are kept. `Message.t` is still aged by
+`Game.ageLog` — `pushLog` reads it to tell one event that fired twice in a
+frame (one line) from the same event a minute later (two).
 Heroes never die. When hp would drop to 0: hp is set to ~40% of max, the hero is
 `stun`ned for ~900ms, and moved back along the trail ~4 tiles (walk back through
 the most recently visited trail tiles that are free floor; fall back to any free
@@ -344,9 +373,25 @@ export class Hud {
   update(state: GameState): void;   // cheap; called every frame, only touch DOM when values change
 }
 ```
-Shows: depth, hero level, HP bar, XP bar, ATK/DEF, gold, key counts (door/chest
-with the two icons), kills/chests, last 3 log messages, a "New game" button
-(with confirm). Compact, fits below the maze on a phone in portrait.
+Shows: depth, hero level, hearts (with the ward's temporary ones on the end),
+XP bar, seven stat readouts (attack, defense, spirit, gold, door keys, chest
+keys, kills), the three gear slots, and the sound / help / new-game buttons.
+Compact, fits below the maze on a phone in portrait.
+
+Two rules hold this panel together:
+- **Only controls look like controls.** The raised bevel
+  (`inset 1px 1px 0 light, inset -2px -2px 0 dark` over a 3px border) belongs
+  to the three buttons and nothing else. Badges and stat readouts are flat text
+  on the panel; the XP track and the gear slots get a single hairline border
+  and no bevel. A player should be able to see what is tappable without
+  tapping it.
+- **Nothing here is a second copy of something the maze already shows.** The
+  running-shrine chips and the combat log both came out for that reason: the
+  pips over the hero's head are the at-a-glance read on what is running, and
+  the log lives on the help screen's Log tab, where it can keep a real history
+  instead of three lines fading out. A conditional row also made the panel
+  change height mid-run, which resizes the canvas above it and costs a frame.
+  Every row in here is now unconditional.
 
 # Magic items and shops (added later)
 
@@ -383,8 +428,68 @@ export function itemPrice(kind: ItemKind, level: number): number;          // go
 export function rollShopOffers(depth: number, rng: Rng, owned: Hero['gear']): MagicItem[]; // one per slot, avoid kinds already owned when possible
 export function equip(hero: Hero, item: MagicItem): MagicItem | null;       // applies constant bonuses, removes the old item's, returns the replaced item
 export function hasItem(hero: Hero, kind: ItemKind): MagicItem | null;
+export function spiritSlotBonus(level: number): number;                    // spirit every spirit-slot item carries: 1 + floor(level/3)
 ```
-`ItemStats` is a flat bag: `{ atkBonus, defBonus, maxHpBonus, reach, fireIntervalMs, fireDmg, fireRange, chainChance, chainTargets, chainDmg, poisonMs, poisonDmg, slowMs, berserkAtk, shieldRechargeMs, moveMs, thornDmg, phoenixCooldownMs, regenMult, knockbackImmune, goldMult, xpMult, lifePulseMs, compass, vampKillHeal, vampHitChance, baneRadius, baneSlowMult, baneSightPenalty }` with zero/1/false for anything the item doesn't do.
+`ItemStats` is a flat bag: `{ atkBonus, defBonus, spiritBonus, maxHpBonus, reach, fireIntervalMs, fireDmg, fireRange, chainChance, chainTargets, chainDmg, poisonMs, poisonDmg, slowMs, berserkAtk, shieldRechargeMs, moveMs, thornDmg, phoenixCooldownMs, regenMult, knockbackImmune, goldMult, xpMult, lifePulseMs, compass, vampKillHeal, vampHitChance, baneRadius, baneSlowMult, baneSightPenalty }` with zero/1/false for anything the item doesn't do.
+
+`spiritBonus` is the one field not set per kind: EVERY spirit-slot item carries
+`spiritSlotBonus(level)`, whatever else it does, so the slot always means
+"shrines go further" and the choice of item only decides what else you get.
+`equip` and `upgradeRandomItem` move `hero.spirit` by it exactly as they move
+`atk` and `def`, and `reviveGear` rebuilds the stat from
+`spiritForLevel(hero.level) + itemStats(worn).spiritBonus` when a save predates
+it — the stat is fully re-derivable, so no `SAVE_VERSION` bump was needed.
+
+## engine/shrines.ts
+```ts
+export const SHRINE_COLORS: Record<ShrineKind, string>;      // one colour per kind, used by map, pips and HUD alike
+export function shrineName(kind: ShrineKind): string;        // "Stone Skin"
+export function shrineDurationMs(kind: ShrineKind, spirit?: number): number;  // 0 for 'ward' (spent, not timed)
+export function shrineDescription(kind: ShrineKind, level: number): string;   // what it does, with the real numbers — never how long
+export function heartsLabel(hp: number): string;             // quarter-hearts as words, for the help screen
+export function spiritMult(spirit: number): number;          // 1 + SPIRIT_PER_POINT * spirit, capped at SPIRIT_MAX_MULT
+export const SPIRIT_PER_POINT: number;  // 0.1
+export const SPIRIT_MAX_MULT: number;   // 2
+export function makeBuff(kind: TimedShrineKind, level: number, spirit?: number): Buff;
+export function addBuff(hero: Hero, kind: TimedShrineKind, level: number): Buff; // refreshes rather than stacking
+export function findBuff(hero: Hero, kind: TimedShrineKind): Buff | null;
+export function buffAtk(hero: Hero): number;                 // fury
+export function buffDef(hero: Hero): number;                 // stone skin
+export function timeBubble(hero: Hero): { radius: number; mult: number } | null;
+export function buffPhase(ms: number): 'solid' | 'warn' | 'urgent';
+export const BLINK_MS: Record<BuffPhase, number>;            // 0 / 560 / 240
+export const BUFF_WARN_MS: number;   // 10000
+export const BUFF_URGENT_MS: number; // 5000
+export const FROST_RANGE: number;    // 6 BFS tiles
+export const FREEZE_MS: number;      // 2200
+export const TIME_RADIUS: number;    // 6 tiles
+export const TIME_SLOW_MULT: number; // 2.5
+export function wardTempHp(level: number, spirit?: number): number;
+export function furyAtk(level: number): number;
+export function stoneDef(level: number): number;
+export function frostIntervalMs(level: number): number;
+export function frostDmg(level: number): number;
+export function mendPulseMs(level: number): number;
+export function reviveBuffs(hero: Hero): void;   // fills in tempHp/tempHpMax/buffs on a loaded hero
+```
+A shrine is a one-shot magic item that lives on the floor instead of in a
+slot. Every number is derived from `Shrine.level` (the depth the floor was
+generated at), exactly as an item's numbers come from the depth it was bought
+at. Depends only on `types.ts`, so `combat.ts`, `monsters.ts` and `game.ts` can
+all import it without a cycle.
+
+`Hero.spirit` stretches every gift, and takes its cut in whichever currency
+that shrine has: the five timed kinds last `spiritMult(spirit)` times longer,
+and the ward, which has no clock, hands out that many more hearts. Never both
+for one shrine, so nothing is made longer *and* stronger at once. Spirit is
+baked into `Buff.totalMs` when the shrine is lit, not read each tick, so
+levelling up mid-effect never moves the bar the player is watching.
+
+Five of the six kinds are `Buff`s on `hero.buffs` that count `ms` down to zero
+and are then dropped. The sixth, `ward`, is not timed: it is `hero.tempHp` (with
+`hero.tempHpMax` for the HUD bar), a pool of temporary quarter-hearts that every
+hit spends before the hero's own, and which nothing ever refills. Lighting the
+same shrine kind twice refreshes rather than stacking.
 
 ## engine/shop.ts
 ```ts
@@ -410,6 +515,9 @@ export const ITEM_ART: Record<ItemKind, { rows: string[]; palette: Record<string
 export const SLOT_ART: Record<ItemSlot, { rows: string[]; palette: Record<string, string> }>; // small slot glyphs (sword / shield / star)
 export const PEDESTAL_ART: { rows: string[]; palette: Record<string, string> };  // 8x8 column, used by the purchase popup
 export const PODIUM_ART: { rows: string[]; palette: Record<string, string> };    // 16x16 map podium, 2x2 tiles, with a niche for the slot emblem
+export const SHRINE_ART: Record<ShrineKind, { rows: string[]; palette: Record<string, string> }>; // 8x8 each
+export const ALCOVE_ART: { rows: string[]; palette: Record<string, string> };   // 16x16 stone arch, one tile, with a niche for the shrine glyph
+export const ALCOVE_NICHE: { x: number; y: number; size: number };              // where the glyph goes inside ALCOVE_ART
 export const PODIUM_NICHE: { x: number; y: number; size: number };               // where the emblem goes, as fractions of the block
 ```
 
@@ -516,6 +624,41 @@ doors / chests, deterministic for (depth, runSeed)):
   "Immune" text; no on-hit procs, no combat clocks.
 - Crystals grant their xp on death but never attack or move.
 
+## Shrines (game.ts, combat.ts, monsters.ts)
+- `onEnter` calls `shrineAt(level, tile)`; an unlit shrine there is lit at
+  once: `used = true`, the gift is applied, a ring + flash + name text in the
+  shrine's colour, a log line and the `shrine` sound. Shrines are floor, never
+  solid: `isWalkable` and `heroCanStand` ignore them entirely.
+- `tickBuffs(dt)` runs beside `passives(dt)` — so never under a modal and never
+  mid-descent. Every buff's `ms` drops by `dt` and buffs at 0 are dropped at the
+  end of the tick. Nothing fires while the hero sleeps.
+  - **frost**: `timer += dt`; at `frostIntervalMs(level)` cast an ice ball at
+    the nearest live, non-invulnerable monster within `FROST_RANGE` BFS tiles
+    (closed doors block, same reach test as the fire staff): a projectile, a
+    delayed flash + ring, `frostDmg(level)` damage, and
+    `frozenMs = max(frozenMs, FREEZE_MS)`. With nothing in range the charge is
+    held rather than spent.
+  - **mend**: a quarter heart every `mendPulseMs(level)`, in combat and out.
+  - **time**: a `TIME_RADIUS` ring pulse every 900ms; the slow itself lives in
+    `cooldownFor` (monsters.ts), which multiplies a monster's cooldown by
+    `TIME_SLOW_MULT` while it is within `TIME_RADIUS` of the hero.
+  - **fury / stone**: no clock of their own. `heroAttackValue` adds
+    `buffAtk(hero)`; `monsterAttack` rolls damage against
+    `hero.def + buffDef(hero)`.
+- `Monster.frozenMs` is a full stop, not the frost blade's half speed: while it
+  is above 0 the monster takes no step and makes no swing (`updateMonsters`
+  `continue`s past it, `angelsFollow` skips it). Its thaw clock, poison and
+  regen all keep running, so a frozen monster can still be finished off.
+- Ward: `monsterAttack` spends `hero.tempHp` before `hero.hp`, with a blue ring
+  per hit and a bigger ring + the `wardBreak` sound on the one that empties it
+  (`tempHpMax` is zeroed with it). The floating damage number turns ward-blue
+  whenever the ward soaked any of it.
+- A knockdown clears `hero.buffs` and both `tempHp` fields, alongside healing
+  every monster. The phoenix feather's burst-back-up keeps them.
+- Buffs and temporary hearts survive the stairs: `advanceLevel` does not touch
+  them, so a shrine taken near the way down carries into the next floor (or a
+  boss chamber). Shrines themselves only exist on maze floors.
+
 ## Movement AI (monsters.ts)
 - `minion`: `chasing` from birth; BFS toward the hero with no distance limit
   (normal `moveBlocked`), attack when adjacent. Never returns/idles.
@@ -539,11 +682,51 @@ doors / chests, deterministic for (depth, runSeed)):
   with no ring and no level badge, just an hp bar when hurt. The necromancer
   gets a pulsing purple channelling ring. Angels: idle = weeping pose with a
   dim grey ring, chasing = red pulsing ring. Minotaur: red pulsing ring, slightly bigger sprite.
+- Shrine alcoves: `ALCOVE_ART` at `ALCOVE_SCALE` of a tile — deliberately under
+  full size, so a rim of floor shows all round and a shrine standing in a
+  corridor never reads as a wall plugging it — with the kind's `SHRINE_ART`
+  glyph in the niche. Unlit = a breathing colour wash behind the stone, a
+  brightening glyph and a slow square aura. Spent = the same stonework at
+  `SHRINE_SPENT_ALPHA` with no glow at all, so "already taken" reads from
+  across the room. Drawn before chests and monsters: an alcove is ground.
+- Shrine timers: a row of pips over the hero's head (above the compass arrow),
+  one per running buff plus one for the ward's temporary hearts, drawn last of
+  everything in camera space so an alcove the hero is standing beside never
+  covers them. Each pip is the kind's glyph on a dark plate with a coloured
+  border. No numbers: solid while `buffPhase` is `solid`, blinking on
+  `BLINK_MS[phase]` otherwise, and the plate stays near-opaque through the
+  blink so a pip is always countable.
+- Frozen monsters (`frozenMs > 0`): a hard pale ice box over the sprite with a
+  bright rim and two drifting glints — deliberately unlike the frost blade's
+  soft blue tint, because one means "slowed" and the other means "stopped".
 - Necromancer spell clock: a screen-space bar across the top of the viewport
   (purple, shrinking with `spellMs / spellTotalMs`, seconds left as text),
   hidden once defeated. The exit is not drawn while the necromancer stands on it.
 
 ## UI
+- The heart row carries the ward's temporary hearts in blue on the end
+  (`Hearts` takes `tempHp` / `tempHpMax`); they empty as hits land and the row
+  is shorter again once they are gone.
+- Nothing about a running effect reaches the HUD. The pips over the hero are
+  the at-a-glance read; the detail is a tab away.
+- `HudModel.atk` / `def` include the shrine bonus, and `atkBuffed` / `defBuffed`
+  light that stat tile gold so the player can see why the number moved. Spirit
+  is a seventh stat tile, beside attack and defense, using the spirit slot's
+  own star glyph.
+- The help screen is three tabs: **Hero** (gear slots, then the effects
+  running), **Log** (the run history, newest first), **How to play**. The tabs
+  themselves are flat with an underline on the active one — the same rule as
+  the HUD, so the raised X and OK are the only things on screen that look
+  pressable.
+- Its "Running now" section lists ONLY the effects the hero has
+  going, each with its time left in words (`HudBuff.secondsLeft`), or for the
+  ward the hearts it has left (`heartsLabel`). It is the one surface that puts
+  a shrine clock into numbers: the game is paused behind it and the player has
+  come looking for detail, where the HUD chip and the pip over the hero are
+  read mid-fight and stay wordless. For the same reason `shrineDescription`
+  says what an effect does but never how long it lasts — that would be two
+  clocks for one effect. With nothing running the section explains what
+  alcoves are and names the hero's spirit.
 - `bossIntro`, `bossWon`, `gameOver` are button-dismissed modals (the backdrop
   never closes them). `gameOver` shows the cause and `RunStats`, button
   "New Game". HUD depth badge reads BOSS on boss levels.

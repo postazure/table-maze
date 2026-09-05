@@ -1,17 +1,44 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ANGEL_CREEP_MS, HEART, ITEM_SLOT, Tile, key } from '../src/engine/types';
-import type { BossData, GameState, LevelData, MagicItem, Monster, Rect, RunStats, Vec } from '../src/engine/types';
+import { ANGEL_CREEP_MS, HEART, ITEM_SLOT, Tile, key, manhattan } from '../src/engine/types';
+import type {
+  BossData,
+  GameState,
+  LevelData,
+  MagicItem,
+  Monster,
+  Rect,
+  RunStats,
+  Shrine,
+  ShrineKind,
+  Vec,
+} from '../src/engine/types';
 import { makeRng } from '../src/engine/rng';
 import { Game } from '../src/engine/game';
-import { damageMonster, heroAttack, monsterAttack, pushSfx } from '../src/engine/combat';
+import { LOG_MAX, damageMonster, heroAttack, heroAttackValue, monsterAttack, pushLog, pushSfx } from '../src/engine/combat';
 import { updateMonsters } from '../src/engine/monsters';
 import { clearSave, loadGame, saveGame } from '../src/engine/save';
 import { equip, heroMoveMs, upgradeRandomItem } from '../src/engine/items';
 import { generateShopLevel, offerAt } from '../src/engine/shop';
 import { makeBossMonster } from '../src/engine/boss';
 import { lurkerSightRange, newHero } from '../src/engine/balance';
+import { generateLevel } from '../src/engine/maze';
+import {
+  BUFF_URGENT_MS,
+  BUFF_WARN_MS,
+  FREEZE_MS,
+  addBuff,
+  buffPhase,
+  SPIRIT_MAX_MULT,
+  buffDef,
+  frostIntervalMs,
+  furyAtk,
+  shrineDurationMs,
+  spiritMult,
+  stoneDef,
+  wardTempHp,
+} from '../src/engine/shrines';
 
 // ---------------------------------------------------------------------------
 // Test fixtures: hand-drawn levels so nothing depends on the generator.
@@ -76,6 +103,7 @@ function mkMonster(over: Partial<Monster> & { pos: Vec }): Monster {
     poisonMs: 0,
     poisonDmg: 0,
     slowMs: 0,
+    frozenMs: 0,
     hitFlash: 0,
     lungeT: 0,
   };
@@ -1998,4 +2026,348 @@ test('the sound queue is capped, so a muted run never banks a backlog', () => {
   // What survives is the newest end of the queue, not the oldest.
   pushSfx(g.state, 'levelUp');
   assert.equal(g.state.sfx[g.state.sfx.length - 1], 'levelUp');
+});
+
+
+// ---------------------------------------------------------------------------
+// Shrines
+// ---------------------------------------------------------------------------
+
+/** One shrine of `kind` on the corridor, two tiles along from the hero. */
+function shrineGame(kind: ShrineKind, at: Vec = { x: 2, y: 1 }, level = 1): { g: Game; shrine: Shrine } {
+  const shrine: Shrine = { id: 'sh1', pos: at, kind, used: false, level };
+  const g = corridorGame({ shrines: [shrine] });
+  return { g, shrine };
+}
+
+/** Walk the hero one tile east onto whatever is there. */
+function stepEast(g: Game): void {
+  g.pointerAt({ x: g.state.hero.pos.x + 1, y: g.state.hero.pos.y });
+  g.tick(140);
+}
+
+/** Floor neighbours of `p`, straight off the tile grid. */
+function floorNbs(level: LevelData, p: Vec): Vec[] {
+  return [
+    { x: p.x + 1, y: p.y },
+    { x: p.x - 1, y: p.y },
+    { x: p.x, y: p.y + 1 },
+    { x: p.x, y: p.y - 1 },
+  ].filter((n) => level.tiles[n.y]?.[n.x] === Tile.Floor);
+}
+
+test('generated floors carry shrines that share no tile with anything else', () => {
+  for (const depth of [1, 2, 5, 9]) {
+    const level = generateLevel(depth, 4242 + depth, depth);
+    const shrines = level.shrines ?? [];
+    assert.ok(shrines.length > 0, `depth ${depth} has no shrines`);
+
+    const taken = new Set<string>([key(level.start), key(level.exit)]);
+    for (const k of level.keys) taken.add(key(k.pos));
+    for (const d of level.doors) taken.add(key(d.pos));
+    for (const c of level.chests) taken.add(key(c.pos));
+    for (const m of level.monsters) taken.add(key(m.pos));
+
+    const seen = new Set<string>();
+    for (const sh of shrines) {
+      const k = key(sh.pos);
+      assert.equal(sh.used, false);
+      assert.equal(sh.level, depth);
+      assert.equal(level.tiles[sh.pos.y][sh.pos.x], Tile.Floor, 'a shrine must sit on floor');
+      assert.ok(!taken.has(k), `shrine at ${k} shares a tile with something else`);
+      assert.ok(!seen.has(k), `two shrines on ${k}`);
+      seen.add(k);
+    }
+  }
+});
+
+test('a floor spreads its shrines over the route, its long warrens and the map', () => {
+  for (const depth of [1, 3, 6, 11]) {
+    for (const salt of [0, 1, 2]) {
+      const level = generateLevel(depth, 909 + salt * 7919, depth);
+      const shrines = level.shrines ?? [];
+
+      // At least one wayside alcove: a dead end you step into and back out of.
+      assert.ok(
+        shrines.some((sh) => floorNbs(level, sh.pos).length === 1),
+        `depth ${depth}/${salt} has no dead-end shrine`,
+      );
+
+      // A floor with a long warren always buries one at the back of it.
+      const warrenTiles = new Set((level.warrens ?? []).flatMap((w) => w.tiles.map(key)));
+      const hasLongWarren = (level.warrens ?? []).some((w) => w.tiles.length >= 16);
+      if (hasLongWarren) {
+        assert.ok(
+          shrines.some((sh) => warrenTiles.has(key(sh.pos))),
+          `depth ${depth}/${salt} has a long warren but no shrine in one`,
+        );
+      }
+
+      // And none of them are bunched together.
+      for (let i = 0; i < shrines.length; i++) {
+        for (let j = i + 1; j < shrines.length; j++) {
+          const d = manhattan(shrines[i].pos, shrines[j].pos);
+          assert.ok(d >= 4, `shrines ${i} and ${j} are only ${d} tiles apart`);
+        }
+      }
+    }
+  }
+});
+
+test('a shrine in a corridor is walked over, not walked into', () => {
+  // The warren shrines stand mid-corridor. Nothing about a shrine is solid, so
+  // a drag routes straight through one and the hero lights it in passing.
+  const shrine: Shrine = { id: 'sh1', pos: { x: 3, y: 1 }, kind: 'mend', used: false, level: 1 };
+  const g = corridorGame({ shrines: [shrine] });
+  g.pointerAt({ x: 5, y: 1 });
+  for (let i = 0; i < 6; i++) g.tick(140);
+
+  assert.deepEqual(g.state.hero.pos, { x: 5, y: 1 }, 'the hero should have walked on past');
+  assert.equal(shrine.used, true, 'and lit the shrine on the way');
+  assert.equal(g.state.hero.buffs.length, 1);
+});
+
+test('walking over a shrine lights it once and starts the effect', () => {
+  const { g, shrine } = shrineGame('fury');
+  const base = g.state.hero.atk;
+  stepEast(g);
+
+  assert.equal(shrine.used, true);
+  assert.deepEqual(g.state.hero.pos, { x: 2, y: 1 }, 'a shrine never blocks the tile it sits on');
+  assert.equal(g.state.hero.buffs.length, 1);
+  assert.equal(g.state.hero.buffs[0].kind, 'fury');
+  assert.equal(heroAttackValue(g.state), base + furyAtk(1));
+  assert.ok(g.state.sfx.includes('shrine'));
+
+  // Walking back over a spent shrine does nothing at all.
+  g.state.hero.buffs = [];
+  g.pointerAt({ x: 1, y: 1 });
+  g.tick(140);
+  stepEast(g);
+  assert.equal(g.state.hero.buffs.length, 0);
+});
+
+test('a shrine buff counts down and is dropped when it runs out', () => {
+  const { g } = shrineGame('stone');
+  stepEast(g);
+  const buff = g.state.hero.buffs[0];
+  const total = buff.totalMs;
+  assert.ok(total > 0);
+  assert.equal(buffDef(g.state.hero), stoneDef(1));
+
+  g.tick(total / 2);
+  assert.ok(g.state.hero.buffs[0].ms < total);
+  g.tick(total);
+  assert.equal(g.state.hero.buffs.length, 0, 'the buff outlived its own clock');
+});
+
+test('the buff timer reads solid, then warns, then goes urgent', () => {
+  assert.equal(buffPhase(BUFF_WARN_MS + 1), 'solid');
+  assert.equal(buffPhase(BUFF_WARN_MS), 'warn');
+  assert.equal(buffPhase(BUFF_URGENT_MS + 1), 'warn');
+  assert.equal(buffPhase(BUFF_URGENT_MS), 'urgent');
+  assert.equal(buffPhase(0), 'urgent');
+});
+
+test('ward hearts soak a hit before the hero does, and pop when they are gone', () => {
+  const { g } = shrineGame('ward');
+  stepEast(g);
+  const hero = g.state.hero;
+  assert.equal(hero.tempHp, wardTempHp(1));
+  assert.equal(hero.tempHpMax, wardTempHp(1));
+
+  // A hit far bigger than the pool: the ward takes what it can and the rest
+  // lands on the hero's own hearts.
+  hero.def = 0;
+  const hp = hero.hp;
+  const m = mkMonster({ pos: { x: 3, y: 1 }, atk: 40 });
+  g.state.level.monsters.push(m);
+  monsterAttack(g.state, m, makeRng(9));
+  assert.equal(hero.tempHp, 0, 'the ward should be spent');
+  assert.equal(hero.tempHpMax, 0);
+  assert.ok(hero.hp < hp, 'the overflow should still land');
+  assert.ok(g.state.sfx.includes('wardBreak'));
+});
+
+test('a small hit is soaked by the ward alone', () => {
+  const g = corridorGame({ monsters: [mkMonster({ pos: { x: 2, y: 1 }, atk: 2 })] });
+  const hero = g.state.hero;
+  hero.tempHp = 30;
+  hero.tempHpMax = 30;
+  const hp = hero.hp;
+  monsterAttack(g.state, g.state.level.monsters[0], makeRng(3));
+  assert.equal(hero.hp, hp, 'temporary hearts go first');
+  assert.ok(hero.tempHp < 30);
+});
+
+test('a frost shrine throws an ice ball at the nearest monster and freezes it', () => {
+  const { g } = shrineGame('frost');
+  const m = mkMonster({ pos: { x: 5, y: 1 }, hp: 20 });
+  g.state.level.monsters.push(m);
+  stepEast(g);
+
+  const buff = g.state.hero.buffs[0];
+  buff.timer = frostIntervalMs(1); // the staff is charged
+  g.tick(16);
+
+  assert.ok(m.hp < 20, 'the ice ball should have landed');
+  assert.ok(m.frozenMs > 0 && m.frozenMs <= FREEZE_MS);
+  assert.ok(g.state.sfx.includes('iceball'));
+});
+
+test('a frozen monster neither moves nor swings', () => {
+  const g = corridorGame({
+    monsters: [mkMonster({ pos: { x: 2, y: 1 }, kind: 'patrol', frozenMs: 1000, moveInterval: 100 })],
+  });
+  const m = g.state.level.monsters[0];
+  const hp = g.state.hero.hp;
+  for (let i = 0; i < 10; i++) updateMonsters(g.state, 50, makeRng(7));
+  assert.deepEqual(m.pos, { x: 2, y: 1 }, 'a frozen monster stays put');
+  assert.equal(g.state.hero.hp, hp, 'a frozen monster does not swing');
+  assert.equal(m.frozenMs, 500, 'the thaw clock still runs');
+});
+
+test('a time bubble makes nearby monsters wait longer between moves', () => {
+  const setup = (bubble: boolean) => {
+    const g = corridorGame({
+      monsters: [mkMonster({ pos: { x: 5, y: 1 }, kind: 'lurker', state: 'chasing', moveInterval: 400 })],
+    });
+    if (bubble) addBuff(g.state.hero, 'time', 1);
+    updateMonsters(g.state, 16, makeRng(5));
+    return g.state.level.monsters[0];
+  };
+  const plain = setup(false);
+  const slowed = setup(true);
+  assert.ok(slowed.moveCooldown > plain.moveCooldown, 'the bubble should stretch the cooldown');
+});
+
+test('a mending shrine refills hearts mid-fight', () => {
+  const { g } = shrineGame('mend');
+  stepEast(g);
+  const hero = g.state.hero;
+  hero.hp = 1;
+  hero.sinceCombat = 0; // out-of-combat regen is nowhere near, so this is mending
+  g.tick(600);
+  assert.ok(hero.hp > 1, 'mending should have pulsed');
+});
+
+test('a knockdown clears every shrine effect', () => {
+  const g = corridorGame({ monsters: [mkMonster({ pos: { x: 2, y: 1 }, atk: 500 })] });
+  const hero = g.state.hero;
+  addBuff(hero, 'fury', 1);
+  hero.tempHp = 4;
+  hero.tempHpMax = 4;
+  g.state.trail = trailTo(8);
+  monsterAttack(g.state, g.state.level.monsters[0], makeRng(2));
+  assert.equal(hero.sleeping, true);
+  assert.deepEqual(hero.buffs, []);
+  assert.equal(hero.tempHp, 0);
+});
+
+test('save/load keeps running shrine effects and temporary hearts', () => {
+  useMemStorage();
+  const g = Game.forTest(88);
+  addBuff(g.state.hero, 'frost', 3);
+  g.state.hero.tempHp = 6;
+  g.state.hero.tempHpMax = 8;
+  saveGame(g.state);
+  const loaded = loadGame() as GameState;
+  clearSave();
+
+  assert.ok(loaded);
+  assert.equal(loaded.hero.buffs.length, 1);
+  assert.equal(loaded.hero.buffs[0].kind, 'frost');
+  assert.equal(loaded.hero.buffs[0].level, 3);
+  assert.equal(loaded.hero.tempHp, 6);
+  assert.equal(loaded.hero.tempHpMax, 8);
+});
+
+
+test('spirit stretches a timed shrine and fattens the ward', () => {
+  // Duration is the currency of a timed shrine, hearts the currency of the
+  // ward, and spirit buys more of whichever one the shrine has.
+  assert.ok(shrineDurationMs('fury', 5) > shrineDurationMs('fury', 0));
+  assert.ok(wardTempHp(1, 5) > wardTempHp(1, 0));
+  // ...and never both at once for the same shrine: the ward has no clock to
+  // stretch, and a timed shrine's potency takes no spirit argument at all.
+  assert.equal(shrineDurationMs('ward', 99), 0);
+
+  const plain = corridorGame();
+  plain.state.hero.spirit = 0;
+  const weak = addBuff(plain.state.hero, 'frost', 1);
+
+  const blessed = corridorGame();
+  blessed.state.hero.spirit = 6;
+  const strong = addBuff(blessed.state.hero, 'frost', 1);
+
+  assert.ok(strong.totalMs > weak.totalMs, 'a high-spirit hero holds it longer');
+  assert.equal(strong.ms, strong.totalMs, 'and starts full');
+});
+
+test('spirit never gives more than double, however high it climbs', () => {
+  assert.equal(spiritMult(0), 1);
+  assert.equal(spiritMult(1000), SPIRIT_MAX_MULT);
+  assert.equal(shrineDurationMs('time', 1000), shrineDurationMs('time', 0) * SPIRIT_MAX_MULT);
+  assert.equal(wardTempHp(1, 1000), wardTempHp(1, 0) * SPIRIT_MAX_MULT);
+});
+
+test('a buff keeps the length it was lit with when the hero levels up', () => {
+  const g = corridorGame();
+  g.state.hero.spirit = 2;
+  const buff = addBuff(g.state.hero, 'fury', 1);
+  const lit = buff.totalMs;
+
+  // Levelling mid-effect must not move the bar the player is watching.
+  g.state.hero.spirit = 20;
+  g.tick(1000);
+  assert.equal(buff.totalMs, lit);
+  assert.equal(buff.ms, lit - 1000);
+});
+
+test('a ward lit at high spirit hands out more hearts', () => {
+  const { g } = shrineGame('ward');
+  g.state.hero.spirit = 8;
+  stepEast(g);
+  assert.equal(g.state.hero.tempHp, wardTempHp(1, 8));
+  assert.ok(g.state.hero.tempHp > wardTempHp(1, 0));
+});
+
+
+// ---------------------------------------------------------------------------
+// The run log
+// ---------------------------------------------------------------------------
+
+test('log lines no longer expire: the log is a history, not a set of toasts', () => {
+  const g = corridorGame();
+  pushLog(g.state, 'Picked up a chest key');
+  // Far longer than the six seconds the HUD used to fade a line out over.
+  for (let i = 0; i < 60; i++) g.tick(1000);
+  assert.ok(
+    g.state.log.some((l) => l.text === 'Picked up a chest key'),
+    'a line the player opens the log to find must still be there',
+  );
+});
+
+test('the log keeps the newest LOG_MAX lines and no more', () => {
+  const g = corridorGame();
+  g.state.log.length = 0;
+  for (let i = 0; i < LOG_MAX * 2; i++) {
+    pushLog(g.state, `line ${i}`);
+    g.tick(500); // clears the de-duplication window between pushes
+  }
+  assert.equal(g.state.log.length, LOG_MAX);
+  assert.equal(g.state.log[g.state.log.length - 1].text, `line ${LOG_MAX * 2 - 1}`, 'newest last');
+  assert.ok(!g.state.log.some((l) => l.text === 'line 0'), 'the oldest fell off');
+});
+
+test('the same event twice in a row is one line, but not forever', () => {
+  const g = corridorGame();
+  g.state.log.length = 0;
+  pushLog(g.state, 'Slew the Slime');
+  pushLog(g.state, 'Slew the Slime');
+  assert.equal(g.state.log.length, 1, 'one event, one line');
+
+  g.tick(1000);
+  pushLog(g.state, 'Slew the Slime');
+  assert.equal(g.state.log.length, 2, 'the same thing a second later really happened twice');
 });
