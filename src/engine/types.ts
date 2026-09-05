@@ -110,9 +110,10 @@ export type RosterKind = 'guard' | 'patrol' | 'lurker';
  *                Every hit takes a third of the hero's max hp.
  *  - angel:      `invulnerable`. Idle (weeping) until the hero enters its room
  *                (`roomId`), then it hunts the hero anywhere, forever, but
- *                ONLY in lock-step with the hero: one hero step, one angel
- *                step. It never moves on its own clock. A touch (attack)
- *                takes a third of max hp.
+ *                mostly in lock-step with the hero: one hero step, one angel
+ *                step, plus a slow creep of one tile every `ANGEL_CREEP_MS`
+ *                so waiting only delays it. A touch (attack) takes a third
+ *                of max hp.
  */
 export type BossMonsterKind = 'minion' | 'crystal' | 'boss' | 'minotaur' | 'angel';
 export type MonsterKind = RosterKind | BossMonsterKind;
@@ -239,6 +240,13 @@ export const inRect = (r: Rect, p: Vec): boolean =>
 
 /** Boss hits (minotaur, angel) take this fraction of the hero's max hp, ignoring defense. */
 export const BOSS_HIT_FRACTION = 1 / 3;
+
+/**
+ * Awake angels answer every hero step with one of their own, and on top of
+ * that creep one tile closer every this many ms whether the hero moves or
+ * not. Slow enough to plan around, but standing still never saves you.
+ */
+export const ANGEL_CREEP_MS = 2200;
 
 // ---------------------------------------------------------------------------
 // Magic items (bought in shops, one per slot, all passive)

@@ -321,10 +321,15 @@ doors / chests, deterministic for (depth, runSeed)):
 - **angels**: each tick, `roomAt(rooms, hero.pos)`; every idle angel whose
   `roomId` equals it wakes (`state = 'chasing'`, never goes back to idle).
   Angels move in lock-step with the hero: right after every step the hero
-  actually takes (a real tile change from `stepOnce`, not a knockback shove,
-  and not while the hero stands still) `angelsFollow(state, rng)` runs once,
-  before the wake check, so an angel woken by that step does not move until
-  the next one. Nothing angel-related runs on `dt`.
+  actually takes (a real tile change from `stepOnce`, not a knockback shove)
+  `angelsFollow(state, rng)` runs once, before the wake check, so an angel
+  woken by that step does not move until the next one. On top of that, while
+  any angel is `chasing`, a creep clock (`creepTimer += dt`, in `tickBoss`)
+  calls `angelsFollow` once every `ANGEL_CREEP_MS` (2200) whether or not the
+  hero moved; hero steps do not reset it, and it resets to 0 while every
+  angel is idle. At most 4 creep steps per tick, then the remainder is
+  dropped (a hidden tab is not a massacre). `updateMonsters` itself does
+  nothing for angels.
 - Reward: `upgradeRandomItem(hero, rng)` (items.ts): pick one of the filled
   gear slots at random, bump `level` by one and re-apply its constant bonuses
   (same maths as `equip`, timers untouched). Returns the item, or null when
@@ -350,12 +355,14 @@ doors / chests, deterministic for (depth, runSeed)):
 - `minion`: `chasing` from birth; BFS toward the hero with no distance limit
   (normal `moveBlocked`), attack when adjacent. Never returns/idles.
 - `minotaur`: same as minion, never stops. Attack when adjacent.
-- `angel`: skipped entirely by `updateMonsters` (no cooldowns, no clock).
-  `angelsFollow`, once per hero step: idle = nothing. `chasing`: if adjacent
+- `angel`: skipped entirely by `updateMonsters` (no cooldowns of its own).
+  `angelsFollow`, once per hero step and once per creep tick: idle =
+  nothing. `chasing`: if adjacent
   to the hero (manhattan 1) it attacks; otherwise one BFS step toward the
   hero with no limit (normal `moveBlocked`). So an adjacent angel only lands
-  a touch when the hero's step keeps them within reach; stepping away means
-  it merely follows. Stops early once `state.over`.
+  a touch when the hero's step keeps them within reach, or when the hero
+  lingers beside it until the next creep; stepping away means it merely
+  follows. Stops early once `state.over`.
 - `crystal`, `boss`: never move, never attack.
 - Nothing about sleeping heroes matters here (no sleeping in boss levels).
 

@@ -37,8 +37,8 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
 
     if (state.descending > 0) continue;
 
-    // Angels have no clock of their own: they act once per hero step, from
-    // `angelsFollow` (game.ts calls it). Standing still is safe.
+    // Angels do not run on dt here: they act once per hero step and on the
+    // slow creep clock, both via `angelsFollow` (game.ts drives it).
     if (m.kind === 'angel') continue;
 
     const heroPos = state.hero.pos;
@@ -79,11 +79,12 @@ function cooldownFor(state: GameState, m: Monster, stats: ItemStats, base: numbe
 }
 
 /**
- * Angels move in lock-step with the hero. Called once per hero step (never
- * for a shove, and never while the hero stands still). Every awake angel
- * already touching the hero grabs them; every other awake angel takes one
- * tile along its route. So an angel at your side is a threat only if your
- * next step keeps you within its reach — step away and it merely follows.
+ * One move for every awake angel. game.ts calls this once per hero step
+ * (never for a shove) and once per creep tick (`ANGEL_CREEP_MS`) while any
+ * angel is awake. Every awake angel already touching the hero grabs them;
+ * every other awake angel takes one tile along its route. So an angel at
+ * your side lands a touch only if your step keeps you within its reach, or
+ * if you linger there until the next creep — step away and it merely follows.
  */
 export function angelsFollow(state: GameState, rng: Rng): void {
   for (const m of state.level.monsters) {

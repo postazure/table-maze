@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { HEART, ITEM_SLOT, Tile, key } from '../src/engine/types';
+import { ANGEL_CREEP_MS, HEART, ITEM_SLOT, Tile, key } from '../src/engine/types';
 import type { BossData, GameState, LevelData, MagicItem, Monster, Rect, RunStats, Vec } from '../src/engine/types';
 import { makeRng } from '../src/engine/rng';
 import { Game } from '../src/engine/game';
@@ -1584,10 +1584,10 @@ test('an angel only moves when the hero moves', () => {
   hero.maxHp = 12;
   hero.hp = 12;
 
-  // Stand still for a long while: nothing happens, whichever way you face.
+  // Stand still (short of a creep tick): nothing happens, whichever way you face.
   hero.facing = 'W';
-  for (let i = 0; i < 20; i++) g.tick(200);
-  assert.deepEqual(angel.pos, { x: 9, y: 1 }, 'a still hero is a safe hero');
+  for (let i = 0; i < 2; i++) g.tick(200); // well short of a creep tick
+  assert.deepEqual(angel.pos, { x: 9, y: 1 }, 'a still hero is left alone for a while');
   assert.equal(hero.hp, 12);
 
   // One step west: the angel answers with one step of its own.
@@ -1596,7 +1596,7 @@ test('an angel only moves when the hero moves', () => {
   assert.deepEqual(hero.pos, { x: 4, y: 1 });
   assert.deepEqual(angel.pos, { x: 8, y: 1 }, 'one hero step, one angel step');
   g.pointerAt(null);
-  for (let i = 0; i < 20; i++) g.tick(200);
+  for (let i = 0; i < 2; i++) g.tick(200); // well short of a creep tick
   assert.deepEqual(angel.pos, { x: 8, y: 1 }, 'and then it waits again');
 
   // Walk toward it: it closes one tile per tile until it is at your side.
@@ -1611,9 +1611,50 @@ test('an angel only moves when the hero moves', () => {
   assert.ok(st.fx.some((f) => f.kind === 'flash'), 'and greys the tile');
   assert.deepEqual(hero.pos, { x: 5, y: 1 }, 'the touch shoves you back');
   g.pointerAt(null);
-  for (let i = 0; i < 20; i++) g.tick(200);
-  assert.ok(hero.hp >= 8, 'a shove is not a step, and standing next to it is safe (regen may tick up)');
+  for (let i = 0; i < 2; i++) g.tick(200); // well short of a creep tick
+  assert.ok(hero.hp >= 8, 'a shove is not a step, and it does not strike again at once');
   assert.deepEqual(angel.pos, { x: 7, y: 1 });
+});
+
+test('awake angels creep closer on their own, slowly, and a lingering hero is touched', () => {
+  const g = Game.forTest(31);
+  const level = mkBossLevel(LONG_CORRIDOR, { kind: 'angels', defeated: false, rooms: [] });
+  const angel = makeBossMonster('angel', 3, { x: 9, y: 1 }, 'angel1');
+  level.monsters.push(angel);
+  install(g, level, { x: 5, y: 1 });
+  const st = g.state;
+  const hero = st.hero;
+  hero.maxHp = 12;
+  hero.hp = 12;
+
+  // A weeping angel has nothing to creep toward.
+  g.tick(ANGEL_CREEP_MS * 3);
+  assert.deepEqual(angel.pos, { x: 9, y: 1 }, 'statues do not creep');
+
+  angel.state = 'chasing';
+  g.tick(ANGEL_CREEP_MS - 1);
+  assert.deepEqual(angel.pos, { x: 9, y: 1 }, 'not yet');
+  g.tick(1);
+  assert.deepEqual(angel.pos, { x: 8, y: 1 }, 'one tile per creep, hero standing still');
+  g.tick(ANGEL_CREEP_MS);
+  assert.deepEqual(angel.pos, { x: 7, y: 1 });
+  g.tick(ANGEL_CREEP_MS);
+  assert.deepEqual(angel.pos, { x: 6, y: 1 }, 'now at your side');
+  assert.equal(hero.hp, 12, 'arriving is not a touch');
+
+  g.tick(ANGEL_CREEP_MS);
+  assert.equal(hero.hp, 8, 'linger beside it and the next creep is a touch');
+  assert.deepEqual(hero.pos, { x: 4, y: 1 }, 'with the usual shove');
+
+  // A hidden tab coming back with a huge dt is capped, not a massacre.
+  hero.hp = 12;
+  hero.pos = { x: 1, y: 1 };
+  hero.rpos = { x: 1, y: 1 };
+  angel.pos = { x: 12, y: 1 };
+  angel.rpos = { x: 12, y: 1 };
+  g.tick(ANGEL_CREEP_MS * 40);
+  assert.deepEqual(angel.pos, { x: 8, y: 1 }, 'at most four creep steps in one tick');
+  assert.equal(hero.hp, 12);
 });
 
 test('stepping away from an angel at your side is safe, stepping past it is not', () => {

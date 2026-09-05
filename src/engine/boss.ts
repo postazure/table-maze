@@ -146,8 +146,9 @@ export function makeBossMonster(kind: BossMonsterKind, depth: number, pos: Vec, 
       base.state = 'chasing';
       break;
     case 'angel':
-      // No clock of its own: it moves once per hero step (monsters.ts
-      // `angelsFollow`), so NEVER for both intervals. Touch = a third of max hp.
+      // Not on the monster clock: it moves once per hero step and on the
+      // creep clock (game.ts / `angelsFollow`), so NEVER for both intervals.
+      // Touch = a third of max hp.
       base.name = 'Angel';
       base.glyph = '🗿';
       base.level = d + 3;
