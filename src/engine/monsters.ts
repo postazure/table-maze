@@ -9,6 +9,7 @@ import { bfsDistances, bfsPath } from './pathfind';
 import { GREEN, chestAt, closedDoorAt, damageMonster, keyAt, liveMonsterAt, monsterAttack } from './combat';
 import type { ItemStats } from './items';
 import { heroStats } from './items';
+import { lurkerSightRange } from './balance';
 
 /** Render position catch-up speed, tiles per second. */
 const RPOS_SPEED = 14;
@@ -123,10 +124,18 @@ function willFight(state: GameState, m: Monster): boolean {
 /** How long a struck guard keeps fighting back. */
 const GUARD_ENGAGE_MS = 5000;
 
-/** How far this monster can see, with the bane totem's blinding subtracted. */
-function sightOf(m: Monster, stats: ItemStats): number {
-  if (stats.baneSightPenalty <= 0) return m.sightRange;
-  return Math.max(1, m.sightRange - stats.baneSightPenalty);
+/**
+ * How far this monster can see: its own range, cut back for a lurker that
+ * out-levels the hero (see `lurkerSightRange`), then the bane totem's
+ * blinding subtracted on top.
+ */
+function sightOf(state: GameState, m: Monster, stats: ItemStats): number {
+  const base =
+    m.kind === 'lurker'
+      ? lurkerSightRange(m.sightRange, m.level, state.hero.level)
+      : m.sightRange;
+  if (stats.baneSightPenalty <= 0) return base;
+  return Math.max(1, base - stats.baneSightPenalty);
 }
 
 /** Poison dagger: one hit per second of the remaining poison. */
@@ -275,7 +284,7 @@ function patrolStep(state: GameState, m: Monster, stats: ItemStats): Vec | null 
   const path = m.patrolPath;
   if (!path || path.length === 0) return null;
 
-  const sight = sightOf(m, stats);
+  const sight = sightOf(state, m, stats);
 
   // Off the route (shoved aside, say): find the way back onto it.
   const idx = path.findIndex((p) => eq(p, m.pos));
@@ -315,7 +324,7 @@ function patrolStep(state: GameState, m: Monster, stats: ItemStats): Vec | null 
 }
 
 function lurkerStep(state: GameState, m: Monster, stats: ItemStats): Vec | null {
-  const sight = sightOf(m, stats);
+  const sight = sightOf(state, m, stats);
   if (m.state === 'idle') {
     const d = distToHero(state, m, m.pos, sight);
     if (d !== null) m.state = 'chasing';

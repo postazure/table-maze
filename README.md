@@ -62,7 +62,10 @@ Play it at **https://postazure.github.io/table-maze/**
     where a passage opens.
   - **Lurkers** sit off the main path and chase you when you get close. They hit
     for whole hearts and outlast you at your level: fight one head-on and you'll
-    be knocked down. Lure it away from the corridor it watches, then loop around
+    be knocked down. How close is "close" depends on you: a lurker that is over
+    your level notices you a tile later for each level of the gap, up to two
+    tiles, so on the early floors you can walk into its corridor and back out
+    again. Catch up to it and it reaches for you the full distance. Lure it away from the corridor it watches, then loop around
     it through another passage. Kill one when you're well over its level and the
     reward is the biggest in the dungeon. The first floor has none — it is
     patrols and guards while you learn the controls.

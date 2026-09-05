@@ -253,6 +253,40 @@ export function makeMonster(
 }
 
 // ---------------------------------------------------------------------------
+// Lurker aggro
+// ---------------------------------------------------------------------------
+
+/**
+ * A lurker's aggro range is the one thing about it that reads the hero.
+ *
+ * The fight itself never gets fairer: a lurker is two levels over the floor
+ * and stays a monster you bait rather than trade with. What changes is how
+ * far it reaches for you. While it stands above the hero — which is every
+ * lurker on the easy floors, where the hero is still level one or two — it
+ * notices later, so a hero who wanders into its corridor has room to back
+ * out. Catch up to its level and it hunts you the full distance again.
+ *
+ * The drop is capped both ways: at most `LURKER_SIGHT_MAX_DROP` tiles off,
+ * never under `LURKER_SIGHT_MIN`, and never over the lurker's own
+ * `sightRange` (out-levelling one does not make it blinder or sharper — it
+ * just stops holding back).
+ */
+
+/** Tiles of sight a lurker gives up per level it stands above the hero. */
+const LURKER_SIGHT_PER_LEVEL = 1;
+/** However far above the hero it is, it never gives up more than this. */
+const LURKER_SIGHT_MAX_DROP = 2;
+/** ...and never sees less than this: stand beside one and it still bites. */
+const LURKER_SIGHT_MIN = 2;
+
+/** How far a lurker of `monsterLevel` reaches for a hero of `heroLevel`. */
+export function lurkerSightRange(base: number, monsterLevel: number, heroLevel: number): number {
+  const ahead = Math.max(0, Math.floor(monsterLevel) - Math.floor(heroLevel));
+  const drop = Math.min(LURKER_SIGHT_MAX_DROP, ahead * LURKER_SIGHT_PER_LEVEL);
+  return Math.max(LURKER_SIGHT_MIN, base - drop);
+}
+
+// ---------------------------------------------------------------------------
 // Loot
 // ---------------------------------------------------------------------------
 

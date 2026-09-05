@@ -89,7 +89,11 @@ export interface Chest {
  *            one fights it instead of passing through.
  *  - lurker: sits on `home` and blocks it. When the hero comes within
  *            `sightRange` (BFS tile distance through open floor) it switches
- *            to `chasing` and follows the hero. Once the hero is further than
+ *            to `chasing` and follows the hero. That range is the cap, not
+ *            the whole story: a lurker standing above the hero's level gives
+ *            up a tile of it per level of the gap, to a floor of two tiles
+ *            (see `lurkerSightRange`), so the easy floors leave more room to
+ *            back out. Once the hero is further than
  *            `sightRange + 1`, or further than `leash` tiles from the
  *            lurker's home, it gives up and walks back `home` (`returning`).
  *            This is the monster you bait: pull it away from the corridor it
