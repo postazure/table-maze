@@ -139,6 +139,11 @@ function GuideTab() {
       <li>Guards stand still and only fight back if you hit them. Beating one costs real hearts.</li>
       <li>Hunters chase you when you get close and hit far too hard to fight at your level. They spot you later while they are over your level, so early floors give you room to back out. Lead them away, then loop around.</li>
       <li>Out of hearts? You sleep somewhere safe until they refill, and every monster heals to full.</li>
+      <li>
+        Chests sometimes hold a golden health potion: it raises how many you can carry. Run out of hearts with
+        one in reserve and it kicks in on its own for half your hearts back, instead of a knockdown. They refill
+        at the start of every floor.
+      </li>
       <li>Glowing alcoves are shrines. Step on one for a gift that runs out; a dark one is already spent. The pips above your head are what you have running.</li>
       <li>Spirit makes every shrine go further: the timed ones last longer, the ward hands out more hearts. It creeps up as you level, and anything in your spirit slot adds to it.</li>
       <li>Every third floor has a shop. Walk into a podium to see what the item does, then buy it or walk away.</li>

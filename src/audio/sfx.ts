@@ -197,6 +197,18 @@ const SFX: Record<SfxId, Voice> = {
     tone(ctx, dest, { type: 'square', freq: 90, to: 60, dur: 0.4, gain: 0.09, at: 0.2 });
   },
 
+  /** A health potion downed in one go: a quick glug, then a bright little chime. */
+  potion(ctx, dest) {
+    noise(ctx, dest, { filter: 'bandpass', freq: 500, to: 1100, dur: 0.14, gain: 0.09, q: 1.0 });
+    arpeggio(ctx, dest, [hz(72), hz(76), hz(79), hz(84)], {
+      step: 0.06,
+      dur: 0.22,
+      gain: 0.12,
+      at: 0.08,
+      type: 'triangle',
+    });
+  },
+
   /** Waking up at full health. Soft — the player has been sitting still a while. */
   wake(ctx, dest) {
     tone(ctx, dest, { type: 'triangle', freq: hz(69), dur: 0.22, gain: 0.09, attack: 0.03 });

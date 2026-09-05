@@ -61,6 +61,12 @@ export interface LootItem {
   atk?: number; // permanent bonus
   def?: number; // permanent bonus
   maxHp?: number; // permanent bonus
+  /**
+   * A health potion: raises `Hero.potionCapacity` (and hands over that many
+   * potions right away). Unlike the other trinkets this one never melts down
+   * for coins on a repeat find — see `openChest` in game.ts.
+   */
+  potionCapacity?: number;
 }
 
 export interface Loot {
@@ -477,6 +483,16 @@ export interface Hero {
   gold: number;
   keys: Record<KeyKind, number>; // how many of each key kind the hero carries
   items: LootItem[]; // permanent items picked up (bonuses already applied to stats)
+  /**
+   * Health potions: found in chests, never bought. Each one found raises
+   * `potionCapacity` by one and is handed over full. Spent automatically the
+   * instant the hero would be knocked down and the phoenix feather (if worn)
+   * is not the one answering it (see `knockDown` in combat.ts): heals to half
+   * max hp instead of a knockdown, wherever the hero is, boss chambers
+   * included. Refills to `potionCapacity` at the start of every level.
+   */
+  potions: number;
+  potionCapacity: number;
   hitFlash: number; // ms remaining
   stun: number; // ms the hero cannot move (short staggers)
   /**
@@ -559,6 +575,7 @@ export type SfxId =
   | 'stairs'
   | 'levelUp'
   | 'knockDown'
+  | 'potion'
   | 'wake'
   | 'buy'
   | 'shieldUp'

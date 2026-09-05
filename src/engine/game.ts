@@ -390,6 +390,7 @@ export class Game {
     hero.rpos = { x: st.level.start.x, y: st.level.start.y };
     hero.keys = { door: 0, chest: 0 };
     hero.hp = Math.min(hero.maxHp, hero.hp + Math.floor((hero.maxHp - hero.hp) / 2));
+    hero.potions = hero.potionCapacity;
     hero.stun = 0;
     hero.sleeping = false;
     hero.hitFlash = 0;
@@ -546,9 +547,11 @@ export class Game {
     const stats = heroStats(hero);
     // One of each trinket is all the hero can carry: a second Rusty Sword is
     // dead weight. A duplicate is melted down and the chest pays coins, so the
-    // pile of chest loot cannot quietly out-grow the hero's own levels.
+    // pile of chest loot cannot quietly out-grow the hero's own levels. A
+    // health potion is exempt: it never sits idle in the same slot as a
+    // sword, so every one found raises capacity for real.
     const trinket = chest.loot.item;
-    if (trinket && hero.items.some((i) => i.name === trinket.name)) {
+    if (trinket && !trinket.potionCapacity && hero.items.some((i) => i.name === trinket.name)) {
       chest.loot.item = undefined;
       chest.loot.gold += trinketGold(st.depth);
     }
@@ -563,6 +566,10 @@ export class Game {
       if (item.maxHp) {
         hero.maxHp += item.maxHp;
         hero.hp += item.maxHp;
+      }
+      if (item.potionCapacity) {
+        hero.potionCapacity += item.potionCapacity;
+        hero.potions += item.potionCapacity;
       }
       hero.items.push(item);
     }

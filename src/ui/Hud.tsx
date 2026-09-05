@@ -133,13 +133,28 @@ function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound, onOpenVolu
       <div className="hud-bars">
         <div className="hud-bar-row">
           <span className="hud-bar-label">HP</span>
-          <Hearts
-            hp={model.hp}
-            maxHp={model.maxHp}
-            dim={model.stunned}
-            tempHp={model.tempHp}
-            tempHpMax={model.tempHpMax}
-          />
+          <div className="hud-hp-content">
+            <Hearts
+              hp={model.hp}
+              maxHp={model.maxHp}
+              dim={model.stunned}
+              tempHp={model.tempHp}
+              tempHpMax={model.tempHpMax}
+            />
+            {model.potionCapacity > 0 && (
+              <div
+                className="hud-potions"
+                role="img"
+                aria-label={`Health potions: ${model.potions} of ${model.potionCapacity}`}
+              >
+                {Array.from({ length: model.potionCapacity }, (_, i) => (
+                  <span key={i} className={`hud-potion${i < model.potions ? ' hud-potion-filled' : ''}`}>
+                    <PixelIcon name="potion" size={14} />
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="hud-bar-row">
           <span className="hud-bar-label">XP</span>

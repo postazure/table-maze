@@ -771,6 +771,7 @@ test('warrens are stocked, and their patrols have a beat that stays inside', () 
 test('chest loot is sane', () => {
   const rng = makeRng(21);
   let withItem = 0;
+  let withPotion = 0;
   for (let i = 0; i < 400; i++) {
     const loot = rollChestLoot(4, rng);
     assert.ok(loot.gold > 0);
@@ -778,9 +779,12 @@ test('chest loot is sane', () => {
     if (loot.item) {
       withItem++;
       assert.ok(loot.item.name.length > 0);
-      const bonus = (loot.item.atk ?? 0) + (loot.item.def ?? 0) + (loot.item.maxHp ?? 0);
+      if (loot.item.potionCapacity) withPotion++;
+      const bonus =
+        (loot.item.atk ?? 0) + (loot.item.def ?? 0) + (loot.item.maxHp ?? 0) + (loot.item.potionCapacity ?? 0);
       assert.ok(bonus > 0);
     }
   }
   assert.ok(withItem > 100 && withItem < 300, `item rate ${withItem / 400}`);
+  assert.ok(withPotion > 0, 'a potion should turn up somewhere in 400 rolls');
 });

@@ -15,6 +15,7 @@ function prize(loot: Loot): { icon: IconName; amount: number } {
   if (item?.atk) return { icon: 'sword', amount: item.atk };
   if (item?.def) return { icon: 'shield', amount: item.def };
   if (item?.maxHp) return { icon: 'heart', amount: Math.max(1, Math.round(item.maxHp / HEART)) };
+  if (item?.potionCapacity) return { icon: 'potion', amount: item.potionCapacity };
   return { icon: 'coin', amount: loot.gold };
 }
 

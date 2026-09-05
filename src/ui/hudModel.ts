@@ -43,6 +43,9 @@ export interface HudModel {
   doorKeys: number;
   chestKeys: number;
   kills: number;
+  /** Health potions: charges left, and how many the hero can carry. */
+  potions: number;
+  potionCapacity: number;
   stunned: boolean;
   /** The run's log, oldest first. Read only by the help screen's Log tab. */
   log: string[];
@@ -92,6 +95,8 @@ export function deriveHudModel(state: GameState): HudModel {
     doorKeys: hero.keys.door ?? 0,
     chestKeys: hero.keys.chest ?? 0,
     kills: state.stats.kills,
+    potions: hero.potions ?? 0,
+    potionCapacity: hero.potionCapacity ?? 0,
     stunned: hero.sleeping || hero.stun > 0,
     tempHp,
     tempHpMax: hero.tempHpMax ?? 0,
@@ -125,6 +130,8 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     a.doorKeys !== b.doorKeys ||
     a.chestKeys !== b.chestKeys ||
     a.kills !== b.kills ||
+    a.potions !== b.potions ||
+    a.potionCapacity !== b.potionCapacity ||
     a.stunned !== b.stunned ||
     a.atkBuffed !== b.atkBuffed ||
     a.defBuffed !== b.defBuffed ||

@@ -20,6 +20,7 @@ type BaseIconName =
   | 'chestKey'
   | 'skull'
   | 'heart'
+  | 'potion'
   | 'sound'
   | 'soundOff';
 /**
@@ -96,6 +97,11 @@ const BASE_ICONS: Record<BaseIconName, { rows: Rows; palette: Palette }> = {
   heart: {
     rows: ['.DD..DD.', 'DRRDDRRD', 'DRRRRRRD', 'DRRRRRRD', '.DRRRRD.', '..DRRD..', '...DD...', '........'],
     palette: { R: '#e53b3b', D: '#1a0507' },
+  },
+  // A small golden flask: narrow neck, round body, one highlight pixel.
+  potion: {
+    rows: ['...DD...', '...DD...', '..DDDD..', '.DGGGGD.', 'DGGGGGGD', 'DGWGGGGD', '.DGGGGD.', '..DDDD..'],
+    palette: { D: '#8a5a10', G: '#f5c451', W: '#fff6d0' },
   },
   skull: {
     rows: ['..WWWW..', '.WWWWWW.', 'WWEWWEWW', 'WWEWWEWW', 'WWWWWWWW', '.WWWWWW.', '..W.W.W.', '..WWWWW.'],
