@@ -143,7 +143,8 @@ export interface Buff {
  *            (see `lurkerSightRange`), so the easy floors leave more room to
  *            back out. Once the hero is further than
  *            `sightRange + 1`, or further than `leash` tiles from the
- *            lurker's home, it gives up and walks back `home` (`returning`).
+ *            lurker's home, it gives up (`returning`) and holds its ground
+ *            right there instead of walking back to `home`.
  *            This is the monster you bait: pull it away from the corridor it
  *            guards, then loop around it (levels contain a few loops).
  */

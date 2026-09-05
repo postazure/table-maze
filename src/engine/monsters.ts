@@ -345,7 +345,7 @@ function lurkerStep(state: GameState, m: Monster, stats: ItemStats): Vec | null 
 
   if (m.state === 'chasing') {
     // Lose the hero (a little hysteresis so it does not flicker), or run out
-    // of leash, and the lurker heads home.
+    // of leash, and the lurker gives up and holds its ground.
     const toHero = distToHero(state, m, m.pos, sight + 1);
     const fromHome = toHero === null ? null : distToHero(state, m, m.home, m.leash);
     if (fromHome === null) {
@@ -359,14 +359,9 @@ function lurkerStep(state: GameState, m: Monster, stats: ItemStats): Vec | null 
     }
   }
 
-  if (m.state === 'returning') {
-    if (eq(m.pos, m.home)) {
-      m.state = 'idle';
-      return null;
-    }
-    return stepToward(state, m, m.home, m.leash * 3 + 8);
-  }
-
+  // Disengaged: hold this spot rather than walking back to `home`. The
+  // re-aggro check above (tighter than idle's) still watches for the hero
+  // coming back within range of wherever it stopped.
   return null;
 }
 
