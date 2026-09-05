@@ -21,6 +21,12 @@ function store(): Storage | null {
 export function saveGame(state: GameState): void {
   const ls = store();
   if (!ls) return;
+  // A finished run is never written back: reloading must not resurrect a hero
+  // who died in a boss chamber. Wiping it here also frees the next New Game.
+  if (state.over) {
+    clearSave();
+    return;
+  }
   try {
     const data: SaveData = {
       version: SAVE_VERSION,
@@ -31,6 +37,7 @@ export function saveGame(state: GameState): void {
       trail: Array.from(state.trail),
       stats: state.stats,
       descending: 0,
+      over: false,
     };
     ls.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
@@ -54,6 +61,7 @@ export function loadGame(): GameState | null {
     if (!d || typeof d !== 'object') return null;
     if (d.version !== SAVE_VERSION) return null;
     if (typeof d.depth !== 'number' || typeof d.seed !== 'number') return null;
+    if (d.over) return null; // the run ended; there is nothing to go back to
 
     const hero = d.hero as Hero | undefined;
     if (!hero || typeof hero !== 'object') return null;
@@ -100,10 +108,16 @@ export function loadGame(): GameState | null {
       pointer: null,
       fx: [],
       log: [],
-      stats: d.stats ?? { kills: 0, deepest: d.depth, playMs: 0 },
+      stats: {
+        kills: d.stats?.kills ?? 0,
+        deepest: d.stats?.deepest ?? d.depth,
+        playMs: d.stats?.playMs ?? 0,
+        bosses: d.stats?.bosses ?? 0,
+      },
       descending: 0,
       modal: null,
       compass: null,
+      over: false,
     };
     return state;
   } catch {
