@@ -82,12 +82,16 @@ Requirements:
   order.
 - Warrens. After the route is known, flood-fill the floor with the route
   treated as a wall and braid the bigger pockets that fall out (>= 6 tiles) so
-  they loop back on themselves. Only open a wall when every floor tile it
-  touches is already inside that pocket: that is what stops a warren gaining a
-  second junction onto the route and becoming a way past a gate guard. Record
-  them in `LevelData.warrens`; blocking every warren tile must always leave the
-  stairs reachable. Stock them with guards and patrols (and the odd lurker) on
-  top of the route's own budget, and keep the route's monsters out of them.
+  they loop back on themselves. A pocket only becomes a warren if it touches
+  the rest of the maze at exactly one point — that tile is its `mouth`. Only
+  open a wall when every floor tile it touches is already inside that pocket,
+  which is what stops a warren gaining a second junction and turning into a way
+  past a gate guard. Record them in `LevelData.warrens`; blocking every warren
+  tile must always leave the stairs reachable. Stock them with guards and
+  patrols (and the odd lurker) on top of the route's own budget, and keep the
+  route's monsters out of them. The renderer draws the mouth as a hole knocked
+  through the wall (broken blocks either side, rubble on the floor both sides
+  of the threshold); nothing in the UI names them.
 - No unwinnable gate. Guards never move and heal back to full between attempts,
   so a guard on the only way to the stairs must be beatable or the run is dead.
   After placing monsters, re-roll every guard `gateGuards` reports at the

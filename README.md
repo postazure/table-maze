@@ -48,14 +48,16 @@ Play it at **https://postazure.github.io/table-maze/**
     chest, a door, the stairs themselves — hit far harder, and those you can
     walk around.
   - **Warrens** are the side branches that loop back on themselves rather than
-    dead-ending. They are never on the way down — you can always reach the
-    stairs without setting foot in one — and they hold guards and patrols of
-    their own. That is where you go when the guard on the critical path is
+    dead-ending. Each one branches off the maze at a single point and rejoins
+    nowhere, so walking one never carries you toward the stairs — it only costs
+    you the detour. You can always reach the stairs without setting foot in one.
+    They hold guards and patrols of their own. That is where you go when the guard on the critical path is
     beating you: clear a warren, come back a level or two up, and take the
     corridor. The loop is the point. It means you can break off a fight, let
     your hearts come back on the far side, and come at it again, which you
     cannot do in a dead end. A lurker turns up in one now and again, so they
-    are never free money.
+    are never free money. Nothing in the game labels them; look at the walls
+    where a passage opens.
   - **Lurkers** sit off the main path and chase you when you get close. They hit
     for whole hearts and outlast you at your level: fight one head-on and you'll
     be knocked down. Lure it away from the corridor it watches, then loop around

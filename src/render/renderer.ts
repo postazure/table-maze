@@ -16,6 +16,7 @@ import {
   type ItemKind,
   type ItemSlot,
   type ShopOffer,
+  key,
 } from '../engine/types';
 import { ITEM_ART, SLOT_ART, PODIUM_ART, PODIUM_NICHE } from './itemArt';
 import { themeById } from '../engine/themes';
@@ -316,6 +317,70 @@ const ARROW_ROWS: Record<(typeof ARROW_ORDER)[number], string[]> = {
   NW: ['AA...', 'A....', '..A..', '...A.', '....A'],
 };
 
+/**
+ * How deep, in sub-pixels, the wall is chewed away at a warren mouth. Small on
+ * purpose: enough to read as broken masonry, not enough to look walkable.
+ */
+const BREAK_DEPTH = 4;
+
+/** Sub-pixels from (lx, ly) to the tile face pointing along `d`. */
+function faceDepth(d: Vec, lx: number, ly: number): number {
+  if (d.x > 0) return SUB - 1 - lx;
+  if (d.x < 0) return lx;
+  if (d.y > 0) return SUB - 1 - ly;
+  return ly;
+}
+
+/**
+ * The stonework around a warren mouth, worked out from the level.
+ *
+ * A warren has exactly one way in, and nothing tells the player which of the
+ * openings off a corridor is the one that loops back on itself. So the mouth
+ * is drawn as a hole knocked through the wall: the two blocks framing it are
+ * chewed away on the faces that meet the gap, and the rubble is left lying on
+ * the floor of the opening. Nothing says so anywhere in the UI — it is there
+ * to be noticed, and then recognised.
+ */
+function mouthMasonry(level: LevelData): {
+  /** Wall tile -> unit vector from that block toward the gap it frames. */
+  broken: Map<string, Vec>;
+  /** Floor tile -> unit vector from that tile toward the break it lies under. */
+  rubble: Map<string, Vec>;
+} {
+  const broken = new Map<string, Vec>();
+  const rubble = new Map<string, Vec>();
+  const isWall = (p: Vec): boolean =>
+    p.x >= 0 && p.y >= 0 && p.x < level.width && p.y < level.height && level.tiles[p.y][p.x] === Tile.Wall;
+
+  for (const warren of level.warrens ?? []) {
+    const inside = new Set(warren.tiles.map(key));
+    const m = warren.mouth;
+    // The passage runs from the corridor outside into the mouth tile; the
+    // blocks that frame it are the two at right angles to that.
+    const out = [
+      { x: 1, y: 0 },
+      { x: -1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: -1 },
+    ]
+      .map((d) => ({ x: m.x + d.x, y: m.y + d.y }))
+      .find((p) => !isWall(p) && !inside.has(key(p)));
+    if (!out) continue;
+    const along = { x: out.x - m.x, y: out.y - m.y };
+    const side = { x: along.y, y: along.x }; // turn ninety degrees
+    for (const sign of [1, -1]) {
+      const w = { x: m.x + side.x * sign, y: m.y + side.y * sign };
+      if (!isWall(w)) continue;
+      broken.set(key(w), { x: m.x - w.x, y: m.y - w.y });
+    }
+    // Rubble falls on both sides of the threshold, so the break still reads
+    // when the hero is standing in the gap. It piles against the gap itself.
+    rubble.set(key(m), { x: along.x, y: along.y });
+    rubble.set(key(out), { x: -along.x, y: -along.y });
+  }
+  return { broken, rubble };
+}
+
 function hash2(x: number, y: number): number {
   let h = x * 374761393 + y * 668265263;
   h = (h ^ (h >>> 13)) * 1274126177;
@@ -462,11 +527,15 @@ export class Renderer implements TileMapper {
     const sctx = this.staticCanvas.getContext('2d');
     if (!sctx) return;
     const pal = themeById(level.theme).palette;
+    const { broken, rubble } = mouthMasonry(level);
     const img = sctx.createImageData(w, h);
     for (let ty = 0; ty < level.height; ty++) {
       const row = level.tiles[ty];
       for (let tx = 0; tx < level.width; tx++) {
         const isWall = row[tx] === Tile.Wall;
+        const k = key({ x: tx, y: ty });
+        const breakToward = broken.get(k);
+        const rubbleToward = rubble.get(k);
         for (let ly = 0; ly < SUB; ly++) {
           const gy = ty * SUB + ly;
           for (let lx = 0; lx < SUB; lx++) {
@@ -481,6 +550,19 @@ export class Renderer implements TileMapper {
               if (isMortarV || isMortarH) hex = pal.mortar;
               else if (ly % 4 === 1) hex = pal.wallHi;
               else hex = (tx + brickRow) % 2 === 0 ? pal.wallA : pal.wallB;
+              // A block framing a warren mouth is chewed away on the face that
+              // meets the gap, in a ragged line so it reads as knocked through
+              // rather than cut.
+              if (breakToward) {
+                const fromFace = faceDepth(breakToward, lx, ly);
+                // Band the randomness so the edge steps in chunks the size of
+                // a broken brick rather than flickering pixel by pixel.
+                const band = breakToward.x !== 0 ? ly >> 1 : lx >> 1;
+                const bite = 1 + (hash2(tx * 31 + band, ty * 17) % BREAK_DEPTH);
+                if (fromFace < bite) {
+                  hex = fromFace === bite - 1 ? pal.wallHi : pal.mortar;
+                }
+              }
             } else {
               const hv = hash2(tx, ty);
               const slx = (hv >> 3) % SUB;
@@ -489,6 +571,17 @@ export class Renderer implements TileMapper {
                 hex = hv % 2 === 0 ? pal.speckLight : pal.speckDark;
               } else {
                 hex = pal.floor;
+              }
+              // Fallen masonry on the threshold of a warren: chips of the wall
+              // lying on the floor, in the wall's own colours so they read as
+              // rubble rather than as more of the floor. It piles up against
+              // the gap and thins out across the tile, the way spill does.
+              if (rubbleToward) {
+                const spread = faceDepth(rubbleToward, lx, ly);
+                const hr = hash2(gx * 31 + 5, gy * 17 + 3);
+                if (hr % (2 + spread * 2) === 0) {
+                  hex = hr % 5 === 0 ? pal.wallHi : pal.wallB;
+                }
               }
             }
             const [r, g, b] = hexToRgb(hex);

@@ -162,6 +162,23 @@ export interface Monster {
   roomId?: number;
 }
 
+/**
+ * A pocket of the maze that branches off the route to the stairs, loops back on
+ * itself, and rejoins nowhere: walking one never advances you toward the
+ * stairs, it only costs you the detour. Blocking every tile of every warren
+ * always leaves the stairs reachable.
+ */
+export interface Warren {
+  /**
+   * The one tile inside the warren that touches the rest of the maze — its
+   * only way in or out. The renderer breaks the wall open around this tile so
+   * the player can learn to read a side passage without being told.
+   */
+  mouth: Vec;
+  /** Every tile of the warren, `mouth` included. */
+  tiles: Vec[];
+}
+
 export interface LevelData {
   depth: number; // 1-based dungeon depth
   seed: number;
@@ -186,12 +203,10 @@ export interface LevelData {
   chests: Chest[];
   monsters: Monster[];
   /**
-   * Off-path pockets braided into loops (see maze.ts). Optional: absent on
-   * boss and shop floors, and on levels saved before warrens existed. Blocking
-   * every tile in here always leaves the stairs reachable — a warren is
-   * somewhere you choose to go, never part of the way down.
+   * Side loops off the route (see maze.ts). Optional: absent on boss and shop
+   * floors, and on levels saved before warrens existed.
    */
-  warrens?: Vec[][];
+  warrens?: Warren[];
 }
 
 // ---------------------------------------------------------------------------

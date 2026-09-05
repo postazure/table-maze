@@ -13,7 +13,7 @@
  * 7. Validate solvability; retry with a re-mixed seed, relax as a last resort.
  */
 import { Tile, key, parseKey, eq } from './types';
-import type { Chest, Door, KeyItem, LevelData, Monster, RosterKind, Rng, Vec } from './types';
+import type { Chest, Door, KeyItem, LevelData, Monster, RosterKind, Rng, Vec, Warren } from './types';
 import { hashSeed, makeRng } from './rng';
 import { levelDims, makeMonster, rollChestLoot } from './balance';
 import { themeForDepth } from './themes';
@@ -398,13 +398,13 @@ function placeMonsters(
   onMain: Set<string>,
   used: Set<string>,
   dist: Map<string, number>,
-  warrens: Vec[][],
+  warrens: Warren[],
   rng: Rng,
 ): void {
   // The warrens get their own monsters afterwards. Keeping the route's budget
   // out of them leaves each warren a self-contained pocket rather than a place
   // the floor quietly hides half its guards.
-  const inWarren = new Set(warrens.flat().map(key));
+  const inWarren = new Set(warrens.flatMap((w) => w.tiles).map(key));
   const count = Math.min(ROUTE_MONSTER_CAP, 5 + Math.floor(depth * 1.5));
   // The first floor teaches the controls: patrols to swing at and guards to
   // decide about, but no lurker, which a level-one hero cannot beat head-on.
@@ -552,14 +552,19 @@ function spawnLurker(
 // Warrens
 // ---------------------------------------------------------------------------
 
+/** Every tile of every warren on the floor, flattened. */
+export function warrenTilesOf(level: LevelData): Vec[] {
+  return (level.warrens ?? []).flatMap((w) => w.tiles);
+}
+
 /** Smallest pocket off the main path worth braiding into a warren. */
 const WARREN_MIN_TILES = 6;
 /** Fraction of a warren's dead ends opened into a loop. */
 const WARREN_BRAID = 0.7;
 /** One extra monster per this many warren tiles. */
-const WARREN_TILES_PER_MONSTER = 9;
+const WARREN_TILES_PER_MONSTER = 5;
 /** Never more than this many extra monsters in one warren. */
-export const WARREN_MONSTER_CAP = 3;
+export const WARREN_MONSTER_CAP = 4;
 /** ...nor more than this many across all of a floor's warrens. */
 export const WARREN_MONSTER_BUDGET = 14;
 
@@ -606,12 +611,17 @@ function offPathPockets(level: LevelData, onMain: Set<string>): Vec[][] {
  * second junction onto the route, so it never becomes a way around the guard
  * standing on it.
  */
-function carveWarrens(level: LevelData, mainPath: Vec[], rng: Rng): Vec[][] {
+function carveWarrens(level: LevelData, mainPath: Vec[], rng: Rng): Warren[] {
   const onMain = new Set([key(level.start), ...mainPath.map(key)]);
-  const warrens: Vec[][] = [];
+  const warrens: Warren[] = [];
   for (const pocket of offPathPockets(level, onMain)) {
     if (pocket.length < WARREN_MIN_TILES) continue;
     const inPocket = new Set(pocket.map(key));
+    // One way in, or it is not a warren: a pocket that touches the route twice
+    // is a loop through the level rather than a loop off it, and walking it
+    // would advance the player instead of costing them the detour.
+    const mouth = soleMouth(level, pocket, inPocket);
+    if (!mouth) continue;
     const ends = pocket.filter((p) => floorNeighbors(level, p).length === 1);
     rng.shuffle(ends);
     const opened: Vec[] = [];
@@ -623,9 +633,28 @@ function carveWarrens(level: LevelData, mainPath: Vec[], rng: Rng): Vec[][] {
       opened.push(w);
     }
     if (!opened.length) continue; // still a plain dead end: not a warren
-    warrens.push([...pocket, ...opened]);
+    warrens.push({ mouth, tiles: [...pocket, ...opened] });
   }
   return warrens;
+}
+
+/**
+ * The one tile of `pocket` that touches the rest of the maze, or null if it
+ * touches at more than one place (or none). This is the tile the renderer
+ * breaks the wall open around, so the player can learn the shape without
+ * being told.
+ */
+function soleMouth(level: LevelData, pocket: Vec[], inPocket: Set<string>): Vec | null {
+  let mouth: Vec | null = null;
+  let ways = 0;
+  for (const p of pocket) {
+    for (const nb of floorNeighbors(level, p)) {
+      if (inPocket.has(key(nb))) continue;
+      if (++ways > 1) return null; // a second way in
+      mouth = p;
+    }
+  }
+  return ways === 1 ? mouth : null;
 }
 
 /**
@@ -689,7 +718,7 @@ function warrenBeat(level: LevelData, from: Vec, inWarren: Set<string>, rng: Rng
 function stockWarrens(
   level: LevelData,
   depth: number,
-  warrens: Vec[][],
+  warrens: Warren[],
   used: Set<string>,
   dist: Map<string, number>,
   rng: Rng,
@@ -697,15 +726,15 @@ function stockWarrens(
   const lurkers = depth >= LURKERS_FROM_DEPTH;
   let n = level.monsters.length;
   let budget = WARREN_MONSTER_BUDGET;
-  for (const warren of warrens) {
-    const want = Math.min(budget, WARREN_MONSTER_CAP, Math.floor(warren.length / WARREN_TILES_PER_MONSTER));
+  for (const { tiles } of warrens) {
+    const want = Math.min(budget, WARREN_MONSTER_CAP, Math.floor(tiles.length / WARREN_TILES_PER_MONSTER));
     if (want <= 0) continue;
-    const spots = warren.filter((p) => {
+    const spots = tiles.filter((p) => {
       const k = key(p);
       return !used.has(k) && (dist.get(k) ?? 0) >= MONSTER_MIN_DIST;
     });
     rng.shuffle(spots);
-    const inWarren = new Set(warren.map(key));
+    const inWarren = new Set(tiles.map(key));
     for (let i = 0; i < want && i < spots.length; i++) {
       const spot = spots[i];
       const roll = rng.next();
@@ -832,7 +861,7 @@ function validate(level: LevelData): boolean {
 
   // Warrens are detours, never the route: wall every one of them off and the
   // stairs must still be reachable, or a warren has become a way past a gate.
-  const warrenTiles = new Set((level.warrens ?? []).flat().map(key));
+  const warrenTiles = new Set(warrenTilesOf(level).map(key));
   if (warrenTiles.size) {
     const without = bfsDistances(level, start, {
       blocked: (p) => warrenTiles.has(key(p)) || chestTiles.has(key(p)),
