@@ -62,7 +62,12 @@ Requirements:
   `levelDims(depth)`, then braid it: open ~15% of dead ends to create loops so
   lurkers can be baited and out-run.
 - `start` near the top-left region, `exit` far from start (use BFS distance;
-  pick among the farthest tiles).
+  pick among the farthest tiles) AND at a dead end. Stepping onto the stairs
+  ends the floor, so the hero can never cross them: floor on the far side is
+  ground nobody will ever stand on, and anything generated out there is wasted.
+  Every floor tile must be reachable from `start` without passing through
+  `exit`. A far dead end exists on every floor and costs under two tiles of
+  distance on average, so this is close to free.
 - Doors: 1 + floor(depth / 3) doors (cap 4) placed ON the start→exit path at
   corridor tiles (both side neighbours are walls). Each door needs a matching
   door key placed somewhere reachable WITHOUT passing through that door (or

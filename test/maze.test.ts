@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HEART, Tile, key } from '../src/engine/types';
+import { HEART, Tile, eq, key } from '../src/engine/types';
 import type { Hero, LevelData, Monster, Rng, Vec } from '../src/engine/types';
 import {
   ROUTE_MONSTER_CAP,
@@ -599,6 +599,33 @@ test('a warren is never part of the route: wall them all off and the stairs rema
         without.has(key(level.exit)),
         `depth ${depth} seed ${seed}: a warren has become a way round the route`,
       );
+    }
+  }
+});
+
+test('nothing is generated beyond the stairs', () => {
+  // Walking onto the stairs ends the floor, so the hero can never cross them.
+  // Anything on the far side would be generated and never seen.
+  for (const depth of DEPTHS) {
+    for (const seed of SEEDS) {
+      const level = generateLevel(depth, seed);
+      const where = `depth ${depth} seed ${seed}`;
+      assert.equal(
+        floorNeighbors(level, level.exit).length,
+        1,
+        `${where}: the stairs have floor on more than one side`,
+      );
+      const chestTiles = new Set(level.chests.map((c) => key(c.pos)));
+      const reach = bfsDistances(level, level.start, {
+        blocked: (p) => chestTiles.has(key(p)) || eq(p, level.exit),
+      });
+      for (let y = 1; y < level.height - 1; y++) {
+        for (let x = 1; x < level.width - 1; x++) {
+          const p = { x, y };
+          if (!isFloor(level, p) || eq(p, level.exit) || chestTiles.has(key(p))) continue;
+          assert.ok(reach.has(key(p)), `${where}: ${key(p)} can only be reached through the stairs`);
+        }
+      }
     }
   }
 });

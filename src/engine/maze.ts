@@ -278,14 +278,25 @@ function pickStart(level: LevelData, core: Rect, rng: Rng): Vec {
   return cands.length ? rng.pick(cands) : { x: core.x + 1, y: core.y + 1 };
 }
 
+/**
+ * The stairs go as far from the start as possible, and at a dead end.
+ *
+ * The hero descends the moment they step on the stairs, so they can never walk
+ * through them: any floor on the far side is ground nobody will ever stand on,
+ * and any key, chest, monster or warren out there may as well not have been
+ * generated. A dead end has no far side. It costs almost nothing — there is
+ * one within a couple of tiles of the farthest tile on every floor.
+ */
 function pickExit(level: LevelData, dist: Map<string, number>, rng: Rng): Vec {
   const all: { p: Vec; d: number }[] = [];
   for (const [k, d] of dist) all.push({ p: parseKey(k), d });
   all.sort((a, b) => b.d - a.d || a.p.y - b.p.y || a.p.x - b.p.x);
   if (!all.length) return level.start;
-  const top = all.slice(0, Math.min(5, all.length));
+  const ends = all.filter((c) => floorNeighbors(level, c.p).length === 1);
+  const pool = ends.length ? ends : all;
+  const top = pool.slice(0, Math.min(5, pool.length));
   const chosen = rng.pick(top);
-  return eq(chosen.p, level.start) ? all[0].p : chosen.p;
+  return eq(chosen.p, level.start) ? pool[0].p : chosen.p;
 }
 
 /** A floor tile with exactly two floor neighbours that face each other. */
@@ -919,6 +930,20 @@ function validate(level: LevelData): boolean {
     if (!floorNeighbors(level, c.pos).some((nb) => open.has(key(nb)))) return false;
   }
   for (const k of level.keys) if (!open.has(key(k.pos))) return false;
+
+  // Nothing past the stairs. Walking onto them ends the floor, so every tile
+  // has to be reachable without crossing them, or it is ground the hero can
+  // see on the way down and never stand on.
+  const beyondStairs = bfsDistances(level, start, {
+    blocked: (p) => chestTiles.has(key(p)) || eq(p, exit),
+  });
+  for (let y = 1; y < level.height - 1; y++) {
+    for (let x = 1; x < level.width - 1; x++) {
+      const p = { x, y };
+      if (!isFloor(level, p) || eq(p, exit) || chestTiles.has(key(p))) continue;
+      if (!beyondStairs.has(key(p))) return false;
+    }
+  }
 
   // Warrens are detours, never the route: wall every one of them off and the
   // stairs must still be reachable, or a warren has become a way past a gate.
