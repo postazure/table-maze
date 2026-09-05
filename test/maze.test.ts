@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HEART, Tile, key } from '../src/engine/types';
-import type { LevelData, Vec } from '../src/engine/types';
-import { generateLevel } from '../src/engine/maze';
+import type { Hero, LevelData, Monster, Rng, Vec } from '../src/engine/types';
+import { gateGuards, generateLevel } from '../src/engine/maze';
 import { bfsDistances, bfsPath, floorNeighbors, isFloor } from '../src/engine/pathfind';
 import {
   applyLevelUp,
@@ -332,6 +332,133 @@ test('monster stats scale with depth', () => {
   assert.equal(lurker.attackCooldown, 0);
   assert.equal(lurker.lungeT, 0);
   assert.equal(lurker.hitFlash, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Gates: the way down is never barred by a fight the hero cannot win
+// ---------------------------------------------------------------------------
+
+test('every guard you cannot walk around sits at the floor\'s own level', () => {
+  for (const depth of DEPTHS) {
+    for (const seed of SEEDS) {
+      const level = generateLevel(depth, seed);
+      for (const g of gateGuards(level)) {
+        assert.ok(
+          g.level <= depth,
+          `depth ${depth} seed ${seed}: gate ${g.id} is level ${g.level}`,
+        );
+      }
+    }
+  }
+});
+
+test('blocking every guard that is not a gate still leaves the stairs reachable', () => {
+  for (const depth of DEPTHS) {
+    for (const seed of SEEDS) {
+      const level = generateLevel(depth, seed);
+      const gates = new Set(gateGuards(level).map((g) => g.id));
+      const solid = new Set([
+        ...level.chests.map((c) => key(c.pos)),
+        ...level.monsters.filter((m) => m.kind === 'guard' && !gates.has(m.id)).map((m) => key(m.pos)),
+      ]);
+      const reach = bfsDistances(level, level.start, { blocked: (p) => solid.has(key(p)) });
+      assert.ok(reach.has(key(level.exit)), `depth ${depth} seed ${seed}: only non-gate guards bar the way`);
+    }
+  }
+});
+
+test('the first floor has no lurkers and no fight a brand-new hero can lose', () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const level = generateLevel(1, seed);
+    assert.equal(
+      level.monsters.filter((m) => m.kind === 'lurker').length,
+      0,
+      `seed ${seed}: floor one is patrols and guards only`,
+    );
+    for (const m of level.monsters) {
+      const r = headOn(newHero(), m, makeRng(seed * 31 + 7));
+      assert.ok(r.win, `seed ${seed}: a level-one hero loses to the ${m.kind} (level ${m.level})`);
+    }
+  }
+});
+
+/**
+ * A head-on fight to the death: the hero swings every HOLD_ATTACK_MS, the
+ * monster on its own clock, nobody runs away and nobody heals. Enough to say
+ * whether a fight is winnable at all, which is what the gate rules promise.
+ */
+function headOn(hero: Hero, m: Monster, rng: Rng): { win: boolean; heartsLeft: number } {
+  const HOLD_ATTACK_MS = 300;
+  let hp = hero.hp;
+  let mhp = m.hp;
+  let heroCd = HOLD_ATTACK_MS;
+  let monsterCd = m.attackInterval;
+  for (let t = 0; t < 300000; ) {
+    const dt = Math.min(heroCd, monsterCd);
+    t += dt;
+    heroCd -= dt;
+    monsterCd -= dt;
+    if (heroCd <= 0) {
+      mhp -= damage(hero.atk, m.def, rng);
+      heroCd = HOLD_ATTACK_MS;
+      if (mhp <= 0) return { win: true, heartsLeft: hp / hero.maxHp };
+    }
+    if (monsterCd <= 0) {
+      hp -= damage(m.atk, hero.def, rng);
+      monsterCd = m.attackInterval;
+      if (hp <= 0) return { win: false, heartsLeft: 0 };
+    }
+  }
+  return { win: false, heartsLeft: 0 };
+}
+
+test('the three roles still read the same against a hero who keeps pace', () => {
+  const rng = makeRng(4242);
+  for (const depth of [2, 5, 10, 16, 22]) {
+    // A hero one level over the floor: what clearing each floor actually gives.
+    const hero = newHero();
+    while (hero.level <= depth) {
+      hero.xp = hero.xpToNext;
+      applyLevelUp(hero);
+    }
+    const cost = (kind: 'patrol' | 'guard' | 'lurker') => {
+      let spent = 0;
+      let wins = 0;
+      const N = 60;
+      for (let i = 0; i < N; i++) {
+        const r = headOn(hero, makeMonster(kind, depth, rng, { x: 1, y: 1 }, 'm'), rng);
+        spent += 1 - r.heartsLeft;
+        if (r.win) wins++;
+      }
+      return { spent: spent / N, winRate: wins / N };
+    };
+    const where = `depth ${depth}`;
+    assert.ok(cost('patrol').spent < 0.15, `${where}: a patrol is a speed bump`);
+    const guard = cost('guard');
+    assert.ok(guard.winRate > 0.9, `${where}: a guard is won at level`);
+    assert.ok(guard.spent > 0.15, `${where}: but a guard costs real hearts (${guard.spent.toFixed(2)})`);
+    assert.ok(cost('lurker').winRate < 0.5, `${where}: a lurker is not a fight to pick`);
+  }
+});
+
+test('clearing a floor is worth about one level, not five', () => {
+  // The hero must track the depth: too fast and every floor after the first is
+  // free, too slow and the gate guards become walls.
+  const hero = newHero();
+  const owned = new Set<string>();
+  for (let depth = 1; depth <= 20; depth++) {
+    const level = generateLevel(depth, 1234);
+    // A thorough player: every patrol and guard, every chest, no lurkers.
+    for (const m of level.monsters) if (m.kind !== 'lurker') hero.xp += m.xp;
+    for (const c of level.chests) {
+      hero.xp += c.loot.xp;
+      const item = c.loot.item;
+      if (item) owned.add(item.name);
+    }
+    applyLevelUp(hero);
+    const gap = hero.level - depth;
+    assert.ok(gap >= 0 && gap <= 2, `depth ${depth}: hero is level ${hero.level}`);
+  }
 });
 
 test('chest loot is sane', () => {

@@ -22,6 +22,8 @@ import { bfsDistances, bfsPath, floorNeighbors, isFloor } from './pathfind';
 const MAX_ATTEMPTS = 20;
 /** Minimum BFS distance from `start` at which a monster may spawn. */
 const MONSTER_MIN_DIST = 5;
+/** First depth that carries lurkers. Floor one is patrols and guards only. */
+const LURKERS_FROM_DEPTH = 2;
 
 interface GenOpts {
   doors: boolean;
@@ -227,6 +229,7 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
   }
 
   placeMonsters(level, depth, fullPath, onMain, used, distFromStart, rng);
+  easeGates(level, depth, rng);
   return level;
 }
 
@@ -390,11 +393,14 @@ function placeMonsters(
   rng: Rng,
 ): void {
   const count = Math.min(18, 5 + Math.floor(depth * 1.5));
+  // The first floor teaches the controls: patrols to swing at and guards to
+  // decide about, but no lurker, which a level-one hero cannot beat head-on.
+  const lurkers = depth >= LURKERS_FROM_DEPTH;
   const kinds: RosterKind[] = [];
-  if (count >= 3) kinds.push('guard', 'patrol', 'lurker');
+  if (count >= 3) kinds.push('guard', 'patrol', lurkers ? 'lurker' : 'patrol');
   while (kinds.length < count) {
     const r = rng.next();
-    kinds.push(r < 0.35 ? 'guard' : r < 0.65 ? 'patrol' : 'lurker');
+    kinds.push(r < 0.35 ? 'guard' : r < 0.65 || !lurkers ? 'patrol' : 'lurker');
   }
   rng.shuffle(kinds);
 
@@ -530,6 +536,69 @@ function spawnLurker(
 }
 
 // ---------------------------------------------------------------------------
+// Gates
+// ---------------------------------------------------------------------------
+
+/**
+ * The guards the player has no choice but to beat: the cheapest route from the
+ * start to the stairs, counting one for every guard it has to walk through.
+ * Doors are treated as open (`canProgress` guarantees their keys); chests are
+ * solid but only ever sit in dead ends.
+ */
+export function gateGuards(level: LevelData): Monster[] {
+  const guards = new Map<string, Monster>();
+  for (const m of level.monsters) if (m.alive && m.kind === 'guard') guards.set(key(m.pos), m);
+  const solid = new Set(level.chests.map((c) => key(c.pos)));
+
+  // 0-1 BFS: stepping onto a guard costs one, every other floor tile is free.
+  const cost = new Map<string, number>();
+  const from = new Map<string, string>();
+  const deque: string[] = [key(level.start)];
+  cost.set(key(level.start), 0);
+  while (deque.length) {
+    const k = deque.shift() as string;
+    const c = cost.get(k) as number;
+    if (k === key(level.exit)) break;
+    for (const nb of floorNeighbors(level, parseKey(k))) {
+      const nk = key(nb);
+      if (solid.has(nk)) continue;
+      const nc = c + (guards.has(nk) ? 1 : 0);
+      if (nc >= (cost.get(nk) ?? Infinity)) continue;
+      cost.set(nk, nc);
+      from.set(nk, k);
+      if (nc === c) deque.unshift(nk);
+      else deque.push(nk);
+    }
+  }
+
+  const out: Monster[] = [];
+  let cur: string | undefined = key(level.exit);
+  if (!cost.has(cur)) return out; // no route at all: validate() rejects the level
+  while (cur !== undefined) {
+    const g = guards.get(cur);
+    if (g) out.push(g);
+    cur = from.get(cur);
+  }
+  return out;
+}
+
+/**
+ * Re-roll every gate guard at the floor's own level. A guard never moves, and
+ * a knockdown heals it back to full, so a gate the hero cannot out-fight is a
+ * softlock: no way down, and nothing left to grind for the levels that would
+ * win the fight. Guards anywhere else — beside a chest, off a loop, on the
+ * doorstep of the stairs — keep their full strength.
+ */
+function easeGates(level: LevelData, depth: number, rng: Rng): void {
+  for (const gate of gateGuards(level)) {
+    const eased = makeMonster('guard', depth, rng, gate.pos, gate.id, { gate: true });
+    eased.name = gate.name; // the look was already rolled from this floor's theme
+    eased.glyph = gate.glyph;
+    level.monsters[level.monsters.indexOf(gate)] = eased;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 
@@ -570,6 +639,10 @@ function validate(level: LevelData): boolean {
     if (!floorNeighbors(level, c.pos).some((nb) => open.has(key(nb)))) return false;
   }
   for (const k of level.keys) if (!open.has(key(k.pos))) return false;
+
+  // Every guard the player cannot walk around sits at the floor's own level,
+  // so the way down is never barred by a fight the hero cannot win.
+  for (const g of gateGuards(level)) if (g.level > level.depth) return false;
 
   // Monsters: enough of them, none lurking on the doorstep.
   if (level.monsters.length < 3) return false;

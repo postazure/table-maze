@@ -1046,6 +1046,34 @@ test('the gold charm swells monster drops and chest gold', () => {
   assert.equal(g.state.level.chests[0].loot.xp, 4);
 });
 
+test('the hero carries one of each trinket; a duplicate is coins instead', () => {
+  const sword = () => ({ name: 'Rusty Sword', atk: 2 });
+  const g = corridorGame({
+    chests: [{ id: 'c1', pos: { x: 2, y: 1 }, opened: false, loot: { gold: 10, xp: 4, item: sword() } }],
+  });
+  const hero = g.state.hero;
+  const atk = hero.atk;
+  const chest = g.state.level.chests[0];
+
+  hero.keys.chest = 1;
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(150);
+  assert.equal(hero.atk, atk + 2, 'the first sword is a real prize');
+  assert.equal(hero.gold, 10);
+  g.dismissModal();
+
+  // The same sword out of a second chest: nothing to gain, so it pays coins.
+  chest.opened = false;
+  chest.loot = { gold: 10, xp: 4, item: sword() };
+  hero.keys.chest = 1;
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(150);
+  assert.equal(chest.opened, true);
+  assert.equal(hero.atk, atk + 2, 'a second Rusty Sword adds nothing');
+  assert.ok(hero.gold > 20, `the duplicate is melted down for coins (${hero.gold})`);
+  assert.equal(chest.loot.item, undefined, 'and the popup shows coins');
+});
+
 test('the key compass points at the nearest key, then at the stairs', () => {
   const g = corridorGame({
     keys: [
