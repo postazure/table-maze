@@ -427,7 +427,7 @@ test('monsters leave a sleeping hero alone', () => {
   const rng = makeRng(2);
   for (let i = 0; i < 20; i++) updateMonsters(g.state, 100, rng);
   assert.ok(hero.hp >= 1 && hero.hitFlash === 0, 'never attacked while asleep');
-  assert.notEqual(m.state, 'chasing', 'the lurker gives up the chase and heads home');
+  assert.notEqual(m.state, 'chasing', 'the lurker gives up the chase and holds its ground');
 });
 
 test('out-of-combat regen ticks 1hp every 600ms', () => {
@@ -507,13 +507,13 @@ test('a lurker starts chasing when the hero comes within sightRange', () => {
   assert.equal(lurk.state, 'chasing');
   assert.deepEqual(lurk.pos, { x: 4, y: 2 }, 'steps toward the hero');
 
-  // Out of leash from home -> gives up and walks back.
+  // Out of leash from home -> gives up and holds its ground.
   g.state.hero.pos = { x: 1, y: 2 };
   lurk.leash = 1;
   lurk.moveCooldown = 0;
   updateMonsters(g.state, 16, rng);
   assert.equal(lurk.state, 'returning');
-  assert.deepEqual(lurk.pos, { x: 5, y: 2 }, 'heads home');
+  assert.deepEqual(lurk.pos, { x: 4, y: 2 }, 'stays put instead of walking home');
 });
 
 test('lurker aggro range shrinks with the level gap, capped both ways', () => {
@@ -1508,7 +1508,7 @@ test('a lurker gives up once the hero is out of aggro range', () => {
   lurk.moveCooldown = 0;
   updateMonsters(g.state, 16, rng);
   assert.equal(lurk.state, 'returning', 'the chase is off');
-  assert.deepEqual(lurk.pos, { x: 10, y: 1 }, 'and it heads home');
+  assert.deepEqual(lurk.pos, { x: 9, y: 1 }, 'and it stays right where it gave up');
 });
 
 test('a patrol never chases the hero off its route', () => {
