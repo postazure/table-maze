@@ -4,7 +4,19 @@
  * No DOM access here: `main.ts` drives `tick`, `input.ts` drives `pointerAt`/
  * `pointerEnd`, and `onChange` is the "worth persisting" signal for save.ts.
  */
-import type { BossData, Chest, Dir, GameState, Hero, Monster, Rng, ShopOffer, Vec } from './types';
+import type {
+  BossData,
+  Buff,
+  Chest,
+  Dir,
+  GameState,
+  Hero,
+  Monster,
+  Rng,
+  ShopOffer,
+  Shrine,
+  Vec,
+} from './types';
 import { ANGEL_CREEP_MS, HEART, ITEM_SLOT, SAVE_VERSION, eq, key, manhattan } from './types';
 import { hashSeed, makeRng } from './rng';
 import { bfsDistances, bfsPath } from './pathfind';
@@ -16,6 +28,7 @@ import {
   GOLD,
   GREEN,
   GREY,
+  ICE,
   ORANGE,
   RED,
   chestAt,
@@ -29,6 +42,7 @@ import {
   pushSfx,
   pushShake,
   pushText,
+  shrineAt,
   unitToward,
 } from './combat';
 import { isFloor } from './pathfind';
@@ -43,6 +57,19 @@ import {
   reviveGear,
   upgradeRandomItem,
 } from './items';
+import {
+  FREEZE_MS,
+  FROST_RANGE,
+  SHRINE_COLORS,
+  TIME_RADIUS,
+  addBuff,
+  frostDmg,
+  frostIntervalMs,
+  mendPulseMs,
+  reviveBuffs,
+  shrineName,
+  wardTempHp,
+} from './shrines';
 import { generateShopLevel, offerAt, offerCenter } from './shop';
 import { BOSS_EVERY, bossName, generateBossLevel, makeBossMonster, roomAt } from './boss';
 
@@ -83,6 +110,8 @@ const BANE_PULSE_MS = 2000;
 const COMPASS_MS = 500;
 /** The necromancer's colour: his channelling ring and his exit. */
 const PURPLE = '#b98cff';
+/** ms between the ripples a time-bubble shrine sends out. */
+const TIME_PULSE_MS = 900;
 
 export class Game {
   state!: GameState;
@@ -99,6 +128,8 @@ export class Game {
   private regenTimer = 0;
   private sleepTimer = 0;
   private berserkTimer = 0;
+  /** ms toward the next time-bubble ripple (see tickBuffs). */
+  private timePulseTimer = 0;
   private compassTimer = COMPASS_MS;
   private dirty = false;
   /**
@@ -215,10 +246,11 @@ export class Game {
       return;
     }
 
-    // --- magic items -------------------------------------------------------
+    // --- magic items and shrine buffs ---------------------------------------
     const stats = heroStats(hero);
     const posBeforeStep = hero.pos;
     this.passives(dt, stats);
+    this.tickBuffs(dt);
 
     // --- hero movement -----------------------------------------------------
     const moveMs = heroMoveMs(hero);
@@ -754,6 +786,9 @@ export class Game {
       this.dirty = true;
     }
 
+    const shrine = shrineAt(level, tile);
+    if (shrine) this.lightShrine(shrine);
+
     if (eq(tile, level.exit)) {
       // The stairs of a minotaur / angel chamber ARE the objective: claim the
       // reward first, then descend once the player dismisses the popup.
@@ -982,6 +1017,170 @@ export class Game {
     pushLog(st, `${bossName(boss.kind)} is beaten!`);
     pushSfx(st, 'bossWin');
     this.dirty = true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Shrines
+  // -------------------------------------------------------------------------
+
+  /**
+   * The hero stepped into an alcove. Nothing about a shrine blocks, so this is
+   * the whole interaction: the shrine lights once, hands over its gift, and
+   * goes dark for the rest of the floor.
+   */
+  private lightShrine(shrine: Shrine): void {
+    const st = this.state;
+    const hero = st.hero;
+    shrine.used = true;
+    const color = SHRINE_COLORS[shrine.kind];
+
+    if (shrine.kind === 'ward') {
+      // Temporary hearts do not stack into a bigger pool than one ward's
+      // worth: a second ward tops the first back up.
+      const pool = Math.max(hero.tempHp ?? 0, wardTempHp(shrine.level));
+      hero.tempHp = pool;
+      hero.tempHpMax = Math.max(hero.tempHpMax ?? 0, pool);
+    } else {
+      addBuff(hero, shrine.kind, shrine.level);
+    }
+
+    st.fx.push({ kind: 'ring', pos: { x: shrine.pos.x, y: shrine.pos.y }, radius: 2.2, color, t: 0, ttl: 620 });
+    st.fx.push({ kind: 'flash', pos: { x: shrine.pos.x, y: shrine.pos.y }, color, t: 0, ttl: 320 });
+    pushText(st, shrine.pos, shrineName(shrine.kind).toUpperCase(), color, 1200);
+    pushLog(st, `${shrineName(shrine.kind)} shrine!`);
+    pushSfx(st, 'shrine');
+    this.dirty = true;
+  }
+
+  /**
+   * Everything a lit shrine does on its own clock: the countdowns, the frost
+   * shrine's ice balls, mending's pulse, and the time bubble's ripple. Called
+   * once per tick from the same place as `passives`, so it never runs under a
+   * popup or mid-descent.
+   *
+   * The ward has no clock of its own — it is spent by being hit (see
+   * `monsterAttack`) — so nothing here touches it.
+   */
+  private tickBuffs(dt: number): void {
+    const st = this.state;
+    const hero = st.hero;
+    if (!Array.isArray(hero.buffs)) hero.buffs = [];
+    if (hero.buffs.length === 0) {
+      this.timePulseTimer = 0;
+      return;
+    }
+
+    for (const b of hero.buffs) {
+      b.ms = Math.max(0, b.ms - dt);
+      if (b.ms <= 0) continue;
+      if (hero.sleeping) continue; // asleep is asleep: nothing fires while down
+      if (b.kind === 'frost') this.tickFrost(b, dt);
+      else if (b.kind === 'mend') this.tickMend(b, dt);
+    }
+
+    // Time bubble: a slow ripple showing exactly how far the crawl reaches.
+    if (hero.buffs.some((b) => b.kind === 'time' && b.ms > 0) && !hero.sleeping) {
+      this.timePulseTimer += dt;
+      let guard = 0;
+      while (this.timePulseTimer >= TIME_PULSE_MS && guard < 4) {
+        guard += 1;
+        this.timePulseTimer -= TIME_PULSE_MS;
+        st.fx.push({
+          kind: 'ring',
+          pos: { x: hero.pos.x, y: hero.pos.y },
+          radius: TIME_RADIUS,
+          color: SHRINE_COLORS.time,
+          t: 0,
+          ttl: 900,
+        });
+      }
+    } else {
+      this.timePulseTimer = 0;
+    }
+
+    const before = hero.buffs.length;
+    hero.buffs = hero.buffs.filter((b) => b.ms > 0);
+    if (hero.buffs.length !== before) this.dirty = true;
+  }
+
+  /** Frost shrine: an ice ball on a beat, whenever there is anything to hit. */
+  private tickFrost(buff: Buff, dt: number): void {
+    const every = frostIntervalMs(buff.level);
+    buff.timer += dt;
+    if (buff.timer < every) return;
+    // Nothing in range: hold the charge rather than wasting the beat.
+    if (this.castIceball(buff.level)) buff.timer = 0;
+    else buff.timer = every;
+  }
+
+  /** Mending shrine: a quarter heart on a fixed beat, fighting or not. */
+  private tickMend(buff: Buff, dt: number): void {
+    const st = this.state;
+    const hero = st.hero;
+    const every = mendPulseMs(buff.level);
+    buff.timer += dt;
+    let guard = 0;
+    while (buff.timer >= every && guard < 8) {
+      guard += 1;
+      buff.timer -= every;
+      if (hero.hp >= hero.maxHp) continue;
+      hero.hp += 1;
+      st.fx.push({
+        kind: 'flash',
+        pos: { x: hero.pos.x, y: hero.pos.y },
+        color: SHRINE_COLORS.mend,
+        t: 0,
+        ttl: 240,
+      });
+      this.dirty = true;
+    }
+  }
+
+  /**
+   * Frost shrine: throw an ice ball at the nearest monster within
+   * `FROST_RANGE` BFS tiles — the same "in sight and on screen" reach the fire
+   * staff uses, measured through open floor so it never shoots through a wall
+   * or a shut door. The monster it hits stands frozen for a moment. Returns
+   * false when there is nothing to shoot at.
+   */
+  private castIceball(level: number): boolean {
+    const st = this.state;
+    const hero = st.hero;
+    const dists = bfsDistances(st.level, hero.pos, {
+      maxDist: FROST_RANGE,
+      blocked: (p) => closedDoorAt(st.level, p) !== null,
+    });
+    let target: Monster | null = null;
+    let best = Infinity;
+    for (const m of st.level.monsters) {
+      if (!m.alive || m.invulnerable) continue; // no freezing a boss
+      const d = dists.get(key(m.pos));
+      if (d === undefined || d > FROST_RANGE) continue;
+      if (d < best) {
+        best = d;
+        target = m;
+      }
+    }
+    if (!target) return false;
+
+    const to = { x: target.pos.x, y: target.pos.y };
+    st.fx.push({
+      kind: 'projectile',
+      from: { x: hero.pos.x, y: hero.pos.y },
+      to: { x: to.x, y: to.y },
+      color: ICE,
+      t: 0,
+      ttl: 240,
+    });
+    // Both land when the ice ball arrives (negative t = delayed).
+    st.fx.push({ kind: 'flash', pos: { x: to.x, y: to.y }, color: ICE, t: -240, ttl: 320 });
+    st.fx.push({ kind: 'ring', pos: { x: to.x, y: to.y }, radius: 1, color: ICE, t: -240, ttl: 360 });
+    pushSfx(st, 'iceball');
+
+    target.frozenMs = Math.max(target.frozenMs, FREEZE_MS);
+    damageMonster(st, target, frostDmg(level), this.rng, { source: 'fire', color: ICE });
+    this.dirty = true;
+    return true;
   }
 
   // -------------------------------------------------------------------------
@@ -1283,10 +1482,12 @@ function reviveState(saved: GameState): GameState {
   hero.lungeT = 0;
   hero.lunge = undefined;
   reviveGear(hero);
+  reviveBuffs(hero);
   for (const m of s.level?.monsters ?? []) {
     if (typeof m.poisonMs !== 'number') m.poisonMs = 0;
     if (typeof m.poisonDmg !== 'number') m.poisonDmg = 0;
     if (typeof m.slowMs !== 'number') m.slowMs = 0;
+    if (typeof m.frozenMs !== 'number') m.frozenMs = 0;
   }
   (s.trail as Set<string>).add(key(hero.pos));
   return s as GameState;

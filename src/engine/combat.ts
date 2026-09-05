@@ -17,6 +17,7 @@ import type {
   Rng,
   RunStats,
   SfxId,
+  Shrine,
   Vec,
 } from './types';
 import { BOSS_HIT_FRACTION, HEART, eq, key, manhattan, parseKey } from './types';
@@ -24,6 +25,7 @@ import { damage, xpShare } from './balance';
 import { bfsDistances, floorNeighbors, isFloor } from './pathfind';
 import type { ItemStats } from './items';
 import { berserkActive, heroStats } from './items';
+import { SHRINE_COLORS, buffAtk, buffDef } from './shrines';
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -37,6 +39,7 @@ export const BLUE = '#5aa9ff';
 export const ORANGE = '#ff8c3a';
 export const GREY = '#c9c6d6';
 export const SPARK = '#bfe3ff';
+export const ICE = '#bfe3ff';
 
 /** Push a floating text effect at `pos`. */
 export function pushText(
@@ -97,6 +100,14 @@ export function closedDoorAt(level: LevelData, p: Vec): Door | null {
 /** An un-picked-up key on `p`. */
 export function keyAt(level: LevelData, p: Vec): KeyItem | null {
   for (const k of level.keys) if (!k.taken && k.pos.x === p.x && k.pos.y === p.y) return k;
+  return null;
+}
+
+/** An unlit shrine on `p`. A spent one is scenery and never looked up. */
+export function shrineAt(level: LevelData, p: Vec): Shrine | null {
+  for (const sh of level.shrines ?? []) {
+    if (!sh.used && sh.pos.x === p.x && sh.pos.y === p.y) return sh;
+  }
   return null;
 }
 
@@ -242,11 +253,14 @@ function chainFrom(state: GameState, m: Monster, rng: Rng, stats: ItemStats): vo
 /** How far chain lightning hops (manhattan tiles). */
 const CHAIN_RADIUS = 3;
 
-/** The hero's attack right now: base plus the berserker axe while wounded. */
+/**
+ * The hero's attack right now: base, plus the berserker axe while wounded,
+ * plus a fury shrine while it burns.
+ */
 export function heroAttackValue(state: GameState): number {
   const hero = state.hero;
   const stats = heroStats(hero);
-  return hero.atk + (berserkActive(hero, stats) ? stats.berserkAtk : 0);
+  return hero.atk + (berserkActive(hero, stats) ? stats.berserkAtk : 0) + buffAtk(hero);
 }
 
 /** Hero attacks monster. Applies damage, pushes fx/log, handles death. */
@@ -293,11 +307,14 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
   const bossHit = m.kind === 'minotaur' || m.kind === 'angel';
   const dmg = bossHit
     ? Math.max(1, Math.ceil(hero.maxHp * BOSS_HIT_FRACTION))
-    : damage(m.atk, hero.def, rng);
-  hero.hp -= dmg;
+    : damage(m.atk, hero.def + buffDef(hero), rng);
+  // Ward shrine: temporary hearts take the blow before the hero's own do, and
+  // whatever they soak is gone for good.
+  const soaked = absorbWithWard(state, dmg);
+  hero.hp -= dmg - soaked;
   hero.hitFlash = 150;
 
-  pushText(state, hero.pos, `-${dmg}`, RED);
+  pushText(state, hero.pos, `-${dmg}`, soaked > 0 ? WARD : RED);
   pushShake(state, bossHit ? BOSS_SHAKE : 4, bossHit ? 380 : 180);
   pushSfx(state, 'hurt');
   if (m.kind === 'angel') {
@@ -326,6 +343,44 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
 
 /** How hard the screen jolts when a boss connects. */
 const BOSS_SHAKE = 14;
+
+/** Ward shrine blue: the temporary hearts, and the last one popping. */
+export const WARD = SHRINE_COLORS.ward;
+
+/**
+ * Spend the ward's temporary hearts on `dmg` and return how much they took.
+ * The last one popping is worth a ring and a sound: it is the moment the hero
+ * is back on their own hearts.
+ */
+function absorbWithWard(state: GameState, dmg: number): number {
+  const hero = state.hero;
+  const pool = Math.max(0, hero.tempHp ?? 0);
+  if (pool <= 0 || dmg <= 0) return 0;
+  const soaked = Math.min(pool, dmg);
+  hero.tempHp = pool - soaked;
+  if (hero.tempHp === 0) hero.tempHpMax = 0;
+  state.fx.push({
+    kind: 'ring',
+    pos: { x: hero.pos.x, y: hero.pos.y },
+    radius: 0.9,
+    color: WARD,
+    t: 0,
+    ttl: 260,
+  });
+  if (hero.tempHp === 0) {
+    state.fx.push({
+      kind: 'ring',
+      pos: { x: hero.pos.x, y: hero.pos.y },
+      radius: 1.6,
+      color: WARD,
+      t: 0,
+      ttl: 420,
+    });
+    pushLog(state, 'The ward is spent');
+    pushSfx(state, 'wardBreak');
+  }
+  return soaked;
+}
 
 /**
  * The run is over: only ever called from a boss chamber. Freezes the world
@@ -410,6 +465,11 @@ function knockDown(state: GameState, attacker: Monster | null = null): void {
   hero.hp = 1;
   hero.stun = 0;
   hero.sleeping = true;
+  // A nap ends every shrine the hero was running on. They lit those alcoves to
+  // win a fight they have just lost; the floor's other alcoves are still there.
+  hero.buffs = [];
+  hero.tempHp = 0;
+  hero.tempHpMax = 0;
   state.path.length = 0;
   const dest = retreatTile(state);
   if (dest) hero.pos = dest;
@@ -428,11 +488,12 @@ function knockDown(state: GameState, attacker: Monster | null = null): void {
 function healAllMonsters(state: GameState): void {
   for (const m of state.level.monsters) {
     if (!m.alive) continue;
-    const hurt = m.hp < m.maxHp || m.poisonMs > 0 || m.slowMs > 0;
+    const hurt = m.hp < m.maxHp || m.poisonMs > 0 || m.slowMs > 0 || m.frozenMs > 0;
     m.hp = m.maxHp;
     m.poisonMs = 0;
     m.poisonDmg = 0;
     m.slowMs = 0;
+    m.frozenMs = 0;
     if (hurt) {
       state.fx.push({ kind: 'flash', pos: { x: m.pos.x, y: m.pos.y }, color: GREEN, t: 0, ttl: 320 });
     }

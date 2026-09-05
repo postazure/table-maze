@@ -104,6 +104,7 @@ export function makeBossMonster(kind: BossMonsterKind, depth: number, pos: Vec, 
     poisonMs: 0,
     poisonDmg: 0,
     slowMs: 0,
+    frozenMs: 0,
     hitFlash: 0,
     lungeT: 0,
   };

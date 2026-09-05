@@ -9,9 +9,12 @@ interface HeartProps {
   size: number;
   dim: boolean;
   id: string;
+  /** Fill colour, and the darker shade the empty part is drawn in. */
+  fill: string;
+  hollow: string;
 }
 
-function Heart({ quarters, size, dim, id }: HeartProps) {
+function Heart({ quarters, size, dim, id, fill: fillColor, hollow }: HeartProps) {
   const outline: ReactElement[] = [];
   const empty: ReactElement[] = [];
   const fill: ReactElement[] = [];
@@ -34,8 +37,8 @@ function Heart({ quarters, size, dim, id }: HeartProps) {
           <rect x={0} y={0} width={quarters * 2} height={8} />
         </clipPath>
       </defs>
-      <g fill="#3a0f12">{empty}</g>
-      <g fill={dim ? '#8f8ca8' : '#e53b3b'} clipPath={`url(#${clipId})`}>
+      <g fill={hollow}>{empty}</g>
+      <g fill={dim ? '#8f8ca8' : fillColor} clipPath={`url(#${clipId})`}>
         {fill}
       </g>
       <g fill="#1a0507">{outline}</g>
@@ -43,25 +46,54 @@ function Heart({ quarters, size, dim, id }: HeartProps) {
   );
 }
 
+/** The hero's own hearts: red, over a dark red hollow. */
+const RED_FILL = '#e53b3b';
+const RED_HOLLOW = '#3a0f12';
+/** A ward shrine's temporary hearts: blue, so they never read as real ones. */
+const WARD_FILL = '#5aa9ff';
+const WARD_HOLLOW = '#12304f';
+
 export interface HeartsProps {
   hp: number;
   maxHp: number;
   /** Grey hearts while the hero is knocked down. */
   dim?: boolean;
   size?: number;
+  /** Ward shrine: temporary quarter hearts left, and what they started at. */
+  tempHp?: number;
+  tempHpMax?: number;
 }
 
-/** Zelda-style heart row. One heart per 4 hp, filled in quarters. */
-export function Hearts({ hp, maxHp, dim = false, size = 14 }: HeartsProps) {
+/**
+ * Zelda-style heart row. One heart per 4 hp, filled in quarters.
+ *
+ * A ward shrine's temporary hearts hang off the end of the row in blue. They
+ * are the ward's own timer: nothing counts down, they simply empty as hits
+ * land, and the row is a heart shorter when they are gone.
+ */
+export function Hearts({ hp, maxHp, dim = false, size = 14, tempHp = 0, tempHpMax = 0 }: HeartsProps) {
   const total = Math.max(1, Math.ceil(maxHp / HEART));
   const units = Math.max(0, Math.min(maxHp, Math.round(hp)));
   const hearts: ReactElement[] = [];
   for (let i = 0; i < total; i++) {
     const q = Math.max(0, Math.min(4, units - i * HEART)) as 0 | 1 | 2 | 3 | 4;
-    hearts.push(<Heart key={i} id={String(i)} quarters={q} size={size} dim={dim} />);
+    hearts.push(
+      <Heart key={i} id={String(i)} quarters={q} size={size} dim={dim} fill={RED_FILL} hollow={RED_HOLLOW} />,
+    );
   }
+  const tempUnits = Math.max(0, Math.round(tempHp));
+  const tempTotal = tempUnits > 0 ? Math.max(1, Math.ceil(Math.max(tempHpMax, tempUnits) / HEART)) : 0;
+  for (let i = 0; i < tempTotal; i++) {
+    const q = Math.max(0, Math.min(4, tempUnits - i * HEART)) as 0 | 1 | 2 | 3 | 4;
+    hearts.push(
+      <Heart key={`t${i}`} id={`t${i}`} quarters={q} size={size} dim={false} fill={WARD_FILL} hollow={WARD_HOLLOW} />,
+    );
+  }
+  const label = tempUnits > 0
+    ? `Health ${units} of ${maxHp} quarter hearts, plus ${tempUnits} temporary`
+    : `Health ${units} of ${maxHp} quarter hearts`;
   return (
-    <div className="hud-hearts" role="img" aria-label={`Health ${units} of ${maxHp} quarter hearts`}>
+    <div className="hud-hearts" role="img" aria-label={label}>
       {hearts}
     </div>
   );

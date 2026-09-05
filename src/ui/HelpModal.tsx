@@ -1,6 +1,8 @@
 import type { HudModel } from './hudModel';
-import type { ItemSlot, MagicItem } from '../engine/types';
+import type { ItemSlot, MagicItem, ShrineKind } from '../engine/types';
+import { SHRINE_KINDS } from '../engine/types';
 import { itemDescription, itemName } from '../engine/items';
+import { shrineDescription, shrineName } from '../engine/shrines';
 import { PixelIcon } from './icons';
 
 export interface HelpModalProps {
@@ -39,6 +41,26 @@ function GearRow({ slot, label, item }: { slot: ItemSlot; label: string; item: M
 }
 
 /**
+ * One shrine on the help screen, described with the numbers it would hand out
+ * at the depth the hero is standing on.
+ */
+function ShrineRow({ kind, depth }: { kind: ShrineKind; depth: number }) {
+  return (
+    <div className="help-gear">
+      <div className="help-gear-icon">
+        <PixelIcon name={kind} size={32} />
+      </div>
+      <div className="help-gear-text">
+        <div className="help-gear-title">
+          <span className="help-gear-name">{shrineName(kind)}</span>
+        </div>
+        <p className="help-gear-desc">{shrineDescription(kind, depth)}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The one screen with words: what the hero is wearing and what it does,
  * plus a short reminder of how to play. The game is paused behind it.
  */
@@ -57,6 +79,18 @@ export function HelpModal({ model, onClose }: HelpModalProps) {
             <GearRow key={slot} slot={slot} label={label} item={model.gear[slot]} />
           ))}
           <div className="help-section">
+            <span className="help-title">Shrines</span>
+            <p className="help-gear-desc">
+              A few alcoves glow on every floor. Walk over one to light it and it hands you its gift, once. They
+              never block anything, so you can walk past one now and come back for it when a fight needs it. The
+              row under your hearts shows what is running; each bar drains as the effect does, and blinks when it
+              is nearly out.
+            </p>
+            {SHRINE_KINDS.map((kind) => (
+              <ShrineRow key={kind} kind={kind} depth={model.depth} />
+            ))}
+          </div>
+          <div className="help-section">
             <span className="help-title">How to play</span>
             <ul className="help-list">
               <li>Drag your finger to walk. The hero follows your line.</li>
@@ -67,6 +101,7 @@ export function HelpModal({ model, onClose }: HelpModalProps) {
               <li>Guards stand still and only fight back if you hit them. Beating one costs real hearts.</li>
               <li>Hunters chase you when you get close and hit far too hard to fight at your level. They spot you later while they are over your level, so early floors give you room to back out. Lead them away, then loop around.</li>
               <li>Out of hearts? You sleep somewhere safe until they refill, and every monster heals to full.</li>
+              <li>Glowing alcoves are shrines. Step on one for a gift that runs out; a dark one is already spent.</li>
               <li>Every third floor has a shop. Walk into a podium to see what the item does, then buy it or walk away.</li>
               <li>The emblem on a podium says what the item is for: sword = offense, shield = defense, star = spirit.</li>
               <li>You can buy one item per shop, and each slot holds one item.</li>

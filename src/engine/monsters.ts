@@ -10,6 +10,7 @@ import { GREEN, chestAt, closedDoorAt, damageMonster, keyAt, liveMonsterAt, mons
 import type { ItemStats } from './items';
 import { heroStats } from './items';
 import { lurkerSightRange } from './balance';
+import { timeBubble } from './shrines';
 
 /** Render position catch-up speed, tiles per second. */
 const RPOS_SPEED = 14;
@@ -34,9 +35,13 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
     regen(m, dt);
     tickPoison(state, m, dt, rng);
     if (m.slowMs > 0) m.slowMs = Math.max(0, m.slowMs - dt);
+    if (m.frozenMs > 0) m.frozenMs = Math.max(0, m.frozenMs - dt);
     if (!m.alive) continue; // poison finished it off
 
     if (state.descending > 0) continue;
+    // Frozen solid (a frost shrine's ice ball): no step, no swing, nothing.
+    // Poison and the thaw clock above still run, so it can be finished off.
+    if (m.frozenMs > 0) continue;
 
     // Angels do not run on dt here: they act once per hero step and on the
     // slow creep clock, both via `angelsFollow` (game.ts drives it).
@@ -67,8 +72,9 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
 }
 
 /**
- * How long this monster must wait after acting. Frost doubles it; the bane
- * totem stretches it further while the hero is close.
+ * How long this monster must wait after acting. The frost blade doubles it;
+ * the bane totem and a time-bubble shrine stretch it further while the hero is
+ * close.
  */
 function cooldownFor(state: GameState, m: Monster, stats: ItemStats, base: number): number {
   let ms = base;
@@ -76,6 +82,8 @@ function cooldownFor(state: GameState, m: Monster, stats: ItemStats, base: numbe
   if (stats.baneRadius > 0 && manhattan(m.pos, state.hero.pos) <= stats.baneRadius) {
     ms *= stats.baneSlowMult;
   }
+  const bubble = timeBubble(state.hero);
+  if (bubble && manhattan(m.pos, state.hero.pos) <= bubble.radius) ms *= bubble.mult;
   return ms;
 }
 
@@ -91,6 +99,7 @@ export function angelsFollow(state: GameState, rng: Rng): void {
   for (const m of state.level.monsters) {
     if (!m.alive || m.kind !== 'angel' || m.state !== 'chasing') continue;
     if (state.over) return;
+    if (m.frozenMs > 0) continue;
     if (manhattan(m.pos, state.hero.pos) === 1) {
       monsterAttack(state, m, rng);
       continue;

@@ -69,6 +69,22 @@ Play it at **https://postazure.github.io/table-maze/**
     it through another passage. Kill one when you're well over its level and the
     reward is the biggest in the dungeon. The first floor has none — it is
     patrols and guards while you learn the controls.
+- A few **shrines** stand in alcoves off the corridors of every maze floor. Nothing
+  about them blocks: each sits in a dead end you step into and straight back out of,
+  so you can note one on the way past and come back for it when a fight actually
+  needs it. Walk over one to light it and it hands you its gift, once, and then goes
+  dark for the rest of the floor. Every gift runs out. **Ward** hands you extra
+  temporary hearts, in blue on the end of your heart row; hits eat those first and
+  nothing ever refills them. **Fury** and **Stone Skin** buy you attack or defense
+  for twenty seconds. **Frost** throws an ice ball at the nearest monster in sight
+  every couple of seconds and freezes whatever it hits solid — no step, no swing —
+  for a moment. **Mending** refills a quarter heart on a fast beat, fighting or not.
+  **Time Bubble** drops every monster within six tiles to a crawl. What is running
+  shows twice over: a row of chips under your hearts, and a row of pips floating
+  above the hero. Neither counts down in numbers. The bar drains, and the last ten
+  seconds blink — the last five twice as fast. Get knocked down and every shrine
+  effect goes with it. They do survive the stairs, so a shrine near the way down is
+  a way to walk into the next floor, or a boss chamber, already buffed.
 - After every third floor you face a **boss** before you reach the shop. An intro card
   explains the fight, then the game is on: **The Necromancer** channels a spell in a
   central chamber while raising skeletons — smash all five crystals down his corridors

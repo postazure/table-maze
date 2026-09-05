@@ -200,6 +200,66 @@ button {
   background: var(--xp);
 }
 
+/* Shrine effects, under the hearts. One chip per running effect: the glyph,
+   and a bar that drains as the effect does. There is no number on purpose --
+   the bar is the clock, and the blink is the warning. */
+.hud-buffs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1 1 auto;
+  align-items: center;
+}
+
+.hud-buff {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  background: #050509;
+  border: 2px solid var(--border);
+  box-shadow: inset 1px 1px 0 var(--border-dark), inset -1px -1px 0 var(--border-light);
+}
+
+.hud-buff-track {
+  width: 26px;
+  height: 6px;
+  background: #1a1a26;
+  overflow: hidden;
+}
+
+.hud-buff-fill {
+  height: 100%;
+}
+
+/* The last ten seconds blink; the last five blink twice as fast. The duration
+   comes from BLINK_MS in engine/shrines.ts as an inline style, so the chip and
+   the pip over the hero's head are always in step. */
+.hud-buff-warn,
+.hud-buff-urgent {
+  animation-name: buff-blink;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes buff-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-buff-warn,
+  .hud-buff-urgent {
+    animation: none;
+    opacity: 0.75;
+  }
+}
+
 .hud-bar-text {
   font-size: 8px;
   color: var(--muted);
@@ -239,6 +299,15 @@ button {
 
 .hud-stat-value {
   display: block;
+}
+
+/* A shrine is propping this number up right now. */
+.hud-stat.hud-stat-buffed {
+  border-color: var(--gold);
+}
+
+.hud-stat.hud-stat-buffed .hud-stat-value {
+  color: var(--gold);
 }
 
 

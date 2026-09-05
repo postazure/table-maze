@@ -8,7 +8,7 @@
  * `palette` (char -> hex color).
  */
 
-import type { ItemKind, ItemSlot } from '../engine/types';
+import type { ItemKind, ItemSlot, ShrineKind } from '../engine/types';
 import { ITEM_KINDS } from '../engine/types';
 
 export interface ArtSpec {
@@ -141,6 +141,77 @@ export const SLOT_ART: Record<ItemSlot, ArtSpec> = {
     palette: { S: '#f5c451' },
   },
 };
+
+// ---------------------------------------------------------------------------
+// Shrine glyphs — one per shrine kind, in that shrine's own colour (see
+// SHRINE_COLORS in engine/shrines.ts). The same glyph is used three times
+// over: sunk into the alcove on the map, as the timer pip over the hero's
+// head, and in the HUD row under the hearts. Learn it once, read it anywhere.
+// ---------------------------------------------------------------------------
+
+export const SHRINE_ART: Record<ShrineKind, ArtSpec> = {
+  // Temporary hearts: the HUD heart, in ward blue.
+  ward: {
+    rows: ['.BB..BB.', 'BWWBBWWB', 'BWWWWWWB', 'BWWWWWWB', '.BWWWWB.', '..BWWB..', '...BB...', '........'],
+    palette: { W: '#5aa9ff', B: '#1b3f6b' },
+  },
+  // More attack: an arrow pointing up.
+  fury: {
+    rows: ['...RR...', '..RRRR..', '.RRRRRR.', 'RRRRRRRR', '...RR...', '...RR...', '...DD...', '...DD...'],
+    palette: { R: '#ff5c5c', D: '#8a2a2a' },
+  },
+  // More defense: a plain stone shield, pale enough to read off a stone wall.
+  stone: {
+    rows: ['.SSSSSS.', 'SDDDDDDS', 'SDSSSSDS', 'SDSSSSDS', 'SDSSSSDS', '.SDDDDS.', '..SDDS..', '...SS...'],
+    palette: { S: '#e4eaf6', D: '#7a86a0' },
+  },
+  // Ice balls: a snowflake.
+  frost: {
+    rows: ['...I....', 'I..I..I.', '.I.I.I..', '..III...', 'IIIIIII.', '..III...', '.I.I.I..', 'I..I..I.'],
+    palette: { I: '#bfe3ff' },
+  },
+  // Fast healing: the green cross the regen ring already uses, filled in.
+  mend: {
+    rows: ['..GGGG..', '..GWWG..', 'GGGWWGGG', 'GWWWWWWG', 'GWWWWWWG', 'GGGWWGGG', '..GWWG..', '..GGGG..'],
+    palette: { G: '#2f7a45', W: '#8fd694' },
+  },
+  // Monsters crawling: an hourglass.
+  time: {
+    rows: ['PPPPPPPP', '.PWWWWP.', '..PWWP..', '...PP...', '...PP...', '..PWWP..', '.PWWWWP.', 'PPPPPPPP'],
+    palette: { P: '#b98cff', W: '#e8d9ff' },
+  },
+};
+
+/**
+ * The alcove a shrine sits in, as it stands on the map: 16x16, i.e. one
+ * sub-pixel per pixel of a single tile. An arch of stone around a dark niche
+ * the renderer paints the shrine's glyph into. It is drawn ON a floor tile
+ * the hero can walk over — an alcove never blocks anything.
+ */
+export const ALCOVE_ART: ArtSpec = {
+  rows: [
+    '................',
+    '.....PPPPPP.....',
+    '....PLNNNNLP....',
+    '...PLNNNNNNLP...',
+    '...PLNNNNNNLP...',
+    '..PLNNNNNNNNLP..',
+    '..PLNNNNNNNNLP..',
+    '..PLNNNNNNNNLP..',
+    '..PLNNNNNNNNLP..',
+    '..PLNNNNNNNNLP..',
+    '..PLNNNNNNNNLP..',
+    '..PLNNNNNNNNLP..',
+    '..PLNNNNNNNNLP..',
+    '..PDDDDDDDDDDP..',
+    '..PPPPPPPPPPPP..',
+    '..DDDDDDDDDDDD..',
+  ],
+  palette: { P: '#6b6b7a', L: '#9a97ad', D: '#3f3f4d', N: '#16162a' },
+};
+
+/** Where the shrine glyph goes inside `ALCOVE_ART`, as fractions of the tile. */
+export const ALCOVE_NICHE = { x: 4 / 16, y: 4 / 16, size: 8 / 16 };
 
 // ---------------------------------------------------------------------------
 // Shop pedestal — a stone column an item icon is drawn hovering above.

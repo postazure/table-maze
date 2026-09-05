@@ -76,6 +76,7 @@ const MIN_GAP_MS: Partial<Record<SfxId, number>> = {
   kill: 40,
   zap: 70,
   rise: 60,
+  iceball: 120,
   immune: 200,
 };
 

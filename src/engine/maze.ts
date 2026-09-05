@@ -8,12 +8,27 @@
  * 4. Doors on corridor tiles of the start->exit path, each with a key that is
  *    reachable before that door (and before every later door) is opened.
  * 5. Chests in dead ends, one chest key each.
- * 6. Monsters: guards on chokepoints, patrols on corridor runs, lurkers on
+ * 6. Shrines in dead-end alcoves, the ones hanging off the route first.
+ * 7. Monsters: guards on chokepoints, patrols on corridor runs, lurkers on
  *    side branches next to the main path.
- * 7. Validate solvability; retry with a re-mixed seed, relax as a last resort.
+ * 8. Validate solvability; retry with a re-mixed seed, relax as a last resort.
  */
 import { Tile, key, parseKey, eq } from './types';
-import type { Chest, Door, KeyItem, LevelData, Monster, Rect, RosterKind, Rng, Vec, Warren } from './types';
+import type {
+  Chest,
+  Door,
+  KeyItem,
+  LevelData,
+  Monster,
+  Rect,
+  RosterKind,
+  Rng,
+  Shrine,
+  ShrineKind,
+  Vec,
+  Warren,
+} from './types';
+import { SHRINE_KINDS } from './types';
 import { hashSeed, makeRng } from './rng';
 import { levelDims, makeMonster, rollChestLoot } from './balance';
 import type { MonsterOpts } from './balance';
@@ -234,6 +249,11 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
     }
   }
 
+  // Shrines get first pick of the dead ends: an alcove nobody walks past is an
+  // alcove nobody chooses to skip. Chests are happier tucked further away.
+  level.shrines = placeShrines(level, depth, onMain, used, distFromStart, rng);
+  for (const sh of level.shrines) used.add(key(sh.pos));
+
   if (opts.chests) {
     const chestCount = Math.min(8, 3 + Math.floor(depth / 2));
     const chestSpots = pickChestSpots(level, used, onMain, chestCount, rng);
@@ -423,6 +443,56 @@ function pickFreeTile(
   }
   if (!cands.length) return null;
   return rng.pick(cands);
+}
+
+// ---------------------------------------------------------------------------
+// Shrines
+// ---------------------------------------------------------------------------
+
+/** How many alcoves a floor carries. */
+const SHRINE_COUNT = 3;
+/** Never light one right on top of the hero's first few steps. */
+const SHRINE_MIN_DIST = 4;
+
+/**
+ * Shrine alcoves: dead ends, and by preference the ones whose single way out
+ * lands straight back on the route to the stairs. A dead end can never block
+ * anything — you step in, you step out — which is the whole point: a shrine is
+ * something to walk past now and come back for later, not a gate.
+ *
+ * Each floor rolls a different kind per alcove where it can, so one floor is
+ * rarely three of the same thing.
+ */
+function placeShrines(
+  level: LevelData,
+  depth: number,
+  onMain: Set<string>,
+  used: Set<string>,
+  dist: Map<string, number>,
+  rng: Rng,
+): Shrine[] {
+  const offRoute: Vec[] = [];
+  const rest: Vec[] = [];
+  for (const [k, d] of dist) {
+    if (used.has(k) || d < SHRINE_MIN_DIST) continue;
+    const p = parseKey(k);
+    const nb = floorNeighbors(level, p);
+    if (nb.length !== 1) continue; // dead ends only: nothing else is safe to stand a shrine in
+    if (onMain.has(key(nb[0]))) offRoute.push(p);
+    else rest.push(p);
+  }
+  rng.shuffle(offRoute);
+  rng.shuffle(rest);
+
+  const kinds: ShrineKind[] = rng.shuffle([...SHRINE_KINDS]);
+  const spots = [...offRoute, ...rest].slice(0, SHRINE_COUNT);
+  return spots.map((pos, i) => ({
+    id: `sh${i + 1}`,
+    pos,
+    kind: kinds[i % kinds.length],
+    used: false,
+    level: depth,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -930,6 +1000,7 @@ function validate(level: LevelData): boolean {
   for (const d of level.doors) if (!claim(d.pos) || d.open) return false;
   for (const k of level.keys) if (!claim(k.pos) || k.taken) return false;
   for (const c of level.chests) if (!claim(c.pos) || c.opened) return false;
+  for (const sh of level.shrines ?? []) if (!claim(sh.pos) || sh.used) return false;
   for (const m of level.monsters) if (!claim(m.pos)) return false;
 
   // Key bookkeeping.
@@ -949,6 +1020,8 @@ function validate(level: LevelData): boolean {
     if (!floorNeighbors(level, c.pos).some((nb) => open.has(key(nb)))) return false;
   }
   for (const k of level.keys) if (!open.has(key(k.pos))) return false;
+  // Shrines are floor, not furniture: the hero has to be able to stand on one.
+  for (const sh of level.shrines ?? []) if (!open.has(key(sh.pos))) return false;
 
   // Nothing past the stairs. Walking onto them ends the floor, so every tile
   // has to be reachable without crossing them, or it is ground the hero can
