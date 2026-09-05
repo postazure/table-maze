@@ -737,7 +737,7 @@ function spawnLurker(
     const chosen = rng.pick(spots);
     const m = makeMonster('lurker', depth, rng, chosen.p, id, spawn);
     m.sightRange = Math.max(3, chosen.d + 1);
-    m.leash = rng.int(6, 8);
+    m.leash = rng.int(10, 14);
     return m;
   }
   return null;

@@ -298,7 +298,7 @@ export function makeMonster(
       moveInterval = 260;
       attackInterval = 700;
       sightRange = 4;
-      leash = 7;
+      leash = 12;
       xp = 10 + 4 * d;
       gold = rng.int(3, 6 + 2 * d);
       break;
