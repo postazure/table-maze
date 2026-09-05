@@ -118,7 +118,7 @@ function buildIcon(rows: string[], palette: Record<string, string>): HTMLCanvasE
 // spine); E is a right-facing profile (one eye, arm+sword reaching forward
 // off the right edge); W reuses the E sprite mirrored via ctx.scale(-1,1)
 // (see drawHero) rather than a fifth hand-drawn row set.
-const HERO_ROWS_S = ['..HHHH..', '.HHHHHH.', '.HSSSSH.', '.SSEESS.', '..SSSS..', '.AAAAAD.', 'CAAGGAAC', '.B....B.'];
+const HERO_ROWS_S = ['..HHHH..', '.HHHHHH.', '.HSSSSH.', '.HESSEH.', '..SSSS..', '.AAAAAD.', 'CAAGGAAC', '.B....B.'];
 const HERO_ROWS_N = ['..HHHH..', '.HHHHHH.', '.HHHHHH.', '.HDDDDH.', '..AAAA..', '.AADDAA.', 'CAADDAAC', '.B....B.'];
 const HERO_ROWS_E = ['.HHH....', '.HHHHH..', '.HSSSH..', '.SSSES..', '..SSS...', '.AAAAD..', 'CAAAADD.', '.B..BDD.'];
 const HERO_PALETTE: Record<string, string> = {
