@@ -266,19 +266,19 @@ function makeLevel(depth: number, seed: number, width: number, height: number, t
 // ---------------------------------------------------------------------------
 
 const NECRO_CRYSTALS = 5;
-const NECRO_SPELL_BASE_MS = 90000;
+const NECRO_SPELL_BASE_MS = 120000;
 const NECRO_SPELL_PER_DEPTH_MS = 3000;
-const NECRO_SPAWN_EVERY_MS = 5000;
-const NECRO_FIRST_SPAWN_MS = 4000;
-const NECRO_MAX_MINIONS = 8;
+const NECRO_SPAWN_EVERY_MS = 3000;
+const NECRO_FIRST_SPAWN_MS = 2500;
+const NECRO_MAX_MINIONS = 12;
 /** Corridor length in lattice cells; every cell is two tiles (wall + cell). */
-const NECRO_MIN_CELLS = 5; // 10 tiles
-const NECRO_MAX_CELLS = 12; // 24 tiles
-const NECRO_MIN_TURNS = 3;
+const NECRO_MIN_CELLS = 10; // 20 tiles
+const NECRO_MAX_CELLS = 20; // 40 tiles
+const NECRO_MIN_TURNS = 4;
 /** How often the random walk tries a turn before going straight on. */
 const TURN_BIAS = 0.72;
 /** Fresh draws for one corridor before the whole chamber is re-rolled. */
-const CORRIDOR_TRIES = 10;
+const CORRIDOR_TRIES = 20;
 /** Minimum manhattan gap between two corridor mouths on the chamber edge. */
 const MOUTH_GAP = 4;
 
@@ -459,7 +459,7 @@ function necroBoss(depth: number): LevelData['boss'] {
 
 function buildNecromancer(depth: number, seed: number): LevelData | null {
   const rng = makeRng(seed);
-  const size = 31 + 2 * rng.int(0, 2); // 31 / 33 / 35, square
+  const size = 39 + 2 * rng.int(0, 2); // 39 / 41 / 43, square: room for five long walks
   const span = rng.pick([7, 9]);
   const chamber: Rect = { x: oddOrigin(size, span), y: oddOrigin(size, span), w: span, h: span };
   const tiles = solidGrid(size, size);
@@ -932,22 +932,22 @@ function buildAngels(depth: number, seed: number): LevelData | null {
 // randomised roll above was thrown away
 // ---------------------------------------------------------------------------
 
-/** Chamber at 11..19 of a 31x31 slab, five zig-zag corridors written out. */
-const FIXED_NECRO_SIZE = 31;
-const FIXED_NECRO_CHAMBER: Rect = { x: 11, y: 11, w: 9, h: 9 };
+/** Chamber at 15..23 of a 39x39 slab, five long zig-zag corridors written out. */
+const FIXED_NECRO_SIZE = 39;
+const FIXED_NECRO_CHAMBER: Rect = { x: 15, y: 15, w: 9, h: 9 };
 const FIXED_NECRO_CORRIDORS: { mouth: Mouth; steps: number[] }[] = [
-  { mouth: { door: { x: 11, y: 11 }, dir: 0 }, steps: [0, 3, 0, 3, 0] },
-  { mouth: { door: { x: 19, y: 11 }, dir: 0 }, steps: [0, 1, 0, 1, 0] },
-  { mouth: { door: { x: 19, y: 15 }, dir: 1 }, steps: [1, 0, 1, 0, 1] },
-  { mouth: { door: { x: 11, y: 19 }, dir: 2 }, steps: [2, 3, 2, 3, 2] },
-  { mouth: { door: { x: 19, y: 19 }, dir: 2 }, steps: [2, 1, 2, 1, 2] },
+  { mouth: { door: { x: 15, y: 15 }, dir: 0 }, steps: [0, 3, 0, 3, 0, 3, 0, 3, 0, 3] },
+  { mouth: { door: { x: 23, y: 15 }, dir: 0 }, steps: [0, 1, 0, 1, 0, 1, 0, 1, 0, 1] },
+  { mouth: { door: { x: 23, y: 19 }, dir: 1 }, steps: [1, 2, 1, 2, 1, 2, 1, 2, 1, 2] },
+  { mouth: { door: { x: 15, y: 23 }, dir: 2 }, steps: [2, 3, 2, 3, 2, 3, 2, 3, 2, 3] },
+  { mouth: { door: { x: 23, y: 23 }, dir: 2 }, steps: [2, 1, 2, 1, 2, 1, 2, 1, 2, 1] },
 ];
 
 function fixedNecromancer(depth: number, seed: number): LevelData {
   const size = FIXED_NECRO_SIZE;
   const tiles = solidGrid(size, size);
   fillRect(tiles, FIXED_NECRO_CHAMBER);
-  const centre = { x: 15, y: 15 };
+  const centre = { x: 19, y: 19 };
   const ends: Vec[] = [];
   for (const script of FIXED_NECRO_CORRIDORS) {
     if (!canStep(tiles, size, size, script.mouth.door, script.mouth.dir)) continue;

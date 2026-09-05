@@ -176,11 +176,11 @@ test('necromancer: five crystals down five private corridors', () => {
     if (!boss || boss.kind !== 'necromancer') continue;
 
     // the spell clock and the skeleton mill
-    assert.equal(boss.spellTotalMs, 90000 + 3000 * lv.depth, where);
+    assert.equal(boss.spellTotalMs, 120000 + 3000 * lv.depth, where);
     assert.equal(boss.spellMs, boss.spellTotalMs, where);
-    assert.equal(boss.spawnEveryMs, 5000, where);
-    assert.equal(boss.spawnMs, 4000, where);
-    assert.equal(boss.maxMinions, 8, where);
+    assert.equal(boss.spawnEveryMs, 3000, where);
+    assert.equal(boss.spawnMs, 2500, where);
+    assert.equal(boss.maxMinions, 12, where);
     assert.equal(boss.crystalsTotal, 5, where);
 
     const necros = lv.monsters.filter((m) => m.kind === 'boss');
@@ -217,7 +217,7 @@ test('necromancer: five crystals down five private corridors', () => {
       );
       const d = reach.get(key(c.pos));
       assert.ok(d !== undefined, `${where}: ${c.id} unreachable past the necromancer`);
-      assert.ok((d ?? 0) >= 10, `${where}: ${c.id} only ${d} tiles away`);
+      assert.ok((d ?? 0) >= 16, `${where}: ${c.id} only ${d} tiles away`);
     }
   }
 });

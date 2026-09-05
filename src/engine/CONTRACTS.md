@@ -281,12 +281,12 @@ doors / chests, deterministic for (depth, runSeed)):
   Five winding 1-wide corridors leave the chamber from five different points
   on its edge and each ends in a dead end holding one `crystal` monster.
   Corridors never touch each other or the chamber except at their own mouth
-  (so every crystal is a real trip). Each corridor is 10-24 tiles long with
-  several turns. `start` is a chamber-edge tile, at least 2 tiles from the
+  (so every crystal is a real trip). Each corridor is 20-40 tiles long with
+  several turns (the slab is about 39-43 tiles square to fit them). `start` is a chamber-edge tile, at least 2 tiles from the
   necromancer. `boss = { kind:'necromancer', defeated:false, spellMs, spellTotalMs,
   spawnMs, spawnEveryMs, maxMinions, crystalsTotal: 5 }`. Suggested numbers:
-  spellTotalMs = 90000 + 3000·depth, spawnEveryMs = 5000, first spawnMs = 4000,
-  maxMinions = 8. Monster ids: `necro`, `crystal1..5`.
+  spellTotalMs = 120000 + 3000·depth, spawnEveryMs = 3000, first spawnMs = 2500,
+  maxMinions = 12. Monster ids: `necro`, `crystal1..5`.
 - **minotaur**: a braided maze (open ~35% of dead ends so there are many
   loops) of roughly levelDims(depth) capped around 31x41, with 3-5 open
   chambers (3x3 to 5x5) carved into it. `start` in one corner region, `exit`
