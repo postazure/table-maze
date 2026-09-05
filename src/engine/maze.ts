@@ -13,7 +13,7 @@
  * 7. Validate solvability; retry with a re-mixed seed, relax as a last resort.
  */
 import { Tile, key, parseKey, eq } from './types';
-import type { Chest, Door, KeyItem, LevelData, Monster, RosterKind, Rng, Vec, Warren } from './types';
+import type { Chest, Door, KeyItem, LevelData, Monster, Rect, RosterKind, Rng, Vec, Warren } from './types';
 import { hashSeed, makeRng } from './rng';
 import { levelDims, makeMonster, rollChestLoot } from './balance';
 import { themeForDepth } from './themes';
@@ -151,9 +151,24 @@ function braid(tiles: Tile[][], width: number, height: number, rng: Rng, frac: n
 
 function build(depth: number, seed: number, opts: GenOpts): LevelData {
   const rng = makeRng(seed);
-  const { width, height } = levelDims(depth);
-  const tiles = carveMaze(width, height, rng);
-  braid(tiles, width, height, rng, 0.15);
+  // The maze proper is `levelDims`, unchanged. The grid it sits in is bigger:
+  // the margin is solid rock that the warrens are dug out of, so a warren is
+  // extra ground rather than a bite out of the floor plan. Whatever rock is
+  // left over gets trimmed off at the end.
+  const core = levelDims(depth);
+  const carved = carveMaze(core.width, core.height, rng);
+  braid(carved, core.width, core.height, rng, 0.15);
+
+  const width = core.width + 2 * WARREN_MARGIN;
+  const height = core.height + 2 * WARREN_MARGIN;
+  const tiles: Tile[][] = [];
+  for (let y = 0; y < height; y++) tiles.push(new Array<Tile>(width).fill(Tile.Wall));
+  for (let y = 0; y < core.height; y++) {
+    for (let x = 0; x < core.width; x++) {
+      tiles[y + WARREN_MARGIN][x + WARREN_MARGIN] = carved[y][x];
+    }
+  }
+  const coreRect: Rect = { x: WARREN_MARGIN, y: WARREN_MARGIN, w: core.width, h: core.height };
 
   const level: LevelData = {
     depth,
@@ -171,13 +186,15 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
     monsters: [],
   };
 
-  level.start = pickStart(level, rng);
+  level.start = pickStart(level, coreRect, rng);
   level.exit = pickExit(level, bfsDistances(level, level.start), rng);
 
-  // Warrens are carved before anything is placed on the floor, and they open
-  // new tiles, so the route to the stairs is measured afterwards.
-  const warrens = carveWarrens(level, bfsPath(level, level.start, level.exit) ?? [], rng);
+  // Warrens are dug into the margin before anything is placed on the floor.
+  // They hang off the maze at one tile each and lead nowhere, so the route to
+  // the stairs is exactly what it was before they existed.
+  const warrens = digWarrens(level, coreRect, depth, rng);
   level.warrens = warrens;
+  trimToUsed(level);
 
   const distFromStart = bfsDistances(level, level.start);
   const mainPath = bfsPath(level, level.start, level.exit) ?? [];
@@ -245,19 +262,20 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
 // Placement helpers
 // ---------------------------------------------------------------------------
 
-function pickStart(level: LevelData, rng: Rng): Vec {
-  const cw = (level.width - 1) / 2;
-  const ch = (level.height - 1) / 2;
+/** Top-left region of the maze proper — never out in the margin. */
+function pickStart(level: LevelData, core: Rect, rng: Rng): Vec {
+  const cw = (core.w - 1) / 2;
+  const ch = (core.h - 1) / 2;
   const qx = Math.max(1, Math.floor(cw / 3));
   const qy = Math.max(1, Math.floor(ch / 3));
   const cands: Vec[] = [];
   for (let cy = 0; cy < qy; cy++) {
     for (let cx = 0; cx < qx; cx++) {
-      const p = { x: 2 * cx + 1, y: 2 * cy + 1 };
+      const p = { x: core.x + 2 * cx + 1, y: core.y + 2 * cy + 1 };
       if (isFloor(level, p)) cands.push(p);
     }
   }
-  return cands.length ? rng.pick(cands) : { x: 1, y: 1 };
+  return cands.length ? rng.pick(cands) : { x: core.x + 1, y: core.y + 1 };
 }
 
 function pickExit(level: LevelData, dist: Map<string, number>, rng: Rng): Vec {
@@ -557,138 +575,179 @@ export function warrenTilesOf(level: LevelData): Vec[] {
   return (level.warrens ?? []).flatMap((w) => w.tiles);
 }
 
-/** Smallest pocket off the main path worth braiding into a warren. */
-const WARREN_MIN_TILES = 6;
-/** Fraction of a warren's dead ends opened into a loop. */
-const WARREN_BRAID = 0.7;
+/**
+ * Rock left around the maze for the warrens to be dug out of. Even, so the
+ * maze's odd tile lattice carries on unbroken into the margin. Whatever is not
+ * dug gets trimmed off again by `trimToUsed`.
+ */
+export const WARREN_MARGIN = 6;
+/** Most warrens one floor can carry. */
+const WARREN_MAX = 4;
+/** A warren's ring is this many cells across, chosen per warren (odd). */
+const WARREN_MIN_WIDE = 3;
+const WARREN_MAX_WIDE = 5;
 /** One extra monster per this many warren tiles. */
-const WARREN_TILES_PER_MONSTER = 5;
+const WARREN_TILES_PER_MONSTER = 7;
 /** Never more than this many extra monsters in one warren. */
-export const WARREN_MONSTER_CAP = 4;
+export const WARREN_MONSTER_CAP = 3;
 /** ...nor more than this many across all of a floor's warrens. */
 export const WARREN_MONSTER_BUDGET = 14;
 
 /**
- * The pockets of floor hanging off the main path, as lists of tiles. Found by
- * flood-filling the maze with the route to the stairs treated as a wall, so
- * every pocket is somewhere you go out of your way to visit.
- */
-function offPathPockets(level: LevelData, onMain: Set<string>): Vec[][] {
-  const seen = new Set<string>(onMain);
-  const out: Vec[][] = [];
-  for (let y = 1; y < level.height - 1; y++) {
-    for (let x = 1; x < level.width - 1; x++) {
-      const p = { x, y };
-      const k = key(p);
-      if (seen.has(k) || !isFloor(level, p)) continue;
-      const pocket: Vec[] = [];
-      const stack: Vec[] = [p];
-      seen.add(k);
-      while (stack.length) {
-        const cur = stack.pop() as Vec;
-        pocket.push(cur);
-        for (const nb of floorNeighbors(level, cur)) {
-          const nk = key(nb);
-          if (seen.has(nk)) continue;
-          seen.add(nk);
-          stack.push(nb);
-        }
-      }
-      out.push(pocket);
-    }
-  }
-  return out;
-}
-
-/**
- * Braid the bigger off-path pockets hard, so a side branch stops being a dead
- * end you get cornered in and becomes a loop you can circle: somewhere to
- * fight, back off, and come round again when the way down is guarded by
- * something you cannot beat yet.
+ * Dig this floor's warrens out of the rock around the maze.
  *
- * A wall is only opened when every floor tile it touches belongs to the same
- * pocket. That is what keeps a warren off the critical path: it cannot gain a
- * second junction onto the route, so it never becomes a way around the guard
- * standing on it.
+ * Each one hangs off a single tile of the maze's outer wall, knocked through
+ * into the margin, and opens into a ring of corridor that comes back to that
+ * same tile. The maze itself is untouched: a warren is ground that was not
+ * there before, not floor taken away from the floor plan.
+ *
+ * Nothing is dug unless the whole shape, and every tile around it, is solid
+ * rock. That is what guarantees the one way in — a warren cannot brush against
+ * the maze a second time, or against another warren, so it can never become a
+ * way around the guard standing on the route.
  */
-function carveWarrens(level: LevelData, mainPath: Vec[], rng: Rng): Warren[] {
-  const onMain = new Set([key(level.start), ...mainPath.map(key)]);
+function digWarrens(level: LevelData, core: Rect, depth: number, rng: Rng): Warren[] {
+  const want = Math.min(WARREN_MAX, 2 + Math.floor(depth / 5));
   const warrens: Warren[] = [];
-  for (const pocket of offPathPockets(level, onMain)) {
-    if (pocket.length < WARREN_MIN_TILES) continue;
-    const inPocket = new Set(pocket.map(key));
-    // One way in, or it is not a warren: a pocket that touches the route twice
-    // is a loop through the level rather than a loop off it, and walking it
-    // would advance the player instead of costing them the detour.
-    const mouth = soleMouth(level, pocket, inPocket);
-    if (!mouth) continue;
-    const ends = pocket.filter((p) => floorNeighbors(level, p).length === 1);
-    rng.shuffle(ends);
-    const opened: Vec[] = [];
-    for (const p of ends.slice(0, Math.ceil(ends.length * WARREN_BRAID))) {
-      const w = loopWall(level, p, inPocket, rng);
-      if (!w) continue;
-      level.tiles[w.y][w.x] = Tile.Floor;
-      inPocket.add(key(w));
-      opened.push(w);
-    }
-    if (!opened.length) continue; // still a plain dead end: not a warren
-    warrens.push({ mouth, tiles: [...pocket, ...opened] });
+  for (const { at, out } of perimeterAnchors(level, core, rng)) {
+    if (warrens.length >= want) break;
+    const shape = warrenShape(at, out, rng.int(WARREN_MIN_WIDE, WARREN_MAX_WIDE) | 1);
+    if (!canDig(level, shape, at)) continue;
+    for (const t of shape) level.tiles[t.y][t.x] = Tile.Floor;
+    warrens.push({ mouth: { x: at.x + out.x, y: at.y + out.y }, tiles: shape });
   }
   return warrens;
 }
 
 /**
- * The one tile of `pocket` that touches the rest of the maze, or null if it
- * touches at more than one place (or none). This is the tile the renderer
- * breaks the wall open around, so the player can learn the shape without
- * being told.
+ * Every tile of the maze that sits against its outer wall, with the direction
+ * that wall faces, shuffled. These are the only places a warren can be dug
+ * from: anywhere else there is more maze on the other side, not rock.
  */
-function soleMouth(level: LevelData, pocket: Vec[], inPocket: Set<string>): Vec | null {
-  let mouth: Vec | null = null;
-  let ways = 0;
-  for (const p of pocket) {
-    for (const nb of floorNeighbors(level, p)) {
-      if (inPocket.has(key(nb))) continue;
-      if (++ways > 1) return null; // a second way in
-      mouth = p;
-    }
+function perimeterAnchors(level: LevelData, core: Rect, rng: Rng): { at: Vec; out: Vec }[] {
+  const out: { at: Vec; out: Vec }[] = [];
+  const push = (at: Vec, dir: Vec) => {
+    if (!isFloor(level, at)) return;
+    if (eq(at, level.start) || eq(at, level.exit)) return;
+    out.push({ at, out: dir });
+  };
+  for (let x = core.x + 1; x < core.x + core.w - 1; x += 2) {
+    push({ x, y: core.y + 1 }, { x: 0, y: -1 });
+    push({ x, y: core.y + core.h - 2 }, { x: 0, y: 1 });
   }
-  return ways === 1 ? mouth : null;
+  for (let y = core.y + 1; y < core.y + core.h - 1; y += 2) {
+    push({ x: core.x + 1, y }, { x: -1, y: 0 });
+    push({ x: core.x + core.w - 2, y }, { x: 1, y: 0 });
+  }
+  return rng.shuffle(out);
 }
 
 /**
- * A wall next to `p` that can be opened without letting the pocket touch
- * anything new: the tile beyond it is already in the pocket, and every other
- * floor tile the wall touches is too.
+ * The tiles a warren `wide` cells across would occupy: a neck through the maze
+ * wall, then a ring of corridor around a block of rock, so whichever way you
+ * turn inside it you come back to where you came in.
  */
-function loopWall(level: LevelData, p: Vec, inPocket: Set<string>, rng: Rng): Vec | null {
-  const dirs: Vec[] = [
-    { x: 0, y: -1 },
-    { x: 1, y: 0 },
-    { x: 0, y: 1 },
-    { x: -1, y: 0 },
-  ];
-  const cands: Vec[] = [];
-  for (const dir of dirs) {
-    const w = { x: p.x + dir.x, y: p.y + dir.y };
-    const o = { x: p.x + 2 * dir.x, y: p.y + 2 * dir.y };
-    if (w.x <= 0 || w.y <= 0 || w.x >= level.width - 1 || w.y >= level.height - 1) continue;
-    if (level.tiles[w.y][w.x] !== Tile.Wall) continue;
-    if (!isFloor(level, o) || !inPocket.has(key(o))) continue;
-    // Opening `w` joins it to every floor tile it touches. All of them must
-    // already be inside this pocket, or the warren gains a new junction.
-    let safe = true;
-    for (const nb of floorNeighbors(level, w)) {
-      if (!inPocket.has(key(nb))) {
-        safe = false;
-        break;
+function warrenShape(at: Vec, out: Vec, wide: number): Vec[] {
+  const side = { x: out.y, y: out.x }; // ninety degrees to the way in
+  const half = wide - 1; // in tiles: cells sit two apart
+  const tile = (along: number, across: number): Vec => ({
+    x: at.x + out.x * along + side.x * across,
+    y: at.y + out.y * along + side.y * across,
+  });
+  const tiles: Vec[] = [tile(1, 0), tile(3, 0)]; // neck, and its way through
+  // Two runs of corridor, two and four tiles out, closed at both ends.
+  for (const along of [2, 4]) {
+    for (let a = -half; a <= half; a++) tiles.push(tile(along, a));
+  }
+  for (const a of [-half, half]) tiles.push(tile(3, a));
+  return tiles;
+}
+
+/**
+ * Can this shape be dug? Every tile of it must be rock, and every tile it
+ * touches must be rock too, or part of the shape, or the anchor it hangs off.
+ * That last clause is the one way in.
+ */
+function canDig(level: LevelData, shape: Vec[], at: Vec): boolean {
+  const inShape = new Set(shape.map(key));
+  for (const t of shape) {
+    if (t.x < 1 || t.y < 1 || t.x >= level.width - 1 || t.y >= level.height - 1) return false;
+    if (level.tiles[t.y][t.x] !== Tile.Wall) return false;
+  }
+  for (const t of shape) {
+    for (const nb of [
+      { x: t.x + 1, y: t.y },
+      { x: t.x - 1, y: t.y },
+      { x: t.x, y: t.y + 1 },
+      { x: t.x, y: t.y - 1 },
+    ]) {
+      if (inShape.has(key(nb)) || eq(nb, at)) continue;
+      if (isFloor(level, nb)) return false; // it would open onto something already dug
+    }
+  }
+  return true;
+}
+
+/**
+ * Shrink the grid back onto the ground actually used, leaving a single ring of
+ * wall. The margin is sized for a warren on every side; most floors do not get
+ * one everywhere, and nobody wants to scroll across the rock where it would
+ * have gone.
+ */
+function trimToUsed(level: LevelData): void {
+  let minX = level.width;
+  let minY = level.height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < level.height; y++) {
+    for (let x = 0; x < level.width; x++) {
+      if (level.tiles[y][x] !== Tile.Floor) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) return;
+  const offX = minX - 1;
+  const offY = minY - 1;
+  // One ring of wall around the used ground, and both sides odd the way the
+  // rest of the generator expects.
+  const width = oddAtLeast(maxX - minX + 3);
+  const height = oddAtLeast(maxY - minY + 3);
+  const tiles: Tile[][] = [];
+  for (let y = 0; y < height; y++) {
+    const row = new Array<Tile>(width).fill(Tile.Wall);
+    if (y > 0 && y < height - 1) {
+      for (let x = 1; x < width - 1; x++) {
+        const sx = x + offX;
+        const sy = y + offY;
+        if (sx > minX - 1 && sx < maxX + 1 && sy > minY - 1 && sy < maxY + 1) {
+          row[x] = level.tiles[sy][sx];
+        }
       }
     }
-    if (safe) cands.push(w);
+    tiles.push(row);
   }
-  return cands.length ? rng.pick(cands) : null;
+  const shift = (p: Vec) => {
+    p.x -= offX;
+    p.y -= offY;
+  };
+  level.tiles = tiles;
+  level.width = width;
+  level.height = height;
+  shift(level.start);
+  shift(level.exit);
+  for (const warren of level.warrens ?? []) {
+    shift(warren.mouth);
+    for (const t of warren.tiles) shift(t);
+  }
 }
+
+function oddAtLeast(n: number): number {
+  return n % 2 === 1 ? n : n + 1;
+}
+
 
 /** A patrol beat that stays inside the warren, so the loop is what it walks. */
 function warrenBeat(level: LevelData, from: Vec, inWarren: Set<string>, rng: Rng): Vec[] | null {
@@ -726,12 +785,14 @@ function stockWarrens(
   const lurkers = depth >= LURKERS_FROM_DEPTH;
   let n = level.monsters.length;
   let budget = WARREN_MONSTER_BUDGET;
-  for (const { tiles } of warrens) {
+  for (const { mouth, tiles } of warrens) {
     const want = Math.min(budget, WARREN_MONSTER_CAP, Math.floor(tiles.length / WARREN_TILES_PER_MONSTER));
     if (want <= 0) continue;
+    // Never the mouth: a guard is rooted, and one standing in the only way in
+    // would seal the warren off from the hero who came here to grind it.
     const spots = tiles.filter((p) => {
       const k = key(p);
-      return !used.has(k) && (dist.get(k) ?? 0) >= MONSTER_MIN_DIST;
+      return !eq(p, mouth) && !used.has(k) && (dist.get(k) ?? 0) >= MONSTER_MIN_DIST;
     });
     rng.shuffle(spots);
     const inWarren = new Set(tiles.map(key));

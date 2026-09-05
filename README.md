@@ -47,11 +47,13 @@ Play it at **https://postazure.github.io/table-maze/**
     always enough to force your way past. Guards with something to protect — a
     chest, a door, the stairs themselves — hit far harder, and those you can
     walk around.
-  - **Warrens** are the side branches that loop back on themselves rather than
-    dead-ending. Each one branches off the maze at a single point and rejoins
-    nowhere, so walking one never carries you toward the stairs — it only costs
-    you the detour. You can always reach the stairs without setting foot in one.
-    They hold guards and patrols of their own. That is where you go when the guard on the critical path is
+  - **Warrens** are rings of corridor dug out of the rock *outside* the maze.
+    Each one is knocked through the maze's outer wall at a single tile and
+    loops back to that same tile, so walking one never carries you toward the
+    stairs — it only costs you the detour, and you can always reach the stairs
+    without setting foot in one. They are extra ground rather than floor taken
+    out of the maze: the maze itself is the same size and shape it would have
+    been without them. They hold guards and patrols of their own. That is where you go when the guard on the critical path is
     beating you: clear a warren, come back a level or two up, and take the
     corridor. The loop is the point. It means you can break off a fight, let
     your hearts come back on the far side, and come at it again, which you
