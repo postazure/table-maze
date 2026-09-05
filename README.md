@@ -116,12 +116,16 @@ Play it at **https://postazure.github.io/table-maze/**
   long fight doesn't turn into a stuck sample; the ones that mean something
   specific — a chest opening, a level up, the stairs, a crystal breaking —
   never change, so you can learn them by ear and know what happened without
-  looking. There are seven pieces of music: five for the dungeon (the theme
-  picks one, so it changes every three floors), one for the shop and one for
-  boss chambers. None of them is a loop. Each is a set of rules — key, tempo,
-  chords, how busy the melody should be — that the game plays fresh as it
-  goes, re-writing the tune every few bars and dropping the lead out every
-  eighth bar, so it stays in the background where it belongs.
+  looking. The music is ambience rather than a tune: a low drone, a
+  chord that changes every fifteen seconds or so, and the odd single note, all
+  through a big reverb so the dungeon sounds like a large stone room. There are
+  seven pieces — five for the dungeon (the theme picks one, so it changes every
+  three floors), one for the shop, and one for boss chambers, which is the only
+  one with a pulse under it. None of them is a loop: each is a set of rules the
+  game plays fresh as it goes, so which notes land, and whether any land at
+  all, is different every time. About a third of bars hold nothing but the
+  drone, which is what keeps the music somewhere behind you rather than in
+  front.
 - Progress is saved in your browser's local storage automatically.
 
 ## Development

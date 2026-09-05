@@ -740,6 +740,11 @@ button {
 }
 
 .hud-btn-help {
+  /* The `?` is text but the speaker is a block-level SVG, and a block child
+     ignores text-align: only a flex box centres both. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-width: 34px;
   padding: 8px 0;
   font-size: 12px;

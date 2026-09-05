@@ -234,9 +234,10 @@ no audio files, the same way there are no image files.
 ```ts
 export function midiToHz(midi: number): number;
 export function noiseBuffer(ctx: BaseAudioContext): AudioBuffer;  // one second of white noise, cached per context
-export function tone(ctx: BaseAudioContext, dest: AudioNode, o: ToneOpts): void;   // one pitched note
+export function tone(ctx: BaseAudioContext, dest: AudioNode, o: ToneOpts): void;   // one pitched note; `release` makes it a held pad instead of a pluck
 export function noise(ctx: BaseAudioContext, dest: AudioNode, o: NoiseOpts): void; // one filtered noise burst
 export function arpeggio(ctx: BaseAudioContext, dest: AudioNode, notes: number[], o): void; // a run of notes
+export function reverbImpulse(ctx: BaseAudioContext, seconds?, decay?): AudioBuffer; // a room for a ConvolverNode, cached per context
 ```
 Square/triangle/sawtooth oscillators, filtered white noise, short envelopes:
 the palette of a 1980s sound chip and nothing else. Every voice is
@@ -260,15 +261,26 @@ export class MusicPlayer {
   dispose(): void;
 }
 ```
+**This is ambience, not a tune, and it must stay that way.** A crawl is played
+in long stretches, so anything with a hook becomes an earworm and then the
+reason someone mutes the game. Every track is a low drone, a chord that changes
+every fifteen to twenty seconds, and at most a couple of long single notes a
+bar — with about a third of bars holding none at all. Most of the signal goes
+through a convolution reverb (`reverbImpulse`), so it reads as a large stone
+room rather than a sound chip. Nothing runs faster than 64 bpm, nothing plays
+anything shorter than a beat, and only `dread` and `ember` carry a pulse (one
+low thud a bar, a heartbeat, never a drum kit). Adding sixteenth-note
+arpeggios, a drum pattern, or a memorable melody line would undo the point.
+
 No loops and no files: a track is a description (key, scale, tempo, chord
-progression, melodic density, drums) and the player writes the parts bar by bar
-against it. Chords and bass cycle so the music has a shape; the melody is an
-eight-note motif re-written every four bars and nudged in between, and every
-eighth bar the lead rests. Notes are scheduled ~0.3s ahead on a 25ms interval,
-so a dropped frame never stutters the music; a throttled background tab is
-detected by the schedule falling behind and skipped forward rather than caught
-up. Boss floors get `dread`, shops `market`, and each dungeon theme maps to one
-of the five maze tracks (neighbouring themes never share one).
+progression, how many notes a bar may hold) and the player fills it in bar by
+bar. Chords cycle so the music has a shape; which notes land, and whether any
+land, is decided as it goes, stepping between chord tones rather than leaping.
+A whole bar is scheduled ~1.2s ahead on a 200ms interval, so a dropped frame
+never stutters the music; a throttled background tab is detected by the
+schedule falling behind and skipped forward rather than caught up. Boss floors
+get `dread`, shops `market`, and each dungeon theme maps to one of the five
+maze tracks (neighbouring themes never share one).
 
 ## audio/audio.ts
 ```ts

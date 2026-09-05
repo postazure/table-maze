@@ -26,7 +26,13 @@ const STORAGE_KEY = 'table-maze:sound';
 const MASTER_GAIN = 0.9;
 /** Sound effects sit well over the music: they are information, the music is not. */
 const SFX_GAIN = 0.95;
-const MUSIC_GAIN = 0.38;
+/**
+ * Low, and lower than it looks: the music is a continuous bed rather than a
+ * run of short notes, so it carries about three times the energy of the old
+ * chiptune at the same setting. This keeps it under the compressor's threshold
+ * too, so the music never ducks the sound effects.
+ */
+const MUSIC_GAIN = 0.18;
 
 /** At most this many sounds start in any one frame... */
 const MAX_PER_FRAME = 5;
