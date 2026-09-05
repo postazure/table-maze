@@ -21,7 +21,10 @@ import { playSfx } from './sfx';
 import { MusicPlayer, trackForLevel } from './music';
 
 const STORAGE_KEY = 'table-maze:sound';
-const VOLUME_STORAGE_KEY = 'table-maze:volume';
+const SFX_VOLUME_KEY = 'table-maze:volume:sfx';
+const MUSIC_VOLUME_KEY = 'table-maze:volume:music';
+/** Superseded by the two keys above; still read once as a fallback default for both. */
+const LEGACY_VOLUME_KEY = 'table-maze:volume';
 
 /**
  * The mix, in one place, measured rather than guessed.
@@ -44,9 +47,9 @@ const VOLUME_STORAGE_KEY = 'table-maze:volume';
  * raising `music` much past 0.18 would spend it.
  */
 const MIX = {
-  /** Overall trim, applied last, after the compressor. The player's own
-   *  volume slider (see `GameAudio.volume`) scales this down further; it
-   *  never scales it up, so a slider at max still sounds like the mix above. */
+  /** Overall trim, applied last, after the compressor. Just on/off; the
+   *  player's own sfx/music sliders (see `GameAudio.sfxVolume`/`musicVolume`)
+   *  trim their own busses instead, so one can duck without the other. */
   master: 0.5,
   sfx: 0.44,
   music: 0.127,
@@ -82,12 +85,14 @@ export class GameAudio {
   /** Whether the player wants sound at all. Persisted across runs. */
   private on: boolean;
 
-  /** The player's own trim on top of the mix, 0..1. Persisted across runs. */
-  private volume: number;
+  /** The player's own trim on each bus, 0..1. Persisted across runs. */
+  private sfxLevel: number;
+  private musicLevel: number;
 
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private sfxBus: GainNode | null = null;
+  private musicBus: GainNode | null = null;
   private music: MusicPlayer | null = null;
 
   /** performance.now() of the last play, per sound, for the gap rule above. */
@@ -96,16 +101,23 @@ export class GameAudio {
 
   constructor() {
     this.on = readPreference();
-    this.volume = readVolume();
+    const legacy = readLegacyVolume();
+    this.sfxLevel = readVolume(SFX_VOLUME_KEY, legacy);
+    this.musicLevel = readVolume(MUSIC_VOLUME_KEY, legacy);
   }
 
   get enabled(): boolean {
     return this.on;
   }
 
-  /** The player's own trim on top of the mix, 0..1. */
-  get level(): number {
-    return this.volume;
+  /** The player's own trim on the sound-effects bus, 0..1. */
+  get sfxVolume(): number {
+    return this.sfxLevel;
+  }
+
+  /** The player's own trim on the music bus, 0..1. */
+  get musicVolume(): number {
+    return this.musicLevel;
   }
 
   /**
@@ -159,15 +171,21 @@ export class GameAudio {
       // otherwise go on scheduling notes into a silent gain for the whole run.
       this.music?.play(null);
     }
-    this.rampMaster(0.15);
+    this.rampGain(this.master, this.on ? MIX.master : 0.0001, 0.15);
   }
 
-  /** Set the player's own trim (0..1) and remember it. Takes effect instantly. */
-  setLevel(level: number): void {
-    this.volume = Math.min(1, Math.max(0, level));
-    writeVolume(this.volume);
-    // Quick ramp rather than a snap, so dragging the slider doesn't click.
-    this.rampMaster(0.05);
+  /** Set the effects trim (0..1) and remember it. A quick ramp, so dragging never clicks. */
+  setSfxVolume(level: number): void {
+    this.sfxLevel = clamp01(level);
+    writeVolume(SFX_VOLUME_KEY, this.sfxLevel);
+    this.rampGain(this.sfxBus, MIX.sfx * this.sfxLevel, 0.05);
+  }
+
+  /** Set the music trim (0..1) and remember it. A quick ramp, so dragging never clicks. */
+  setMusicVolume(level: number): void {
+    this.musicLevel = clamp01(level);
+    writeVolume(MUSIC_VOLUME_KEY, this.musicLevel);
+    this.rampGain(this.musicBus, MIX.music * this.musicLevel, 0.05);
   }
 
   /**
@@ -194,24 +212,19 @@ export class GameAudio {
     this.ctx = null;
     this.master = null;
     this.sfxBus = null;
+    this.musicBus = null;
     void ctx?.close().catch(() => undefined);
   }
 
   // -------------------------------------------------------------------------
 
-  /** What the master gain should be right now, given on/off and the slider. */
-  private masterTarget(): number {
-    return this.on ? MIX.master * this.volume : 0.0001;
-  }
-
-  /** Glide the master gain to `masterTarget()` over `seconds`, clicks-free. */
-  private rampMaster(seconds: number): void {
-    const master = this.master;
-    if (!master || !this.ctx) return;
+  /** Glide a gain node to `target` over `seconds`, so a change never clicks. */
+  private rampGain(node: GainNode | null, target: number, seconds: number): void {
+    if (!node || !this.ctx) return;
     const now = this.ctx.currentTime;
-    master.gain.cancelScheduledValues(now);
-    master.gain.setValueAtTime(master.gain.value, now);
-    master.gain.linearRampToValueAtTime(this.masterTarget(), now + seconds);
+    node.gain.cancelScheduledValues(now);
+    node.gain.setValueAtTime(node.gain.value, now);
+    node.gain.linearRampToValueAtTime(target, now + seconds);
   }
 
   private ready(): boolean {
@@ -243,18 +256,19 @@ export class GameAudio {
     glue.release.value = 0.16;
 
     const master = ctx.createGain();
-    master.gain.value = this.masterTarget();
+    master.gain.value = this.on ? MIX.master : 0.0001;
     glue.connect(master).connect(ctx.destination);
     this.master = master;
 
     const sfxBus = ctx.createGain();
-    sfxBus.gain.value = MIX.sfx;
+    sfxBus.gain.value = MIX.sfx * this.sfxLevel;
     sfxBus.connect(glue);
     this.sfxBus = sfxBus;
 
     const musicBus = ctx.createGain();
-    musicBus.gain.value = MIX.music;
+    musicBus.gain.value = MIX.music * this.musicLevel;
     musicBus.connect(glue);
+    this.musicBus = musicBus;
     this.music = new MusicPlayer(ctx, musicBus);
   }
 
@@ -304,20 +318,37 @@ function writePreference(on: boolean): void {
   }
 }
 
-function readVolume(): number {
+function clamp01(n: number): number {
+  return Math.min(1, Math.max(0, n));
+}
+
+/** Read one channel's volume, falling back to `fallback` (the legacy combined slider, or the default) if unset. */
+function readVolume(key: string, fallback: number): number {
   try {
-    const raw = localStorage?.getItem(VOLUME_STORAGE_KEY);
+    const raw = localStorage?.getItem(key);
+    if (raw === null) return fallback;
+    const n = Number(raw);
+    return Number.isFinite(n) ? clamp01(n) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** The single volume slider this replaced; read once as the starting point for both new ones. */
+function readLegacyVolume(): number {
+  try {
+    const raw = localStorage?.getItem(LEGACY_VOLUME_KEY);
     if (raw === null) return DEFAULT_VOLUME;
     const n = Number(raw);
-    return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : DEFAULT_VOLUME;
+    return Number.isFinite(n) ? clamp01(n) : DEFAULT_VOLUME;
   } catch {
     return DEFAULT_VOLUME;
   }
 }
 
-function writeVolume(level: number): void {
+function writeVolume(key: string, level: number): void {
   try {
-    localStorage?.setItem(VOLUME_STORAGE_KEY, String(level));
+    localStorage?.setItem(key, String(level));
   } catch {
     /* nothing to do; the choice lasts for this session only */
   }

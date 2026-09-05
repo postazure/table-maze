@@ -14,7 +14,7 @@ import { useGame } from './useGame';
 
 export function App() {
   const { game, hud, newGame, dismissModal, openHelp, buyOffer } = useGame();
-  const { audio, soundOn, toggleSound, volume, setVolume } = useAudio();
+  const { audio, soundOn, toggleSound, sfxVolume, setSfxVolume, musicVolume, setMusicVolume } = useAudio();
   const [volumeOpen, setVolumeOpen] = useState(false);
   return (
     <div className="app">
@@ -32,8 +32,10 @@ export function App() {
       {volumeOpen && (
         <VolumeModal
           soundOn={soundOn}
-          volume={volume}
-          onChangeVolume={setVolume}
+          sfxVolume={sfxVolume}
+          musicVolume={musicVolume}
+          onChangeSfxVolume={setSfxVolume}
+          onChangeMusicVolume={setMusicVolume}
           onClose={() => setVolumeOpen(false)}
         />
       )}
