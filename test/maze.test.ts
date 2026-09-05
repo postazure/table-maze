@@ -17,6 +17,7 @@ import {
   damage,
   levelDims,
   makeMonster,
+  monsterLevelCap,
   newHero,
   rollChestLoot,
   xpForLevel,
@@ -336,6 +337,55 @@ test('patrols are trash, guards are a fight, lurkers are the thing you lure', ()
       assert.ok(patrol.xp < guard.xp && guard.xp < lurker.xp, `${where}: xp ${patrol.xp} ${guard.xp} ${lurker.xp}`);
       // A lurker at depth hits for a whole heart or more: not a monster to trade blows with.
       assert.ok(lurker.atk >= HEART, `${where}: lurker atk ${lurker.atk}`);
+    }
+  }
+});
+
+test('spawn headroom over the hero grows with the hero level, and never digs below the floor', () => {
+  // Early on, one level over the hero is the most a floor may roll...
+  assert.equal(monsterLevelCap(2, 1), 2);
+  assert.equal(monsterLevelCap(2, 2), 3);
+  assert.equal(monsterLevelCap(3, 3), 4);
+  // ...and the headroom opens up as the hero climbs, to the full role lift.
+  assert.equal(monsterLevelCap(4, 4), 6);
+  assert.equal(monsterLevelCap(8, 8), 11);
+  assert.equal(monsterLevelCap(12, 12), 15);
+  assert.equal(monsterLevelCap(20, 40), 43, 'never more than three levels over');
+  // Falling behind does not make the dungeon shallower: the floor's own depth
+  // is the floor of the cap.
+  assert.equal(monsterLevelCap(9, 1), 9);
+  // No hero level given (balance tables, generator tests): no cap at all.
+  assert.equal(monsterLevelCap(5, undefined), Infinity);
+});
+
+test('a floor never spawns a monster far over the hero who walked into it', () => {
+  for (const depth of [1, 2, 3, 5, 8, 12]) {
+    for (const heroLevel of [1, depth, depth + 1]) {
+      const cap = monsterLevelCap(depth, heroLevel);
+      const level = generateLevel(depth, 8888 + depth, heroLevel);
+      assert.ok(level.monsters.length > 0, `depth ${depth}: no monsters`);
+      for (const m of level.monsters) {
+        const where = `depth ${depth}, hero ${heroLevel}, ${m.kind} at ${m.level}`;
+        assert.ok(m.level <= cap, where);
+        assert.ok(m.level >= depth, `${where}: never under the floor's own depth`);
+      }
+    }
+  }
+});
+
+test('the level cap only ever trims: a hero who keeps up sees the same floor', () => {
+  for (const depth of [2, 3, 6, 9]) {
+    // Far enough ahead that the cap cannot bite, versus no cap at all.
+    const capped = generateLevel(depth, 4242, depth + 20);
+    const raw = generateLevel(depth, 4242);
+    assert.deepEqual(capped.monsters, raw.monsters, `depth ${depth}`);
+    // ...and a hero at the depth's own level gets a floor no harder than that.
+    const atLevel = generateLevel(depth, 4242, depth);
+    assert.equal(atLevel.monsters.length, raw.monsters.length, `depth ${depth}: same count`);
+    for (let i = 0; i < raw.monsters.length; i++) {
+      assert.ok(atLevel.monsters[i].level <= raw.monsters[i].level, `depth ${depth}, monster ${i}`);
+      assert.equal(atLevel.monsters[i].kind, raw.monsters[i].kind, `depth ${depth}, monster ${i}`);
+      assert.deepEqual(atLevel.monsters[i].pos, raw.monsters[i].pos, `depth ${depth}, monster ${i}`);
     }
   }
 });

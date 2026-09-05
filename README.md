@@ -62,7 +62,10 @@ Play it at **https://postazure.github.io/table-maze/**
     where a passage opens.
   - **Lurkers** sit off the main path and chase you when you get close. They hit
     for whole hearts and outlast you at your level: fight one head-on and you'll
-    be knocked down. Lure it away from the corridor it watches, then loop around
+    be knocked down. How close is "close" depends on you: a lurker that is over
+    your level notices you a tile later for each level of the gap, up to two
+    tiles, so on the early floors you can walk into its corridor and back out
+    again. Catch up to it and it reaches for you the full distance. Lure it away from the corridor it watches, then loop around
     it through another passage. Kill one when you're well over its level and the
     reward is the biggest in the dungeon. The first floor has none — it is
     patrols and guards while you learn the controls.
@@ -94,7 +97,12 @@ Play it at **https://postazure.github.io/table-maze/**
   overgrown ruins, haunted library, hive, abyss, then around again. Each theme has
   its own colours and its own monsters, but they always fill the same three roles.
 - Step on the 🪜 stairs to descend. Levels get bigger and monsters get stronger
-  the deeper you go. Your hero levels up from XP and keeps every stat and item.
+  the deeper you go, but never far over your head: a floor is rolled against your
+  level as you walk in, and it may only put monsters a level or so above you at
+  first. That headroom widens as you climb — being two levels down matters far
+  less at level ten than at level two — until the cap stops biting and the floor
+  rolls its full spread. It never works the other way: a floor is never weaker
+  than its own depth, so falling behind does not make the dungeon easier. Your hero levels up from XP and keeps every stat and item.
   Clearing a floor's patrols, guards and chests is worth about one level, so the
   hero tracks the depth rather than outrunning it: skip fights and the dungeon
   pulls ahead of you, kill the lurkers too and you buy yourself a cushion. It is

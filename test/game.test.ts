@@ -11,7 +11,7 @@ import { clearSave, loadGame, saveGame } from '../src/engine/save';
 import { equip, heroMoveMs, upgradeRandomItem } from '../src/engine/items';
 import { generateShopLevel, offerAt } from '../src/engine/shop';
 import { makeBossMonster } from '../src/engine/boss';
-import { newHero } from '../src/engine/balance';
+import { lurkerSightRange, newHero } from '../src/engine/balance';
 
 // ---------------------------------------------------------------------------
 // Test fixtures: hand-drawn levels so nothing depends on the generator.
@@ -449,6 +449,77 @@ test('a lurker starts chasing when the hero comes within sightRange', () => {
   updateMonsters(g.state, 16, rng);
   assert.equal(lurk.state, 'returning');
   assert.deepEqual(lurk.pos, { x: 5, y: 2 }, 'heads home');
+});
+
+test('lurker aggro range shrinks with the level gap, capped both ways', () => {
+  // At or under the hero's level: the full range, never more.
+  assert.equal(lurkerSightRange(4, 3, 3), 4);
+  assert.equal(lurkerSightRange(4, 1, 9), 4, 'out-levelling one does not sharpen it');
+  // One level over: one tile less. Two over: two.
+  assert.equal(lurkerSightRange(4, 4, 3), 3);
+  assert.equal(lurkerSightRange(4, 5, 3), 2);
+  // The drop is capped at two tiles however far ahead it gets...
+  assert.equal(lurkerSightRange(4, 20, 1), 2);
+  // ...and it never falls under two tiles, whatever the base.
+  assert.equal(lurkerSightRange(3, 20, 1), 2);
+});
+
+test('a lurker over the hero level waits until they are closer', () => {
+  // 11x5 with a single corridor along y = 2, floors at x = 1..9.
+  const level = mkLevel(['###########', '###########', '#.........#', '###########', '###########']);
+  const g = Game.forTest(7);
+  install(g, level, { x: 1, y: 2 });
+
+  const lurk = mkMonster({
+    id: 'l2',
+    kind: 'lurker',
+    pos: { x: 7, y: 2 },
+    home: { x: 7, y: 2 },
+    sightRange: 4,
+    leash: 8,
+    level: 4, // two clear levels over a level-one hero
+    moveInterval: 200,
+    attackInterval: 99999,
+  });
+  level.monsters.push(lurk);
+  const rng = makeRng(23);
+
+  g.state.hero.level = 1;
+  g.state.hero.pos = { x: 4, y: 2 }; // 3 tiles: inside its base range, outside the cut-back one
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 16, rng);
+  assert.equal(lurk.state, 'idle', 'a hero three levels under gets room to back out');
+
+  g.state.hero.pos = { x: 5, y: 2 }; // 2 tiles
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 16, rng);
+  assert.equal(lurk.state, 'chasing', 'step close enough and it still comes');
+});
+
+test('a lurker reaches its full range once the hero catches up', () => {
+  const level = mkLevel(['###########', '###########', '#.........#', '###########', '###########']);
+  const g = Game.forTest(7);
+  install(g, level, { x: 1, y: 2 });
+
+  const lurk = mkMonster({
+    id: 'l3',
+    kind: 'lurker',
+    pos: { x: 7, y: 2 },
+    home: { x: 7, y: 2 },
+    sightRange: 4,
+    leash: 8,
+    level: 4,
+    moveInterval: 200,
+    attackInterval: 99999,
+  });
+  level.monsters.push(lurk);
+  const rng = makeRng(23);
+
+  g.state.hero.level = 4; // level with it
+  g.state.hero.pos = { x: 3, y: 2 }; // 4 tiles away
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 16, rng);
+  assert.equal(lurk.state, 'chasing');
 });
 
 test('a guard never moves and only fights once it has been hit', () => {

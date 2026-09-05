@@ -16,6 +16,7 @@ import { Tile, key, parseKey, eq } from './types';
 import type { Chest, Door, KeyItem, LevelData, Monster, Rect, RosterKind, Rng, Vec, Warren } from './types';
 import { hashSeed, makeRng } from './rng';
 import { levelDims, makeMonster, rollChestLoot } from './balance';
+import type { MonsterOpts } from './balance';
 import { themeForDepth } from './themes';
 import { bfsDistances, bfsPath, floorNeighbors, isFloor } from './pathfind';
 
@@ -30,23 +31,31 @@ export const ROUTE_MONSTER_CAP = 18;
 interface GenOpts {
   doors: boolean;
   chests: boolean;
+  /** The hero's level as they take the stairs down. See `monsterLevelCap`. */
+  heroLevel?: number;
 }
 
-export function generateLevel(depth: number, runSeed: number): LevelData {
+/**
+ * One maze floor. `heroLevel` is the hero's level at the moment they step onto
+ * it: it caps how far above them the floor's monsters may be rolled (see
+ * `monsterLevelCap`). The level is generated once and then saved with the run,
+ * so the cap is a snapshot of the hero on arrival, not a moving target.
+ */
+export function generateLevel(depth: number, runSeed: number, heroLevel?: number): LevelData {
   const d = Math.max(1, Math.floor(depth));
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const seed = attempt === 0 ? hashSeed(runSeed, d) : hashSeed(runSeed, d, attempt);
-    const level = build(d, seed, { doors: true, chests: true });
+    const level = build(d, seed, { doors: true, chests: true, heroLevel });
     if (validate(level)) return level;
   }
   // Relax: drop the doors (and their keys), keep the rest.
   for (let attempt = MAX_ATTEMPTS; attempt < MAX_ATTEMPTS + 8; attempt++) {
     const seed = hashSeed(runSeed, d, attempt);
-    const level = build(d, seed, { doors: false, chests: true });
+    const level = build(d, seed, { doors: false, chests: true, heroLevel });
     if (validate(level)) return level;
   }
   // Never throw: a bare maze with monsters is always solvable.
-  return build(d, hashSeed(runSeed, d, 9999), { doors: false, chests: false });
+  return build(d, hashSeed(runSeed, d, 9999), { doors: false, chests: false, heroLevel });
 }
 
 // ---------------------------------------------------------------------------
@@ -252,8 +261,8 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
     }
   }
 
-  placeMonsters(level, depth, fullPath, onMain, used, distFromStart, warrens, rng);
-  stockWarrens(level, depth, warrens, used, distFromStart, rng);
+  placeMonsters(level, depth, fullPath, onMain, used, distFromStart, warrens, rng, spawnOpts(opts));
+  stockWarrens(level, depth, warrens, used, distFromStart, rng, spawnOpts(opts));
   easeGates(level, depth, rng);
   return level;
 }
@@ -420,6 +429,11 @@ function pickFreeTile(
 // Monsters
 // ---------------------------------------------------------------------------
 
+/** What every `makeMonster` call on this floor carries. */
+function spawnOpts(opts: GenOpts): MonsterOpts {
+  return { heroLevel: opts.heroLevel };
+}
+
 function placeMonsters(
   level: LevelData,
   depth: number,
@@ -429,6 +443,7 @@ function placeMonsters(
   dist: Map<string, number>,
   warrens: Warren[],
   rng: Rng,
+  spawn: MonsterOpts,
 ): void {
   // The warrens get their own monsters afterwards. Keeping the route's budget
   // out of them leaves each warren a self-contained pocket rather than a place
@@ -479,16 +494,16 @@ function placeMonsters(
   for (const kind of kinds) {
     const id = `m${n + 1}`;
     let monster: Monster | null = null;
-    if (kind === 'guard') monster = spawnGuard(level, depth, rng, id, guardSpots, freeAt);
+    if (kind === 'guard') monster = spawnGuard(level, depth, rng, id, guardSpots, freeAt, spawn);
     else if (kind === 'patrol') {
-      monster = spawnPatrol(level, depth, rng, id, openTiles, onMain, fullPath, dist, freeAt);
+      monster = spawnPatrol(level, depth, rng, id, openTiles, onMain, fullPath, dist, freeAt, spawn);
     } else {
-      monster = spawnLurker(level, depth, rng, id, lurkerAnchors, onMain, freeAt);
+      monster = spawnLurker(level, depth, rng, id, lurkerAnchors, onMain, freeAt, spawn);
     }
     if (!monster) {
       const spot = openTiles.find(freeAt);
       if (!spot) break;
-      monster = makeMonster(kind, depth, rng, spot, id);
+      monster = makeMonster(kind, depth, rng, spot, id, spawn);
     }
     used.add(key(monster.pos));
     level.monsters.push(monster);
@@ -503,9 +518,10 @@ function spawnGuard(
   id: string,
   guardSpots: Vec[],
   freeAt: (p: Vec) => boolean,
+  spawn: MonsterOpts,
 ): Monster | null {
   const spot = guardSpots.find(freeAt);
-  return spot ? makeMonster('guard', depth, rng, spot, id) : null;
+  return spot ? makeMonster('guard', depth, rng, spot, id, spawn) : null;
 }
 
 function spawnPatrol(
@@ -518,6 +534,7 @@ function spawnPatrol(
   fullPath: Vec[],
   dist: Map<string, number>,
   freeAt: (p: Vec) => boolean,
+  spawn: MonsterOpts,
 ): Monster | null {
   const nearStartMain = new Set(fullPath.slice(0, 7).map(key));
   let tried = 0;
@@ -539,7 +556,7 @@ function spawnPatrol(
     if (!tail || !tail.length) continue;
     const path = [p, ...tail];
     if (path.some((t) => (dist.get(key(t)) ?? 0) < 4)) continue;
-    const m = makeMonster('patrol', depth, rng, p, id);
+    const m = makeMonster('patrol', depth, rng, p, id, spawn);
     m.patrolPath = path;
     m.patrolIndex = 0;
     m.patrolDir = 1;
@@ -556,6 +573,7 @@ function spawnLurker(
   anchors: Vec[],
   onMain: Set<string>,
   freeAt: (p: Vec) => boolean,
+  spawn: MonsterOpts,
 ): Monster | null {
   for (const anchor of anchors) {
     const local = bfsDistances(level, anchor, { maxDist: 3 });
@@ -569,7 +587,7 @@ function spawnLurker(
     }
     if (!spots.length) continue;
     const chosen = rng.pick(spots);
-    const m = makeMonster('lurker', depth, rng, chosen.p, id);
+    const m = makeMonster('lurker', depth, rng, chosen.p, id, spawn);
     m.sightRange = Math.max(3, chosen.d + 1);
     m.leash = rng.int(6, 8);
     return m;
@@ -792,6 +810,7 @@ function stockWarrens(
   used: Set<string>,
   dist: Map<string, number>,
   rng: Rng,
+  spawn: MonsterOpts,
 ): void {
   const lurkers = depth >= LURKERS_FROM_DEPTH;
   let n = level.monsters.length;
@@ -811,7 +830,7 @@ function stockWarrens(
       const spot = spots[i];
       const roll = rng.next();
       const kind: RosterKind = roll < 0.45 ? 'guard' : roll < 0.85 || !lurkers ? 'patrol' : 'lurker';
-      const m = makeMonster(kind, depth, rng, spot, `w${++n}`);
+      const m = makeMonster(kind, depth, rng, spot, `w${++n}`, spawn);
       if (kind === 'patrol') {
         const beat = warrenBeat(level, spot, inWarren, rng);
         if (!beat) continue; // nowhere to walk: leave the tile empty

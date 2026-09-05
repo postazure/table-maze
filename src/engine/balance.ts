@@ -134,6 +134,39 @@ export interface MonsterOpts {
    * full between attempts, so a gate the hero cannot out-fight is a dead run.
    */
   gate?: boolean;
+  /**
+   * The hero's level as they step onto the floor. Caps the role lift (see
+   * `monsterLevelCap`). Left out, nothing is capped — which is what the
+   * generator tests and the balance tables want.
+   */
+  heroLevel?: number;
+}
+
+/**
+ * How far above the hero a freshly spawned monster may sit.
+ *
+ * A level is worth much more at the bottom of the ladder than further up: two
+ * levels over a level-one hero is a monster with three times the health and
+ * four times the swing, while two over a level-nine hero is a slightly harder
+ * fight. So the headroom starts at one level and opens up as the hero climbs,
+ * one more level of it every `SPAWN_OVER_PER_LEVELS`, up to the full role lift
+ * — past that point the cap never bites and floors generate as they always did.
+ *
+ * The cap never reaches below the floor's own depth: diving past your level
+ * does not make the dungeon shallower, it just stops the floor stacking elites
+ * and lurkers on top of a hero who is already behind.
+ */
+const SPAWN_OVER_BASE = 1;
+const SPAWN_OVER_PER_LEVELS = 4;
+/** The biggest natural lift there is: lurker (+2) that rolled elite (+1). */
+const SPAWN_OVER_MAX = 3;
+
+/** Highest level a monster may spawn at on `depth` for a hero of `heroLevel`. */
+export function monsterLevelCap(depth: number, heroLevel: number | undefined): number {
+  if (heroLevel === undefined) return Infinity;
+  const h = Math.max(1, Math.floor(heroLevel));
+  const over = Math.min(SPAWN_OVER_MAX, SPAWN_OVER_BASE + Math.floor(h / SPAWN_OVER_PER_LEVELS));
+  return Math.max(Math.max(1, Math.floor(depth)), h + over);
 }
 
 /** Fully-formed monster of `kind` sitting on `pos`, scaled to `depth`. */
@@ -153,7 +186,9 @@ export function makeMonster(
   // do. A gate takes neither: see MonsterOpts.gate.
   const lift = kind === 'patrol' ? 0 : kind === 'guard' ? 1 : 2;
   const elite = depthN >= ELITE_FROM_DEPTH && rng.chance(0.2);
-  const level = opts.gate ? depthN : depthN + lift + (elite ? 1 : 0);
+  // The lift is what the floor wants; the cap is what the hero can take.
+  const cap = monsterLevelCap(depthN, opts.heroLevel);
+  const level = opts.gate ? depthN : Math.min(depthN + lift + (elite ? 1 : 0), cap);
   const d = level;
 
   let hp: number;
@@ -250,6 +285,40 @@ export function makeMonster(
     hitFlash: 0,
     lungeT: 0,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Lurker aggro
+// ---------------------------------------------------------------------------
+
+/**
+ * A lurker's aggro range is the one thing about it that reads the hero.
+ *
+ * The fight itself never gets fairer: a lurker is two levels over the floor
+ * and stays a monster you bait rather than trade with. What changes is how
+ * far it reaches for you. While it stands above the hero — which is every
+ * lurker on the easy floors, where the hero is still level one or two — it
+ * notices later, so a hero who wanders into its corridor has room to back
+ * out. Catch up to its level and it hunts you the full distance again.
+ *
+ * The drop is capped both ways: at most `LURKER_SIGHT_MAX_DROP` tiles off,
+ * never under `LURKER_SIGHT_MIN`, and never over the lurker's own
+ * `sightRange` (out-levelling one does not make it blinder or sharper — it
+ * just stops holding back).
+ */
+
+/** Tiles of sight a lurker gives up per level it stands above the hero. */
+const LURKER_SIGHT_PER_LEVEL = 1;
+/** However far above the hero it is, it never gives up more than this. */
+const LURKER_SIGHT_MAX_DROP = 2;
+/** ...and never sees less than this: stand beside one and it still bites. */
+const LURKER_SIGHT_MIN = 2;
+
+/** How far a lurker of `monsterLevel` reaches for a hero of `heroLevel`. */
+export function lurkerSightRange(base: number, monsterLevel: number, heroLevel: number): number {
+  const ahead = Math.max(0, Math.floor(monsterLevel) - Math.floor(heroLevel));
+  const drop = Math.min(LURKER_SIGHT_MAX_DROP, ahead * LURKER_SIGHT_PER_LEVEL);
+  return Math.max(LURKER_SIGHT_MIN, base - drop);
 }
 
 // ---------------------------------------------------------------------------
