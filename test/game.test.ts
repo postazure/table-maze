@@ -5,7 +5,7 @@ import { ANGEL_CREEP_MS, HEART, ITEM_SLOT, Tile, key } from '../src/engine/types
 import type { BossData, GameState, LevelData, MagicItem, Monster, Rect, RunStats, Vec } from '../src/engine/types';
 import { makeRng } from '../src/engine/rng';
 import { Game } from '../src/engine/game';
-import { damageMonster, heroAttack, monsterAttack } from '../src/engine/combat';
+import { damageMonster, heroAttack, monsterAttack, pushSfx } from '../src/engine/combat';
 import { updateMonsters } from '../src/engine/monsters';
 import { clearSave, loadGame, saveGame } from '../src/engine/save';
 import { equip, heroMoveMs, upgradeRandomItem } from '../src/engine/items';
@@ -96,6 +96,7 @@ function install(g: Game, level: LevelData, at: Vec): void {
   st.path = [];
   st.pointer = null;
   st.fx = [];
+  st.sfx = [];
   st.descending = 0;
 }
 
@@ -1922,4 +1923,79 @@ test('a finished run is wiped from the save and its button starts a new one', ()
   assert.equal(g.state.modal, null);
   assert.equal(g.state.stats.bosses, 0);
   clearSave();
+});
+
+// ---------------------------------------------------------------------------
+// Sound cues. The engine only names moments; src/audio decides what they
+// sound like, so these tests are about which moments get named.
+// ---------------------------------------------------------------------------
+
+test('a step, a key and a locked chest each name their own sound', () => {
+  const g = corridorGame({
+    keys: [{ id: 'k1', pos: { x: 3, y: 1 }, kind: 'chest', taken: false }],
+    chests: [{ id: 'c1', pos: { x: 5, y: 1 }, opened: false, loot: { gold: 5, xp: 1 } }],
+  });
+
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(140);
+  assert.deepEqual(g.state.sfx, ['step']);
+
+  g.state.sfx = [];
+  g.pointerAt({ x: 3, y: 1 });
+  g.tick(140);
+  assert.deepEqual(g.state.sfx, ['step', 'keyChest']);
+
+  // The key just picked up is a chest key, so spend it and come back locked.
+  g.state.hero.keys.chest = 0;
+  g.state.sfx = [];
+  g.pointerAt({ x: 4, y: 1 });
+  g.tick(140);
+  g.pointerAt({ x: 5, y: 1 });
+  g.tick(140);
+  assert.ok(g.state.sfx.includes('locked'));
+  assert.ok(!g.state.sfx.includes('chestOpen'));
+});
+
+test('opening a chest and taking the stairs each get one specific sound', () => {
+  const chest = corridorGame({
+    chests: [{ id: 'c1', pos: { x: 3, y: 1 }, opened: false, loot: { gold: 5, xp: 1 } }],
+  });
+  chest.state.hero.keys.chest = 1;
+  chest.pointerAt({ x: 2, y: 1 });
+  chest.tick(140);
+  chest.pointerAt({ x: 3, y: 1 });
+  chest.tick(140);
+  assert.equal(chest.state.sfx.filter((s) => s === 'chestOpen').length, 1);
+
+  const stairs = corridorGame();
+  stairs.state.level.exit = { x: 2, y: 1 };
+  stairs.pointerAt({ x: 2, y: 1 });
+  stairs.tick(150);
+  assert.equal(stairs.state.sfx.filter((s) => s === 'stairs').length, 1);
+});
+
+test('a swing that lands and kills names swing, hit and kill in that order', () => {
+  const g = corridorGame({ monsters: [mkMonster({ pos: { x: 2, y: 1 }, hp: 1, def: 0 })] });
+  g.state.hero.atk = 50;
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(140);
+  assert.deepEqual(g.state.sfx, ['swing', 'hit', 'kill']);
+});
+
+test('hitting something invulnerable says immune and nothing else', () => {
+  const g = corridorGame({
+    monsters: [mkMonster({ pos: { x: 2, y: 1 }, hp: 20, invulnerable: true })],
+  });
+  g.pointerAt({ x: 2, y: 1 });
+  g.tick(140);
+  assert.deepEqual(g.state.sfx, ['swing', 'immune']);
+});
+
+test('the sound queue is capped, so a muted run never banks a backlog', () => {
+  const g = corridorGame();
+  for (let i = 0; i < 200; i++) pushSfx(g.state, 'hit');
+  assert.ok(g.state.sfx.length <= 24, `queue grew to ${g.state.sfx.length}`);
+  // What survives is the newest end of the queue, not the oldest.
+  pushSfx(g.state, 'levelUp');
+  assert.equal(g.state.sfx[g.state.sfx.length - 1], 'levelUp');
 });

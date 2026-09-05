@@ -1,6 +1,6 @@
 # Module contracts
 
-Layout: `src/engine/` (pure logic, no DOM), `src/render/` (canvas renderer + pointer input), `src/ui/` (React components and hooks), `src/styles/` (global CSS), `test/` (engine tests).
+Layout: `src/engine/` (pure logic, no DOM), `src/render/` (canvas renderer + pointer input), `src/audio/` (Web Audio synthesis), `src/ui/` (React components and hooks), `src/styles/` (global CSS), `test/` (engine tests).
 
 All shared types live in `src/types.ts`. Each module below must export exactly
 the listed API (extra internal helpers are fine). Modules only import from
@@ -8,7 +8,7 @@ the listed API (extra internal helpers are fine). Modules only import from
 
 Rules for everyone:
 - Vanilla TypeScript, no runtime dependencies, strict mode, must pass `tsc --noEmit`.
-- No DOM access in `src/engine/` except `save.ts` (localStorage). DOM lives in `src/render/` and `src/ui/`.
+- No DOM access in `src/engine/` except `save.ts` (localStorage). DOM lives in `src/render/`, `src/audio/` and `src/ui/`.
 - Pure functions where possible; never mutate `LevelData.tiles` after generation.
 - Deterministic: all randomness goes through an `Rng` (see `rng.ts`).
 
@@ -205,6 +205,87 @@ Lurker chasing = red ring; returning = yellow ring; guard = small shield mark.
 HP bars above damaged monsters and the hero. `hitFlash` = white overlay.
 `lunge` = offset draw. Effects: floating text rising and fading, flash, screen shake.
 Respect devicePixelRatio. Never scroll the page.
+
+# Sound and music (added later)
+
+Shared types: `SfxId`, `VARIED_SFX`, `GameState.sfx`. See types.ts.
+
+The engine never makes a sound; it names moments. `pushSfx(state, id)`
+(combat.ts, beside `pushText`/`pushLog`) appends an `SfxId` to `state.sfx`, and
+the audio layer drains that queue once a frame and clears it. The queue is
+transient like `fx`: cleared on a level change, rebuilt empty on load, and left
+out of `SaveData`. `pushSfx` caps it at 24 so a muted run never banks a
+backlog.
+
+`SfxId` is split in two, and the split is the design:
+- The ids in `VARIED_SFX` (`step`, `swing`, `hit`, `kill`, `hurt`, `rise`,
+  `fireball`, `zap`) fire constantly, so every play is nudged a few cents up or
+  down. Never give one of these a melody: a tune heard a thousand times a run
+  is a tune the player turns off.
+- Everything else means exactly one thing (`chestOpen`, `levelUp`, `stairs`,
+  `crystal`, `bossWin`...) and must sound identical every time, so it can be
+  learnt by ear.
+
+Nothing in `src/audio/` may import from `src/ui/`, and only `rng.ts` and
+`types.ts` come the other way. All of it is synthesised at runtime: there are
+no audio files, the same way there are no image files.
+
+## audio/synth.ts
+```ts
+export function midiToHz(midi: number): number;
+export function noiseBuffer(ctx: BaseAudioContext): AudioBuffer;  // one second of white noise, cached per context
+export function tone(ctx: BaseAudioContext, dest: AudioNode, o: ToneOpts): void;   // one pitched note
+export function noise(ctx: BaseAudioContext, dest: AudioNode, o: NoiseOpts): void; // one filtered noise burst
+export function arpeggio(ctx: BaseAudioContext, dest: AudioNode, notes: number[], o): void; // a run of notes
+```
+Square/triangle/sawtooth oscillators, filtered white noise, short envelopes:
+the palette of a 1980s sound chip and nothing else. Every voice is
+fire-and-forget — it schedules itself against the AudioContext clock and stops;
+nothing needs cleaning up.
+
+## audio/sfx.ts
+```ts
+export function playSfx(ctx: BaseAudioContext, dest: AudioNode, id: SfxId, v: number): void;
+```
+One recipe per `SfxId`. `v` is the variation in [-1, 1]; fixed sounds ignore it.
+
+## audio/music.ts
+```ts
+export type TrackId = 'nocturne' | 'undertow' | 'ember' | 'frost' | 'descent' | 'market' | 'dread';
+export function trackForLevel(kind: 'maze' | 'shop' | 'boss', theme: string): TrackId;
+export class MusicPlayer {
+  constructor(ctx: AudioContext, dest: AudioNode);
+  get current(): TrackId | null;
+  play(id: TrackId | null): void;   // crossfades; null fades to silence
+  dispose(): void;
+}
+```
+No loops and no files: a track is a description (key, scale, tempo, chord
+progression, melodic density, drums) and the player writes the parts bar by bar
+against it. Chords and bass cycle so the music has a shape; the melody is an
+eight-note motif re-written every four bars and nudged in between, and every
+eighth bar the lead rests. Notes are scheduled ~0.3s ahead on a 25ms interval,
+so a dropped frame never stutters the music; a throttled background tab is
+detected by the schedule falling behind and skipped forward rather than caught
+up. Boss floors get `dread`, shops `market`, and each dungeon theme maps to one
+of the five maze tracks (neighbouring themes never share one).
+
+## audio/audio.ts
+```ts
+export class GameAudio {
+  get enabled(): boolean;
+  attach(): void;                    // listen for the first gesture and for the tab hiding
+  setEnabled(on: boolean): void;     // persisted in localStorage, key "table-maze:sound"
+  update(state: GameState): void;    // drain state.sfx, keep the music on the right track
+  dispose(): void;
+}
+```
+The AudioContext is built on the first pointer/key event, never at start up
+(browsers forbid it), and suspended while the page is hidden. `update` runs once
+a frame from `MazeCanvas`, right after `Game.tick`, and always clears the queue
+— even with the sound off. It plays at most 5 sounds a frame, at most 2 of any
+one kind, and enforces a minimum gap per sound, so chain lightning hitting four
+monsters is one zap. Everything meets at a compressor before the destination.
 
 ## ui/Hud.tsx + ui/hudModel.ts (React; supersedes the old hud.ts class)
 ```ts

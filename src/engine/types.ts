@@ -453,6 +453,58 @@ export type Effect =
   /** A straight slash line from `from` to `to` (long sword reach). */
   | { kind: 'slash'; from: Vec; to: Vec; color: string; t: number; ttl: number };
 
+/**
+ * A sound the simulation asks for. The engine only ever names the moment; the
+ * audio layer (`src/audio/`) decides what it sounds like, so nothing in here
+ * touches the Web Audio API.
+ *
+ * The first group fires often enough that the same clip on repeat would grate,
+ * so the audio layer nudges the pitch and envelope of every play a little. The
+ * second group each mean one specific thing and always sound the same, which
+ * is what makes them worth learning.
+ */
+export type SfxId =
+  // Heard constantly: played with a little variation each time.
+  | 'step'
+  | 'swing'
+  | 'hit'
+  | 'kill'
+  | 'hurt'
+  | 'rise'
+  | 'fireball'
+  | 'zap'
+  // One meaning each: always the same sound.
+  | 'keyDoor'
+  | 'keyChest'
+  | 'doorOpen'
+  | 'locked'
+  | 'chestOpen'
+  | 'stairs'
+  | 'levelUp'
+  | 'knockDown'
+  | 'wake'
+  | 'buy'
+  | 'shieldUp'
+  | 'shieldPop'
+  | 'phoenix'
+  | 'crystal'
+  | 'immune'
+  | 'angel'
+  | 'bossWin'
+  | 'gameOver';
+
+/** The `SfxId`s that get per-play variation. Everything else is fixed. */
+export const VARIED_SFX: readonly SfxId[] = [
+  'step',
+  'swing',
+  'hit',
+  'kill',
+  'hurt',
+  'rise',
+  'fireball',
+  'zap',
+];
+
 export interface Message {
   text: string;
   t: number; // ms since shown
@@ -522,6 +574,12 @@ export interface GameState {
   /** Tile currently under the finger, or null. Renderer draws a cursor. */
   pointer: Vec | null;
   fx: Effect[];
+  /**
+   * Sounds asked for since the last frame, oldest first. The audio layer
+   * drains it every frame; with the sound off nothing reads it, so `pushSfx`
+   * caps the queue rather than letting it grow without end.
+   */
+  sfx: SfxId[];
   log: Message[]; // recent messages, newest last; game trims to ~5
   stats: {
     kills: number;
@@ -544,7 +602,8 @@ export interface GameState {
 }
 
 /** JSON-serialisable form of GameState (Set -> array). */
-export interface SaveData extends Omit<GameState, 'trail' | 'fx' | 'pointer' | 'path' | 'log' | 'modal' | 'compass'> {
+export interface SaveData
+  extends Omit<GameState, 'trail' | 'fx' | 'sfx' | 'pointer' | 'path' | 'log' | 'modal' | 'compass'> {
   trail: string[];
 }
 

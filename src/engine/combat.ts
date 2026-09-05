@@ -16,6 +16,7 @@ import type {
   Monster,
   Rng,
   RunStats,
+  SfxId,
   Vec,
 } from './types';
 import { BOSS_HIT_FRACTION, HEART, eq, key, manhattan, parseKey } from './types';
@@ -53,6 +54,20 @@ export function pushText(
 export function pushShake(state: GameState, strength: number, ttl = 200): void {
   state.fx.push({ kind: 'shake', t: 0, ttl, strength });
 }
+
+/**
+ * Ask for a sound. The audio layer drains the queue every frame and clears it;
+ * when the sound is off nobody drains it at all, so the queue is capped rather
+ * than left to grow for the whole run.
+ */
+export function pushSfx(state: GameState, id: SfxId): void {
+  if (!state.sfx) state.sfx = [];
+  state.sfx.push(id);
+  if (state.sfx.length > SFX_QUEUE_MAX) state.sfx.splice(0, state.sfx.length - SFX_QUEUE_MAX);
+}
+
+/** More than a couple of frames' worth of sounds is a backlog nobody wants to hear. */
+const SFX_QUEUE_MAX = 24;
 
 /** Push a log message, trimming to the newest 5. */
 export function pushLog(state: GameState, text: string): void {
@@ -141,6 +156,7 @@ export function damageMonster(
   // combat clocks, no on-hit procs. Just a word so the player stops trying.
   if (m.invulnerable) {
     pushText(state, m.pos, 'Immune', GREY);
+    pushSfx(state, 'immune');
     return;
   }
   const hero = state.hero;
@@ -154,6 +170,9 @@ export function damageMonster(
   // hero's out-of-combat regen hostage.
   if (source !== 'poison') hero.sinceCombat = 0;
   pushText(state, m.pos, opts.text ?? `-${amount}`, opts.color ?? WHITE);
+  // The hero's own swing is the one that gets a "connected" sound; fireballs,
+  // lightning, poison and thorns already announce themselves.
+  if (source === 'hero') pushSfx(state, 'hit');
 
   const killed = m.hp <= 0;
   if (killed) {
@@ -166,6 +185,8 @@ export function damageMonster(
     state.stats.kills += 1;
     pushText(state, m.pos, `+${xp} xp`, GOLD, 1100);
     pushLog(state, `Slew the ${m.name}`);
+    // A crystal is an objective, not a kill: it gets its own shatter.
+    pushSfx(state, m.kind === 'crystal' ? 'crystal' : 'kill');
     if (stats.vampKillHeal > 0) healHero(state, stats.vampKillHeal);
   }
 
@@ -212,6 +233,7 @@ function chainFrom(state: GameState, m: Monster, rng: Rng, stats: ItemStats): vo
   ];
   for (const t of targets) points.push({ x: t.pos.x, y: t.pos.y });
   state.fx.push({ kind: 'bolt', points, color: SPARK, t: 0, ttl: 220 });
+  pushSfx(state, 'zap');
   for (const t of targets) {
     damageMonster(state, t, stats.chainDmg, rng, { source: 'chain', color: SPARK });
   }
@@ -262,6 +284,7 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
       t: 0,
       ttl: 300,
     });
+    pushSfx(state, 'shieldPop');
     return;
   }
 
@@ -276,6 +299,7 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
 
   pushText(state, hero.pos, `-${dmg}`, RED);
   pushShake(state, bossHit ? BOSS_SHAKE : 4, bossHit ? 380 : 180);
+  pushSfx(state, 'hurt');
   if (m.kind === 'angel') {
     // Stone drains the colour out of the tile it grabs you on.
     state.fx.push({ kind: 'flash', pos: { x: hero.pos.x, y: hero.pos.y }, color: GREY, t: 0, ttl: 320 });
@@ -325,6 +349,7 @@ export function gameOver(state: GameState, cause: string): void {
   state.path.length = 0;
   state.pointer = null;
   pushLog(state, cause);
+  pushSfx(state, 'gameOver');
   const boss: BossKind = state.level.boss?.kind ?? 'necromancer';
   state.modal = { kind: 'gameOver', cause, boss, stats };
 }
@@ -367,6 +392,7 @@ function knockDown(state: GameState, attacker: Monster | null = null): void {
       ttl: 500,
     });
     pushShake(state, 10, 420);
+    pushSfx(state, 'phoenix');
     const spot = retreatTile(state);
     if (spot) hero.pos = spot;
     state.trail.add(key(hero.pos));
@@ -390,6 +416,7 @@ function knockDown(state: GameState, attacker: Monster | null = null): void {
   state.trail.add(key(hero.pos));
   pushShake(state, 12, 450);
   pushLog(state, 'Knocked down!');
+  pushSfx(state, 'knockDown');
   healAllMonsters(state);
 }
 

@@ -107,6 +107,21 @@ Play it at **https://postazure.github.io/table-maze/**
   hero tracks the depth rather than outrunning it: skip fights and the dungeon
   pulls ahead of you, kill the lurkers too and you buy yourself a cushion. It is
   a cushion and not a runaway, because a monster below your level barely pays.
+- **Sound** is on by default; the speaker button in the HUD turns it and the
+  music off, and remembers your choice. Browsers won't let a page make a noise
+  until you touch it, so the first sound arrives with your first tap.
+  Everything you hear is generated as you play — square waves, triangles and
+  filtered noise, the palette of a 1980s sound chip. The sounds you hear all
+  day (a footstep, a swing, a hit) shift a fraction in pitch every time so a
+  long fight doesn't turn into a stuck sample; the ones that mean something
+  specific — a chest opening, a level up, the stairs, a crystal breaking —
+  never change, so you can learn them by ear and know what happened without
+  looking. There are seven pieces of music: five for the dungeon (the theme
+  picks one, so it changes every three floors), one for the shop and one for
+  boss chambers. None of them is a loop. Each is a set of rules — key, tempo,
+  chords, how busy the melody should be — that the game plays fresh as it
+  goes, re-writing the tune every few bars and dropping the lead out every
+  eighth bar, so it stays in the background where it belongs.
 - Progress is saved in your browser's local storage automatically.
 
 ## Development
@@ -118,7 +133,11 @@ npm test           # unit tests (maze generation, pathfinding, game rules)
 npm run build      # typecheck + production build into dist/
 ```
 
-Plain TypeScript and the Canvas API with hand-drawn pixel sprites. No runtime dependencies.
+Plain TypeScript with hand-drawn pixel sprites on the Canvas API and music and
+sound effects synthesised on the fly with the Web Audio API. No art files, no
+audio files, and no runtime dependencies beyond React.
+
+`src/engine/CONTRACTS.md` describes what each module owes the others.
 
 ## Deploying
 

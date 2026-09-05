@@ -12,7 +12,16 @@ import { ITEM_ART, SLOT_ART } from '../render/itemArt';
 type Rows = readonly string[];
 type Palette = Readonly<Record<string, string>>;
 
-type BaseIconName = 'sword' | 'shield' | 'coin' | 'doorKey' | 'chestKey' | 'skull' | 'heart';
+type BaseIconName =
+  | 'sword'
+  | 'shield'
+  | 'coin'
+  | 'doorKey'
+  | 'chestKey'
+  | 'skull'
+  | 'heart'
+  | 'sound'
+  | 'soundOff';
 /** Every magic item kind and every gear slot are also valid icon names, drawn from itemArt.ts. */
 export type IconName = BaseIconName | ItemKind | ItemSlot;
 
@@ -87,6 +96,16 @@ const BASE_ICONS: Record<BaseIconName, { rows: Rows; palette: Palette }> = {
   skull: {
     rows: ['..WWWW..', '.WWWWWW.', 'WWEWWEWW', 'WWEWWEWW', 'WWWWWWWW', '.WWWWWW.', '..W.W.W.', '..WWWWW.'],
     palette: { W: '#f0ecff', E: '#141414' },
+  },
+  // A speaker cone with two sound waves coming off it (sound on)...
+  sound: {
+    rows: ['....S...', '...SS...', '..SSS.W.', 'SSSSS.WW', 'SSSSS.WW', '..SSS.W.', '...SS...', '....S...'],
+    palette: { S: '#f5c451', W: '#f5c451' },
+  },
+  // ...and the same cone, greyed out, with a red cross where the waves were.
+  soundOff: {
+    rows: ['....S...', '...SS...', '..SSSX.X', 'SSSSS.X.', 'SSSSS.X.', '..SSSX.X', '...SS...', '....S...'],
+    palette: { S: '#7d7a91', X: '#e53b3b' },
   },
 };
 
