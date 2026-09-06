@@ -143,8 +143,11 @@ Requirements:
 /** Hero attacks monster. Applies damage, pushes fx/log, handles death (xp/gold/level-up). */
 export function heroAttack(state: GameState, m: Monster, rng: Rng): void;
 /** Monster attacks hero. Applies damage, knockback (hero pushed one tile away from the monster
- *  if that tile is free floor), and "knock down" when hp reaches 0 (see below). */
-export function monsterAttack(state: GameState, m: Monster, rng: Rng): void;
+ *  if that tile is free floor), and "knock down" when hp reaches 0 (see below). Returns true when
+ *  the hit resolved a knockdown (phoenix/potion burst, sleep, or boss-chamber game over) — callers
+ *  (updateMonsters, angels.ts's closeIn) stop feeding the hero more attacks this tick when it does,
+ *  so a second monster can't burn another potion charge or finish off a hero a burst-back-up just saved. */
+export function monsterAttack(state: GameState, m: Monster, rng: Rng): boolean;
 /** The unlit shrine on `p`, or null. Shrines are floor, so nothing else looks them up. */
 export function shrineAt(level: LevelData, p: Vec): Shrine | null;
 /** Append to `state.log`, trimming to the newest LOG_MAX. */
@@ -222,6 +225,11 @@ export class Game {
 Walking into a shop podium does not buy anything: it opens the `'shopOffer'`
 popup (item, what it does, price, what it would replace) and freezes the game.
 The UI calls `buyOffer` or `dismissModal`.
+A knocked-down hero (`hero.sleeping`) freezes the world the same way a modal
+does: `tick()` skips `updateMonsters` and `tickBoss` while sleeping, so no
+monster steps or swings and no boss clock (spell timer, minion spawns) moves
+while the hero's hearts refill. Only the hero's own drip-heal (`sleep()`) and
+cosmetic timers keep running.
 Path building rule (in `pointerAt`): let `tail` = last tile of `state.path`
 (or hero.pos if empty). If `tile` is 4-adjacent to `tail` and is walkable, push
 it. Else if it is walkable and within `bfsPath(level, tail, tile, {maxLen: 8})`,

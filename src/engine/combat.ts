@@ -283,9 +283,13 @@ export function heroAttack(state: GameState, m: Monster, rng: Rng): void {
 
 /**
  * Monster attacks hero: damage, lunge, knockback one tile, and a "knock down"
- * (never a death) when hp would reach 0.
+ * (never a death) when hp would reach 0. Returns true when the hit resolved a
+ * knockdown (phoenix burst, potion burst, sleep, or boss-chamber game over) —
+ * callers use this to stop feeding the hero more hits from other monsters in
+ * the same tick, which would otherwise burn a second potion/phoenix charge or
+ * kill a hero a burst-back-up just saved.
  */
-export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
+export function monsterAttack(state: GameState, m: Monster, rng: Rng): boolean {
   const hero = state.hero;
   const level = state.level;
   const stats = heroStats(hero);
@@ -310,7 +314,7 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
       ttl: 300,
     });
     pushSfx(state, 'shieldPop');
-    return;
+    return false;
   }
 
   // A minotaur's horns and an angel's touch always take the same bite out of
@@ -349,7 +353,11 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): void {
     damageMonster(state, m, stats.thornDmg, rng, { source: 'thorn', color: GREY });
   }
 
-  if (hero.hp <= 0) knockDown(state, m);
+  if (hero.hp <= 0) {
+    knockDown(state, m);
+    return true;
+  }
+  return false;
 }
 
 /** How hard the screen jolts when a boss connects. */

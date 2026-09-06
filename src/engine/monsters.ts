@@ -52,8 +52,11 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
     // Attack takes priority over movement. A sleeping hero is left alone.
     if (!state.hero.sleeping && manhattan(m.pos, heroPos) === 1) {
       if (m.attackCooldown <= 0 && willFight(state, m)) {
-        monsterAttack(state, m, rng);
+        const knocked = monsterAttack(state, m, rng);
         m.attackCooldown = cooldownFor(state, m, stats, m.attackInterval);
+        // The hit just resolved a knockdown (potion, phoenix, sleep, or game
+        // over): no other monster gets a free follow-up hit on the same tick.
+        if (knocked) break;
       }
       continue;
     }

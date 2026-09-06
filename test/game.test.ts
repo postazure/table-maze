@@ -430,6 +430,22 @@ test('monsters leave a sleeping hero alone', () => {
   assert.notEqual(m.state, 'chasing', 'the lurker gives up the chase and holds its ground');
 });
 
+test('the world holds still while the hero sleeps off a knockdown', () => {
+  const m = mkMonster({ pos: { x: 3, y: 1 }, kind: 'lurker', state: 'chasing', sightRange: 5, leash: 9, home: { x: 6, y: 1 }, moveInterval: 50 });
+  const g = corridorGame({ monsters: [m] });
+  const hero = g.state.hero;
+  hero.maxHp = 40;
+  hero.hp = 1;
+  hero.sleeping = true;
+  const before = { ...m.pos };
+
+  for (let i = 0; i < 10; i++) g.tick(100);
+
+  assert.deepEqual(m.pos, before, 'monsters do not so much as step while hearts refill');
+  assert.equal(m.state, 'chasing', 'nothing about the monster is re-evaluated either');
+  assert.ok(hero.hp > 1, 'hearts are refilling meanwhile');
+});
+
 test('out-of-combat regen ticks 1hp every 600ms', () => {
   const g = corridorGame();
   g.state.hero.hp = 5;
@@ -1192,6 +1208,47 @@ test('the phoenix feather is spent before a health potion', () => {
   assert.ok(!st.fx.some((f) => f.kind === 'text' && f.text === 'Potion!'), 'no potion cue when the feather did it');
 });
 
+test('a potion answers the first hit; a second monster in the same tick does not get a free follow-up', () => {
+  const g = Game.forTest(1234);
+  const level = mkLevel(LONG_CORRIDOR); // start defaults to (1,1)
+  install(g, level, { x: 7, y: 1 });
+  const st = g.state;
+  const hero = st.hero;
+  hero.maxHp = 20;
+  hero.hp = 1;
+  hero.def = 0;
+  hero.potionCapacity = 1;
+  hero.potions = 1;
+  st.trail = trailTo(7);
+  // A huge sightRange makes every trail tile and neighbour "unsafe" (see
+  // `isSafeSpot` in combat.ts), so the burst-back-up's retreat falls all the
+  // way through to the level's start tile — right next to a second monster
+  // planted there, hard enough to finish the hero off in one more swing.
+  const near = mkMonster({ id: 'near', kind: 'patrol', pos: { x: 6, y: 1 }, atk: 50, sightRange: 999, attackInterval: 99999 });
+  const atStart = mkMonster({
+    id: 'atStart',
+    kind: 'patrol',
+    pos: { x: level.start.x + 1, y: level.start.y },
+    atk: 999,
+    sightRange: 999,
+    attackInterval: 99999,
+  });
+  st.level.monsters.push(near, atStart);
+
+  updateMonsters(st, 16, makeRng(3));
+
+  // Without the fix: `near`'s hit spends the potion and bursts the hero back
+  // up right onto the level's start tile (sleeping stays false), then
+  // `atStart` — waiting right there — gets a free swing in the very same
+  // tick and knocks the now-potionless hero down anyway: the potion
+  // "triggered" and the hero was knocked out right after, in the same
+  // instant, instead of the potion actually saving them.
+  assert.equal(hero.potions, 0, 'exactly one charge spent, not burned twice');
+  assert.equal(hero.sleeping, false, 'the potion held: no knockdown this tick');
+  assert.ok(hero.hp > 1, 'burst back up to half hearts, not left on a sliver');
+  assert.deepEqual(hero.pos, level.start, 'burst-back-up did retreat all the way to the start tile');
+});
+
 test('speed boots quicken every step', () => {
   const plain = corridorGame();
   plain.pointerAt({ x: 2, y: 1 });
@@ -1719,6 +1776,27 @@ test('the necromancer finishing his spell ends the run', () => {
   assert.equal(modal.stats.deepest, 3);
   assert.equal(modal.stats.bosses, 0);
   assert.ok(st.log.some((l) => l.text === 'The Necromancer finished his spell.'));
+});
+
+test("the necromancer's spell clock waits for the hero to wake up", () => {
+  const g = Game.forTest(31);
+  const level = mkBossLevel(CORRIDOR, necroData({ spellMs: 50, crystalsTotal: 1 }));
+  level.monsters.push(makeBossMonster('boss', 3, { x: 7, y: 1 }, 'necro'));
+  level.monsters.push(makeBossMonster('crystal', 3, { x: 5, y: 1 }, 'crystal1'));
+  install(g, level, { x: 1, y: 1 });
+  const st = g.state;
+  st.hero.maxHp = 40;
+  st.hero.hp = 1;
+  st.hero.sleeping = true;
+
+  // Plenty of time to finish the spell if the clock kept running while the
+  // hero naps — it shouldn't: a helpless, asleep hero can't do anything about
+  // it, so the whole boss chamber freezes the same as it would for a modal.
+  g.tick(200);
+
+  assert.equal(st.over, false, "the clock didn't move while the hero slept");
+  const boss = level.boss as Extract<BossData, { kind: 'necromancer' }>;
+  assert.equal(boss.spellMs, 50, 'spellMs unchanged');
 });
 
 test('the necromancer raises a skeleton on his clock, up to his limit', () => {
