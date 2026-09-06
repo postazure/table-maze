@@ -1597,3 +1597,93 @@ button {
     opacity: 1;
   }
 }
+
+/* ---- Chest choice (a magic item found with its slot already full) ---- */
+
+.chest-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  opacity: 0;
+}
+
+.chest-choice-ready {
+  opacity: 1;
+  transition: opacity 200ms steps(4);
+}
+
+.chest-choice-desc {
+  padding: 0;
+}
+
+.chest-choice-actions {
+  padding: 0;
+}
+
+/* ---- The forge ---- */
+
+.forge-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  text-transform: none;
+  padding: 8px;
+}
+
+.forge-row-off {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.forge-row-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: #050509;
+  border: 1px solid var(--border);
+}
+
+.forge-row-text {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.forge-row-name {
+  font-size: 9px;
+  color: var(--text);
+}
+
+.forge-row-levels {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 8px;
+  color: var(--gold);
+}
+
+.forge-row .shop-price {
+  flex: 0 0 auto;
+}
+
+.forge-row .shop-price.shop-purse-short {
+  color: var(--hp);
+}
+
+.item-forged-badge {
+  align-self: flex-start;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--bg);
+  background: #ff8c3a;
+  padding: 3px 4px;
+  white-space: nowrap;
+}

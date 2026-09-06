@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Game } from '../engine/game';
+import type { ItemSlot } from '../engine/types';
 import { clearSave, loadGame, saveGame } from '../engine/save';
 import { deriveHudModel, hudModelEquals, type HudModel } from './hudModel';
 
@@ -66,6 +67,10 @@ export function useGame() {
   const openHelp = useCallback(() => game.openHelp(), [game]);
   const buyOffer = useCallback((offerId: string) => game.buyOffer(offerId), [game]);
   const retryBoss = useCallback(() => game.retryBoss(), [game]);
+  const buyUpgrade = useCallback((slot: ItemSlot) => game.buyUpgrade(slot), [game]);
+  const takeMagic = useCallback(() => game.takeMagic(), [game]);
+  const sellMagic = useCallback(() => game.sellMagic(), [game]);
+  const offerTrophy = useCallback(() => game.offerTrophy(), [game]);
 
-  return { game, hud, newGame, dismissModal, openHelp, buyOffer, retryBoss };
+  return { game, hud, newGame, dismissModal, openHelp, buyOffer, retryBoss, buyUpgrade, takeMagic, sellMagic, offerTrophy };
 }

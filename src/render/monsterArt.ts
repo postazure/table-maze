@@ -721,7 +721,42 @@ export const MONSTER_CFGS: Record<string, CreatureCfg> = {
   },
 };
 
+/**
+ * The mimic: a chest, as far as the eye can tell, until it is sprung — and
+ * then a chest with a mouthful of teeth. Same brown as the chest sprite so a
+ * sprung one still reads as the chest it was.
+ */
+MONSTER_CFGS.mimic = {
+  bodyPositions: [
+    ...Array.from({ length: 6 }, (_, i) => [i + 1, 0] as [number, number]),
+    ...Array.from({ length: 8 }, (_, i) => [i, 1] as [number, number]),
+    ...Array.from({ length: 8 }, (_, i) => [i, 2] as [number, number]),
+    ...Array.from({ length: 8 }, (_, i) => [i, 5] as [number, number]),
+    ...Array.from({ length: 8 }, (_, i) => [i, 6] as [number, number]),
+    [0, 3],
+    [7, 3],
+    [0, 4],
+    [7, 4],
+  ],
+  body: '#8b5a2b',
+  accent: '#f0ecff',
+  accentPositions: [
+    [1, 3],
+    [3, 3],
+    [5, 3],
+    [2, 4],
+    [4, 4],
+    [6, 4],
+  ],
+  eye: '#e5484d',
+  eyePositions: [
+    [2, 1],
+    [5, 1],
+  ],
+};
+
 export const MONSTER_KEYWORDS = [
+  'mimic',
   'rat',
   'bat',
   'spider',

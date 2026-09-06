@@ -99,6 +99,64 @@ export function bfsPath(
   return null;
 }
 
+/**
+ * Every floor tile whose removal would cut `to` off from `from`: the
+ * articulation points of the floor graph that separate the two, as `key(p)`
+ * strings. Neither endpoint is ever included. One depth-first walk (Tarjan's
+ * low-link, iterative so a long corridor cannot blow the stack) answers for
+ * every tile at once what a blocked BFS per tile would answer one at a time.
+ * Empty when `to` is not reachable from `from` at all.
+ */
+export function cutTiles(level: LevelData, from: Vec, to: Vec): Set<string> {
+  const out = new Set<string>();
+  if (!isFloor(level, from) || !isFloor(level, to)) return out;
+  const w = level.width;
+  const h = level.height;
+  const n = w * h;
+  const tin = new Int32Array(n).fill(-1);
+  const tout = new Int32Array(n).fill(-1);
+  const low = new Int32Array(n);
+  const parent = new Int32Array(n).fill(-1);
+  const dirAt = new Uint8Array(n);
+  const root = from.y * w + from.x;
+  const goal = to.y * w + to.x;
+  let timer = 0;
+  const stack: number[] = [root];
+  tin[root] = low[root] = timer++;
+  while (stack.length) {
+    const cur = stack[stack.length - 1];
+    if (dirAt[cur] < 4) {
+      const off = OFFS[dirAt[cur]++];
+      const nx = (cur % w) + off.x;
+      const ny = (cur - (cur % w)) / w + off.y;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      if (level.tiles[ny][nx] !== Tile.Floor) continue;
+      const ni = ny * w + nx;
+      if (tin[ni] === -1) {
+        parent[ni] = cur;
+        tin[ni] = low[ni] = timer++;
+        stack.push(ni);
+      } else if (ni !== parent[cur] && tin[ni] < low[cur]) {
+        low[cur] = tin[ni];
+      }
+      continue;
+    }
+    stack.pop();
+    tout[cur] = timer++;
+    const p = parent[cur];
+    if (p < 0) continue;
+    if (low[cur] < low[p]) low[p] = low[cur];
+    // `p` cuts the goal off when this child's subtree has no way round it
+    // and the goal is in that subtree. The root never counts: it is `from`.
+    if (p !== root && low[cur] >= tin[p] && tin[goal] >= tin[cur] && tin[goal] <= tout[cur]) {
+      out.add(`${p % w},${(p - (p % w)) / w}`);
+    }
+  }
+  if (tin[goal] === -1) return new Set<string>();
+  out.delete(key(to));
+  return out;
+}
+
 /** BFS distances from `from` to every reachable floor tile (`key(p)` -> steps). */
 export function bfsDistances(
   level: LevelData,

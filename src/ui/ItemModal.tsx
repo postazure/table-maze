@@ -9,6 +9,8 @@ export interface ItemModalProps {
   item: MagicItem;
   /** The item pushed out of the slot, if any. */
   replaced: MagicItem | null;
+  /** The forge raised this item a level, rather than the shop selling it. */
+  upgraded?: boolean;
   onClose: () => void;
 }
 
@@ -19,7 +21,7 @@ export interface ItemModalProps {
  * anywhere to continue. Same modal-backdrop/modal-ready mechanics as
  * ChestModal.
  */
-export function ItemModal({ item, replaced, onClose }: ItemModalProps) {
+export function ItemModal({ item, replaced, upgraded = false, onClose }: ItemModalProps) {
   const [risen, setRisen] = useState(false);
   const [ready, setReady] = useState(false);
   const slot = ITEM_SLOT[item.kind];
@@ -38,7 +40,12 @@ export function ItemModal({ item, replaced, onClose }: ItemModalProps) {
   };
 
   return (
-    <div className={`modal-backdrop${ready ? ' modal-ready' : ''}`} onPointerDown={close} role="dialog" aria-label="Item bought">
+    <div
+      className={`modal-backdrop${ready ? ' modal-ready' : ''}`}
+      onPointerDown={close}
+      role="dialog"
+      aria-label={upgraded ? 'Item forged' : 'Item bought'}
+    >
       <div className="item-modal">
         <div className={`item-stage${risen ? ' item-risen' : ''}`}>
           <div className="item-glow" />
@@ -48,6 +55,7 @@ export function ItemModal({ item, replaced, onClose }: ItemModalProps) {
               <PixelIcon name={slot} size={14} />
             </span>
             <span className="item-level-badge">Lv {item.level}</span>
+            {upgraded && <span className="item-forged-badge">+1</span>}
           </div>
           <PixelArt rows={PEDESTAL_ART.rows} palette={PEDESTAL_ART.palette} size={72} className="item-pedestal" />
           <span className="item-spark item-spark-a" />

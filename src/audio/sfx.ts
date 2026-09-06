@@ -373,6 +373,73 @@ const SFX: Record<SfxId, Voice> = {
     });
     tone(ctx, dest, { type: 'sawtooth', freq: hz(45), dur: 1.6, gain: 0.09, at: 0.7, attack: 0.2 });
   },
+
+  // --- the wings' locks --------------------------------------------------
+  /** A rune lighting: one clear high note with a little shimmer on it. */
+  rune(ctx, dest) {
+    tone(ctx, dest, { type: 'sine', freq: hz(88), dur: 0.35, gain: 0.1, attack: 0.02 });
+    tone(ctx, dest, { type: 'triangle', freq: hz(95), dur: 0.25, gain: 0.05, at: 0.06, attack: 0.05 });
+  },
+
+  /** The runes going dark: the same note falling flat, and a dull thud under it. */
+  runeFail(ctx, dest) {
+    tone(ctx, dest, { type: 'sine', freq: hz(88), to: hz(80), dur: 0.3, gain: 0.1 });
+    noise(ctx, dest, { filter: 'lowpass', freq: 500, to: 150, dur: 0.22, gain: 0.1, at: 0.08 });
+  },
+
+  /** A seal opening: stone grinding aside, then the lens' own ring on top. */
+  seal(ctx, dest) {
+    noise(ctx, dest, { filter: 'lowpass', freq: 400, to: 900, dur: 0.5, gain: 0.12, q: 0.8 });
+    tone(ctx, dest, { type: 'sawtooth', freq: 70, to: 110, dur: 0.5, gain: 0.08, attack: 0.1 });
+    arpeggio(ctx, dest, [hz(76), hz(83), hz(88), hz(95)], {
+      step: 0.08,
+      dur: 0.4,
+      gain: 0.1,
+      at: 0.35,
+      type: 'sine',
+    });
+  },
+
+  /** The orb lifted: a soft glassy swell up. */
+  orbLift(ctx, dest) {
+    tone(ctx, dest, { type: 'sine', freq: hz(76), to: hz(88), dur: 0.3, gain: 0.09, attack: 0.08 });
+    noise(ctx, dest, { filter: 'highpass', freq: 5000, to: 8000, dur: 0.2, gain: 0.025, q: 0.4 });
+  },
+
+  /** ...and set down: the same swell, falling, with a small stone tap. */
+  orbSet(ctx, dest) {
+    tone(ctx, dest, { type: 'sine', freq: hz(88), to: hz(76), dur: 0.28, gain: 0.09, attack: 0.02 });
+    noise(ctx, dest, { filter: 'lowpass', freq: 1200, to: 400, dur: 0.06, gain: 0.07, at: 0.2 });
+  },
+
+  /** A relic found: a slow, old chord, more bell than jingle. */
+  relic(ctx, dest) {
+    arpeggio(ctx, dest, [hz(64), hz(71), hz(76)], { step: 0.12, dur: 0.6, gain: 0.09, type: 'triangle' });
+    tone(ctx, dest, { type: 'sine', freq: hz(83), dur: 1.0, gain: 0.06, at: 0.3, attack: 0.15 });
+  },
+
+  /** A mimic springing: a wooden clack and a snarl. */
+  mimic(ctx, dest) {
+    noise(ctx, dest, { filter: 'bandpass', freq: 1800, to: 700, dur: 0.08, gain: 0.14, q: 1.4 });
+    tone(ctx, dest, { type: 'sawtooth', freq: 320, to: 110, dur: 0.32, gain: 0.16, at: 0.06, vibrato: { hz: 9, cents: 40 } });
+    noise(ctx, dest, { filter: 'lowpass', freq: 900, to: 200, dur: 0.3, gain: 0.1, at: 0.08 });
+  },
+
+  /** An altar taking a trophy: a deep, slow swell with a bright note held over it. */
+  altar(ctx, dest) {
+    tone(ctx, dest, { type: 'triangle', freq: hz(52), dur: 1.4, gain: 0.1, attack: 0.3 });
+    tone(ctx, dest, { type: 'sine', freq: hz(76), dur: 1.2, gain: 0.07, at: 0.25, attack: 0.25 });
+    tone(ctx, dest, { type: 'sine', freq: hz(88), dur: 1.0, gain: 0.06, at: 0.5, attack: 0.2 });
+  },
+
+  /** The forge: hammer on anvil, twice, and the ring of the metal after. */
+  forge(ctx, dest) {
+    tone(ctx, dest, { type: 'square', freq: 1400, to: 900, dur: 0.06, gain: 0.12 });
+    noise(ctx, dest, { filter: 'highpass', freq: 3000, to: 1500, dur: 0.08, gain: 0.08 });
+    tone(ctx, dest, { type: 'square', freq: 1400, to: 900, dur: 0.06, gain: 0.12, at: 0.18 });
+    noise(ctx, dest, { filter: 'highpass', freq: 3000, to: 1500, dur: 0.08, gain: 0.08, at: 0.18 });
+    tone(ctx, dest, { type: 'sine', freq: hz(93), dur: 0.7, gain: 0.07, at: 0.24 });
+  },
 };
 
 /** Play one sound. `v` (-1..1) is ignored by every fixed sound. */

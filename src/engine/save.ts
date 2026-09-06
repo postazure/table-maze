@@ -2,12 +2,17 @@
  * localStorage persistence. Everything is best-effort: private-mode failures,
  * quota errors and corrupt payloads all degrade to "no save".
  */
-import type { GameState, Hero, LevelData, SaveData } from './types';
-import { SAVE_VERSION, key } from './types';
+import type { Boon, GameState, Hero, LevelData, SaveData } from './types';
+import { BOON_KINDS, SAVE_VERSION, key } from './types';
 import { reviveGear } from './items';
 import { reviveBuffs } from './shrines';
 
 const STORAGE_KEY = 'table-maze:save';
+/**
+ * The boons live beside the save, not in it: a save is wiped when a run
+ * ends, and a boon is the one thing meant to outlive that.
+ */
+const BOONS_KEY = 'table-maze:boons';
 
 /** localStorage if it exists and is usable (guarded so tests can import this). */
 function store(): Storage | null {
@@ -39,6 +44,7 @@ export function saveGame(state: GameState): void {
       stats: state.stats,
       descending: 0,
       over: false,
+      boons: state.boons ?? [],
     };
     ls.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
@@ -88,6 +94,9 @@ export function loadGame(): GameState | null {
     // A lens that came back without a set (or with something that is not one)
     // is not a lens: better no passages than passages that never open.
     if (!hero.lens || typeof hero.lens.set !== 'number') hero.lens = null;
+    if (typeof hero.carrying !== 'string') hero.carrying = null;
+    if (!Array.isArray(hero.relics)) hero.relics = [];
+    if (!Array.isArray(hero.trophies)) hero.trophies = [];
     hero.stun = 0;
     if (typeof hero.sleeping !== 'boolean') hero.sleeping = false;
     hero.hitFlash = 0;
@@ -128,10 +137,42 @@ export function loadGame(): GameState | null {
       modal: null,
       compass: null,
       over: false,
+      boons: Array.isArray(d.boons) ? d.boons.filter(validBoon) : [],
     };
     return state;
   } catch {
     return null;
+  }
+}
+
+function validBoon(b: unknown): b is Boon {
+  if (!b || typeof b !== 'object') return false;
+  const x = b as Partial<Boon>;
+  return typeof x.kind === 'string' && BOON_KINDS.includes(x.kind) && typeof x.runsLeft === 'number';
+}
+
+/** The boons waiting for the next run. Empty when there are none or storage is unusable. */
+export function loadBoons(): Boon[] {
+  const ls = store();
+  if (!ls) return [];
+  try {
+    const raw = ls.getItem(BOONS_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(validBoon) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveBoons(boons: Boon[]): void {
+  const ls = store();
+  if (!ls) return;
+  try {
+    if (boons.length === 0) ls.removeItem(BOONS_KEY);
+    else ls.setItem(BOONS_KEY, JSON.stringify(boons));
+  } catch {
+    /* quota / private mode: skip */
   }
 }
 

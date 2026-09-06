@@ -113,3 +113,23 @@ test('bfsDistances covers reachable tiles only, respects maxDist', () => {
   assert.equal(bfsDistances(split, { x: 1, y: 1 }).size, 1);
   assert.equal(bfsDistances(split, { x: 0, y: 0 }).size, 0);
 });
+
+test('cutTiles names exactly the tiles a blocked BFS would find cut the stairs off', async () => {
+  const { cutTiles: cut, bfsPath: path } = await import('../src/engine/pathfind');
+  const { generateLevel } = await import('../src/engine/maze');
+  for (const [depth, seed] of [[1, 1], [3, 7], [6, 42], [10, 9]] as const) {
+    const lv = generateLevel(depth, seed);
+    const cuts = cut(lv, lv.start, lv.exit);
+    const route = path(lv, lv.start, lv.exit) ?? [];
+    assert.ok(route.length > 0);
+    // Every tile on the shortest route, and a sample of the rest of the floor.
+    const samples = [...route.slice(0, -1)];
+    for (let y = 1; y < lv.height - 1; y += 3) for (let x = 1; x < lv.width - 1; x += 3) samples.push({ x, y });
+    for (const p of samples) {
+      if (lv.tiles[p.y][p.x] !== 1 || (p.x === lv.start.x && p.y === lv.start.y) || (p.x === lv.exit.x && p.y === lv.exit.y)) continue;
+      const blockedRoute = path(lv, lv.start, lv.exit, { blocked: (q) => q.x === p.x && q.y === p.y });
+      assert.equal(cuts.has(`${p.x},${p.y}`), blockedRoute === null, `depth ${depth} seed ${seed}: ${p.x},${p.y}`);
+    }
+    assert.ok(!cuts.has(`${lv.start.x},${lv.start.y}`) && !cuts.has(`${lv.exit.x},${lv.exit.y}`));
+  }
+});

@@ -345,21 +345,40 @@ export function equip(hero: Hero, item: MagicItem): MagicItem | null {
 }
 
 /**
+ * What the shop's forge charges to raise `item` one level. Cheaper than a new
+ * item of the level it is going to, since the hero already owns the thing,
+ * and a round number of gold like every other price.
+ */
+export function upgradePrice(item: MagicItem): number {
+  const L = Math.max(1, Math.floor(item.level || 1));
+  const raw = 10 + 10 * L;
+  return Math.max(10, Math.round(raw / 5) * 5);
+}
+
+/**
  * Boss reward: bump one worn item a level and re-apply its constant bonuses.
- *
- * The item object is mutated in place, so `hero.gear[slot]` keeps pointing at
- * the same reference (the bossWon popup and the help screen both hold on to
- * it). Timers are left alone: an upgrade is not a re-equip. Returns the item
- * that grew, or null when the hero wears nothing at all — the caller then
- * hands out a heart instead.
+ * Returns the item that grew, or null when the hero wears nothing at all —
+ * the caller then hands out a heart instead.
  */
 export function upgradeRandomItem(hero: Hero, rng: Rng): MagicItem | null {
   const gear = hero.gear;
   if (!gear) return null;
   const filled = ITEM_SLOTS.filter((slot) => gear[slot] !== null);
   if (filled.length === 0) return null;
+  return upgradeItem(hero, rng.pick(filled));
+}
 
-  const item = gear[rng.pick(filled)] as MagicItem;
+/**
+ * Raise the item in `slot` one level and re-apply its constant bonuses.
+ *
+ * The item object is mutated in place, so `hero.gear[slot]` keeps pointing at
+ * the same reference (the bossWon popup and the help screen both hold on to
+ * it). Timers are left alone: an upgrade is not a re-equip. Null when the
+ * slot is empty.
+ */
+export function upgradeItem(hero: Hero, slot: ItemSlot): MagicItem | null {
+  const item = hero.gear?.[slot] ?? null;
+  if (!item) return null;
   const before = itemStats(item);
   item.level = Math.max(1, Math.floor(item.level || 1)) + 1;
   const after = itemStats(item);

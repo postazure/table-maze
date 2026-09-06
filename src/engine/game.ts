@@ -5,15 +5,23 @@
  * `pointerEnd`, and `onChange` is the "worth persisting" signal for save.ts.
  */
 import type {
+  Altar,
+  Boon,
   BossData,
   Buff,
   Chest,
   Dir,
   GameState,
   Hero,
+  ItemSlot,
   LevelData,
+  MagicItem,
   Monster,
+  Relic,
   Rng,
+  Rune,
+  Seal,
+  ShopForge,
   ShopOffer,
   Shrine,
   Vec,
@@ -23,7 +31,7 @@ import { hashSeed, makeRng } from './rng';
 import { bfsDistances, bfsPath } from './pathfind';
 import { generateLevel } from './maze';
 import { themeForDepth } from './themes';
-import { angelPlan, applyLevelUp, newHero, trinketGold } from './balance';
+import { angelPlan, applyLevelUp, makeMimic, newHero, trinketGold } from './balance';
 import { updateMonsters } from './monsters';
 import { angelsAct } from './angels';
 import { LENS_NAME, floorSet, hiddenAt, lensActive, sameSide } from './lens';
@@ -34,10 +42,14 @@ import {
   ICE,
   LOG_MAX,
   ORANGE,
+  ORB,
   RED,
+  carriedOrb,
   chestAt,
   closedDoorAt,
   damageMonster,
+  dropOrb,
+  exitAt,
   gameOver,
   heroAttack,
   keyAt,
@@ -53,14 +65,31 @@ import { isFloor } from './pathfind';
 import type { ItemStats } from './items';
 import {
   DEFAULT_MOVE_MS,
+  ITEM_SLOTS,
   berserkActive,
   equip,
   heroMoveMs,
   heroStats,
   itemName,
+  itemPrice,
   reviveGear,
+  upgradeItem,
+  upgradePrice,
   upgradeRandomItem,
 } from './items';
+import {
+  altarAt,
+  altarCarving,
+  closedSealAt,
+  orbAt,
+  relicAt,
+  relicName,
+  runeAt,
+  sealById,
+  socketAt,
+} from './puzzles';
+import { BOON_RUNS, addBoon, applyBoon, boonForTrophy, boonName, spendBoons, trophyName } from './boons';
+import { loadBoons, saveBoons } from './save';
 import {
   FREEZE_MS,
   FROST_RANGE,
@@ -74,7 +103,7 @@ import {
   shrineName,
   wardTempHp,
 } from './shrines';
-import { generateShopLevel, offerAt, offerCenter } from './shop';
+import { forgeAt, forgeCenter, generateShopLevel, offerAt, offerCenter } from './shop';
 import { BOSS_EVERY, bossName, generateBossLevel, makeBossMonster, roomAt } from './boss';
 
 /** The two boss kinds with per-tick rules, narrowed out of the union. */
@@ -121,6 +150,10 @@ const PURPLE = '#b98cff';
 const LENS_COLOR = '#8fe3ff';
 /** ms between the ripples a time-bubble shrine sends out. */
 const TIME_PULSE_MS = 900;
+/** Runes and seals light in the lens' own blue; a wrong rune goes red. */
+const RUNE_COLOR = ORB;
+/** A relic's own colour: old gold. */
+const RELIC_COLOR = '#f5c451';
 
 export class Game {
   state!: GameState;
@@ -160,10 +193,10 @@ export class Game {
     }
   }
 
-  /** Fresh run with a deterministic seed. Handy for tests. */
-  static forTest(seed: number): Game {
+  /** Fresh run with a deterministic seed (and, for tests, a given set of boons). */
+  static forTest(seed: number, boons: Boon[] = []): Game {
     const g = new Game(null);
-    g.startRun(seed >>> 0);
+    g.startRun(seed >>> 0, boons);
     return g;
   }
 
@@ -335,9 +368,13 @@ export class Game {
   // Internals
   // -------------------------------------------------------------------------
 
-  private startRun(seed: number): void {
+  private startRun(seed: number, boons: Boon[] = loadBoons()): void {
     const depth = 1;
     const hero = newHero();
+    // Whatever the last runs earned at the altars is applied now and counted
+    // off; the ones with runs still to come are written back.
+    const spent = spendBoons(boons, hero);
+    saveBoons(spent.keep);
     const level = generateLevel(depth, seed, hero.level);
     hero.pos = { x: level.start.x, y: level.start.y };
     hero.rpos = { x: level.start.x, y: level.start.y };
@@ -358,6 +395,7 @@ export class Game {
       modal: null,
       compass: null,
       over: false,
+      boons: spent.active,
     };
     this.rng = makeRng(hashSeed(seed, depth, RNG_SALT));
     this.minionSeq = 0;
@@ -366,6 +404,9 @@ export class Game {
     this.engagedId = null;
     this.regenTimer = 0;
     pushLog(this.state, 'Drag your finger to guide the hero');
+    for (const b of spent.active) {
+      pushLog(this.state, `${boonName(b.kind)} holds${b.runsLeft > 0 ? ` (${b.runsLeft} more run${b.runsLeft === 1 ? '' : 's'})` : ' — its last run'}`);
+    }
     this.emit();
   }
 
@@ -453,6 +494,7 @@ export class Game {
     hero.pos = { x: level.start.x, y: level.start.y };
     hero.rpos = { x: level.start.x, y: level.start.y };
     hero.keys = { door: 0, chest: 0 };
+    hero.carrying = null; // an orb belongs to its wing, and the wing is behind us
     hero.hp = Math.min(hero.maxHp, hero.hp + Math.floor((hero.maxHp - hero.hp) * healFraction));
     hero.potions = hero.potionCapacity;
     hero.stun = 0;
@@ -496,15 +538,18 @@ export class Game {
     // monster is how you start a fight (see stepOnce).
     if (liveMonsterAt(st.level, p)) return false;
     if (chestAt(st.level, p)) return false;
-    if (offerAt(st.level, p)) return false; // pedestals are solid
+    if (altarAt(st.level, p)) return false;
+    if (offerAt(st.level, p) || forgeAt(st.level, p)) return false; // pedestals are solid
     if (closedDoorAt(st.level, p) && st.hero.keys.door <= 0) return false;
+    if (closedSealAt(st.level, p)) return false; // no key opens a seal; walking into one only reads it
     return true;
   }
 
   /**
    * Tiles a drag may *end* on: monsters (walking in = attack), chests
-   * (walking in = open) and shop pedestals (walking in = buy, or a red blink
-   * when the hero cannot) are legal targets even though they can't be crossed.
+   * (walking in = open), altars and sealed doors (walking in = try them) and
+   * shop pedestals (walking in = buy, or a red blink when the hero cannot)
+   * are legal targets even though they can't be crossed.
    */
   private isTarget(p: Vec): boolean {
     const st = this.state;
@@ -548,10 +593,27 @@ export class Game {
       this.bumpOffer(offer);
       return;
     }
+    const forge = forgeAt(st.level, next);
+    if (forge) {
+      this.bumpForge(forge);
+      return;
+    }
 
     const chest = chestAt(st.level, next);
     if (chest) {
       this.bumpChest(chest);
+      return;
+    }
+
+    const altar = altarAt(st.level, next);
+    if (altar) {
+      this.bumpAltar(altar);
+      return;
+    }
+
+    const seal = closedSealAt(st.level, next);
+    if (seal) {
+      this.bumpSeal(seal);
       return;
     }
 
@@ -608,6 +670,11 @@ export class Game {
     st.path.length = 0;
     this.holdTimer = 0;
     if (chest.opened) return;
+    // A mimic does not wait to be opened.
+    if (chest.mimic) {
+      this.springMimic(chest);
+      return;
+    }
     if (hero.keys.chest <= 0) {
       // No words: a red blink on the chest says "locked".
       st.fx.push({ kind: 'flash', pos: { x: chest.pos.x, y: chest.pos.y }, color: BLINK_RED, t: 0, ttl: 320 });
@@ -646,14 +713,19 @@ export class Game {
       pushLog(st, `Found the ${LENS_NAME}`);
       pushSfx(st, 'lens');
     }
-    // A vault chest: a magic item, straight into its slot, whatever was there
-    // pushed out — the same trade the shop makes, paid in walking instead of
-    // gold.
+    // A treasure chest: a magic item. Into an empty slot it goes at once. Into
+    // a full one it does not: the popup asks whether to wear it in place of
+    // what is there or melt it down, and nothing moves until the player says.
     const magic = chest.loot.magic;
+    let choice: { magic: MagicItem; replaces: MagicItem; sellGold: number } | null = null;
     if (magic) {
-      const replaced = equip(hero, magic);
-      const found = `Found the ${itemName(magic.kind)}`;
-      pushLog(st, replaced ? `${found} (replacing the ${itemName(replaced.kind)})` : found);
+      const worn = hero.gear?.[ITEM_SLOT[magic.kind]] ?? null;
+      if (worn) {
+        choice = { magic, replaces: worn, sellGold: magicGold(magic) };
+      } else {
+        equip(hero, magic);
+        pushLog(st, `Found the ${itemName(magic.kind)}`);
+      }
     }
     const item = chest.loot.item;
     if (item) {
@@ -671,9 +743,196 @@ export class Game {
     }
     const face = dirFromVec(unitToward(hero.pos, chest.pos));
     if (face) hero.facing = face;
-    st.modal = { kind: 'chest', loot: chest.loot };
+    st.modal = { kind: 'chest', loot: chest.loot, choice };
     pushSfx(st, 'chestOpen');
     this.dirty = true;
+  }
+
+  /** Wear the magic item the chest popup is holding, in place of what is worn. */
+  takeMagic(): void {
+    const st = this.state;
+    const modal = st.modal;
+    if (!modal || modal.kind !== 'chest' || !modal.choice) return;
+    const { magic } = modal.choice;
+    const replaced = equip(st.hero, magic);
+    pushLog(st, `Found the ${itemName(magic.kind)}${replaced ? ` (replacing the ${itemName(replaced.kind)})` : ''}`);
+    st.modal = { kind: 'item', item: magic, replaced };
+    pushSfx(st, 'buy');
+    this.dirty = true;
+    this.emit();
+  }
+
+  /** Melt the magic item the chest popup is holding down for coins instead. */
+  sellMagic(): void {
+    const st = this.state;
+    const modal = st.modal;
+    if (!modal || modal.kind !== 'chest' || !modal.choice) return;
+    const { magic, sellGold } = modal.choice;
+    st.hero.gold += sellGold;
+    pushLog(st, `Melted the ${itemName(magic.kind)} down for ${sellGold} gold`);
+    modal.choice = null;
+    modal.loot.gold += sellGold;
+    modal.loot.magic = undefined;
+    this.dismissModal();
+  }
+
+  /**
+   * The chest was a mimic. It is gone from the floor, a monster stands where
+   * it stood, and the hero — one tile away with a hand out — is already in
+   * the fight.
+   */
+  private springMimic(chest: Chest): void {
+    const st = this.state;
+    const hero = st.hero;
+    const idx = st.level.chests.indexOf(chest);
+    if (idx >= 0) st.level.chests.splice(idx, 1);
+    const m = makeMimic(st.depth, this.rng, chest.pos, `mimic${st.level.monsters.length + 1}`, { heroLevel: hero.level });
+    m.state = 'chasing';
+    m.chaseFrom = { x: m.pos.x, y: m.pos.y };
+    st.level.monsters.push(m);
+    st.fx.push({ kind: 'flash', pos: { x: chest.pos.x, y: chest.pos.y }, color: RED, t: 0, ttl: 320 });
+    pushText(st, chest.pos, 'MIMIC!', RED, 1200);
+    pushShake(st, 8, 300);
+    pushLog(st, 'The chest was a mimic!');
+    pushSfx(st, 'mimic');
+    const face = dirFromVec(unitToward(hero.pos, chest.pos));
+    if (face) hero.facing = face;
+    // Hands full is no way to meet one.
+    dropOrb(st, hero.pos);
+    this.engagedId = m.id;
+    this.holdTimer = HOLD_ATTACK_MS;
+    this.dirty = true;
+  }
+
+  /**
+   * The hero walked into a sealed door. Nothing opens by being walked into
+   * but a keystone seal, and only for a hero carrying its relic; every seal
+   * says what it wants, in the log, in the words of its carving.
+   */
+  private bumpSeal(seal: Seal): void {
+    const st = this.state;
+    const hero = st.hero;
+    st.path.length = 0;
+    this.holdTimer = 0;
+    const face = dirFromVec(unitToward(hero.pos, seal.pos));
+    if (face) hero.facing = face;
+    const lock = seal.lock;
+    if (lock.kind === 'keystone') {
+      const i = hero.relics.indexOf(lock.relic);
+      if (i >= 0) {
+        hero.relics.splice(i, 1);
+        pushLog(st, `The ${relicName(lock.relic)} fits the seal`);
+        this.openSeal(seal);
+        return;
+      }
+      pushLog(st, `A sealed door, carved with a ${lock.relic}`);
+    } else if (lock.kind === 'orb') {
+      pushLog(st, 'A sealed door. An empty cradle stands before it');
+    } else {
+      pushLog(st, lock.hint === 'seal' ? 'A sealed door. Runes are carved on it, in a row' : 'A sealed door. Runes glow along its frame');
+    }
+    st.fx.push({ kind: 'flash', pos: { x: seal.pos.x, y: seal.pos.y }, color: BLINK_RED, t: 0, ttl: 320 });
+    pushSfx(st, 'locked');
+  }
+
+  /** The lock is satisfied: the seal is floor from here on. */
+  private openSeal(seal: Seal): void {
+    const st = this.state;
+    seal.open = true;
+    st.fx.push({ kind: 'ring', pos: { x: seal.pos.x, y: seal.pos.y }, radius: 2.4, color: RUNE_COLOR, t: 0, ttl: 700 });
+    st.fx.push({ kind: 'flash', pos: { x: seal.pos.x, y: seal.pos.y }, color: RUNE_COLOR, t: 0, ttl: 400 });
+    pushText(st, seal.pos, 'The seal opens', RUNE_COLOR, 1400);
+    pushShake(st, 6, 300);
+    pushLog(st, 'The seal opens');
+    pushSfx(st, 'seal');
+    this.dirty = true;
+  }
+
+  /**
+   * The hero stepped on a rune. The right one next in its seal's order lights
+   * and stays lit; the wrong one puts every rune of that seal out again. A
+   * rune already lit is nothing: walking back over one costs nothing.
+   */
+  private stepRune(rune: Rune): void {
+    const st = this.state;
+    const seal = sealById(st.level, rune.sealId);
+    if (!seal || seal.open || seal.lock.kind !== 'runes' || rune.lit) return;
+    const lock = seal.lock;
+    const runes = (st.level.runes ?? []).filter((r) => r.sealId === seal.id);
+    if (lock.order[lock.lit] === rune.id) {
+      rune.lit = true;
+      lock.lit += 1;
+      st.fx.push({ kind: 'ring', pos: { x: rune.pos.x, y: rune.pos.y }, radius: 1.2, color: RUNE_COLOR, t: 0, ttl: 420 });
+      st.fx.push({ kind: 'flash', pos: { x: rune.pos.x, y: rune.pos.y }, color: RUNE_COLOR, t: 0, ttl: 260 });
+      pushSfx(st, 'rune');
+      if (lock.lit >= lock.order.length) {
+        pushLog(st, 'The last rune lights');
+        this.openSeal(seal);
+      } else {
+        pushLog(st, `A rune lights (${lock.lit} of ${lock.order.length})`);
+      }
+    } else {
+      for (const r of runes) {
+        if (r.lit) st.fx.push({ kind: 'flash', pos: { x: r.pos.x, y: r.pos.y }, color: RED, t: 0, ttl: 320 });
+        r.lit = false;
+      }
+      lock.lit = 0;
+      st.fx.push({ kind: 'flash', pos: { x: rune.pos.x, y: rune.pos.y }, color: RED, t: 0, ttl: 320 });
+      pushText(st, rune.pos, 'The runes go dark', RED, 1100);
+      pushLog(st, 'The runes go dark');
+      pushSfx(st, 'runeFail');
+    }
+    this.dirty = true;
+  }
+
+  /**
+   * The hero walked into an altar. With the trophy it is carved for in hand,
+   * the popup asks; without it, the carving is all the altar has to say.
+   */
+  private bumpAltar(altar: Altar): void {
+    const st = this.state;
+    const hero = st.hero;
+    st.path.length = 0;
+    this.holdTimer = 0;
+    const face = dirFromVec(unitToward(hero.pos, altar.pos));
+    if (face) hero.facing = face;
+    if (altar.used) return;
+    if (hero.trophies.includes(altar.trophy)) {
+      st.modal = { kind: 'altar', altarId: altar.id, trophy: altar.trophy, boon: boonForTrophy(altar.trophy) };
+      this.dirty = true;
+      return;
+    }
+    st.fx.push({ kind: 'flash', pos: { x: altar.pos.x, y: altar.pos.y }, color: BLINK_RED, t: 0, ttl: 320 });
+    pushLog(st, `An altar, carved with ${altarCarving(altar.trophy)}`);
+    pushSfx(st, 'locked');
+  }
+
+  /**
+   * Lay the trophy on the altar the popup is standing at. The boon is applied
+   * to this hero at once and written down for the next `BOON_RUNS - 1` runs.
+   */
+  offerTrophy(): void {
+    const st = this.state;
+    const hero = st.hero;
+    const modal = st.modal;
+    if (!modal || modal.kind !== 'altar') return;
+    const altar = (st.level.altars ?? []).find((a) => a.id === modal.altarId);
+    const i = hero.trophies.indexOf(modal.trophy);
+    if (!altar || altar.used || i < 0) return;
+    hero.trophies.splice(i, 1);
+    altar.used = true;
+    const boon = modal.boon;
+    applyBoon(hero, boon, st.depth);
+    const runsLeft = BOON_RUNS - 1;
+    st.boons = addBoon(st.boons, boon, runsLeft);
+    saveBoons(addBoon(loadBoons(), boon, runsLeft));
+    st.fx.push({ kind: 'ring', pos: { x: altar.pos.x, y: altar.pos.y }, radius: 2.6, color: GOLD, t: 0, ttl: 800 });
+    st.fx.push({ kind: 'flash', pos: { x: altar.pos.x, y: altar.pos.y }, color: GOLD, t: 0, ttl: 400 });
+    pushLog(st, `Offered the ${trophyName(modal.trophy)}: ${boonName(boon)}`);
+    pushSfx(st, 'altar');
+    st.modal = { kind: 'boon', boon, runsLeft };
+    this.dirty = true;
+    this.emit();
   }
 
   /**
@@ -681,6 +940,53 @@ export class Game {
    * stays put and the offer popup opens instead: what the item is, what it
    * does, what it costs. Buying happens from there, via `buyOffer`.
    */
+  /**
+   * The hero walked into the forge. The popup lists every worn item with the
+   * price of a level on it; buying one is the shop's purchase, the same as a
+   * podium's.
+   */
+  private bumpForge(forge: ShopForge): void {
+    const st = this.state;
+    const hero = st.hero;
+    st.path.length = 0;
+    this.holdTimer = 0;
+    const face = dirFromVec(unitToward(hero.pos, forgeCenter(forge)));
+    if (face) hero.facing = face;
+    const offers: { slot: ItemSlot; item: MagicItem; price: number }[] = [];
+    for (const slot of ITEM_SLOTS) {
+      const item = hero.gear?.[slot];
+      if (item) offers.push({ slot, item, price: upgradePrice(item) });
+    }
+    st.modal = { kind: 'shopForge', gold: hero.gold, offers, soldOut: st.level.shop?.bought ?? false };
+    this.dirty = true;
+  }
+
+  /**
+   * Pay the forge to raise the item in `slot` a level. Refused when the shop
+   * has sold its one thing, the slot is empty, or the purse is short — the
+   * popup already greys those out.
+   */
+  buyUpgrade(slot: ItemSlot): void {
+    const st = this.state;
+    const hero = st.hero;
+    const shop = st.level.shop;
+    if (!shop || shop.bought) return;
+    const item = hero.gear?.[slot];
+    if (!item) return;
+    const price = upgradePrice(item);
+    if (hero.gold < price) return;
+    hero.gold -= price;
+    upgradeItem(hero, slot);
+    shop.bought = true;
+    const c = forgeCenter(shop.forge);
+    st.fx.push({ kind: 'ring', pos: c, radius: 1.8, color: ORANGE, t: 0, ttl: 420 });
+    st.modal = { kind: 'upgraded', item };
+    pushLog(st, `Forged the ${itemName(item.kind)} to level ${item.level}`);
+    pushSfx(st, 'forge');
+    this.dirty = true;
+    this.emit();
+  }
+
   private bumpOffer(offer: ShopOffer): void {
     const st = this.state;
     const hero = st.hero;
@@ -752,6 +1058,12 @@ export class Game {
       st.hero.lens = null;
       pushLog(st, `The ${LENS_NAME} shattered`);
     }
+    // A chest popup closed with its choice unmade keeps the hero's gear as it
+    // is: the find is melted down, never quietly worn.
+    if (st.modal.kind === 'chest' && st.modal.choice) {
+      this.sellMagic();
+      return;
+    }
     st.modal = null;
     st.path.length = 0;
     st.pointer = null;
@@ -764,6 +1076,9 @@ export class Game {
   private swingAt(m: Monster): void {
     const st = this.state;
     const hero = st.hero;
+    // Both hands on the orb is no way to swing: it goes down first, under the
+    // hero's feet, to be picked up again once the fight is over.
+    dropOrb(st, hero.pos);
     const u = unitToward(hero.pos, m.pos);
     hero.lunge = u;
     hero.lungeT = 120;
@@ -813,7 +1128,8 @@ export class Game {
     const mid = { x: (m.pos.x + hero.pos.x) / 2, y: (m.pos.y + hero.pos.y) / 2 };
     if (!isFloor(st.level, mid)) return 0;
     if (liveMonsterAt(st.level, mid)) return 0;
-    if (chestAt(st.level, mid) || offerAt(st.level, mid) || closedDoorAt(st.level, mid)) return 0;
+    if (chestAt(st.level, mid) || altarAt(st.level, mid) || offerAt(st.level, mid) || forgeAt(st.level, mid)) return 0;
+    if (closedDoorAt(st.level, mid) || closedSealAt(st.level, mid)) return 0;
     return 2;
   }
 
@@ -910,9 +1226,52 @@ export class Game {
     const shrine = shrineAt(level, tile);
     if (shrine) this.lightShrine(shrine);
 
-    if (eq(tile, level.exit)) {
+    const rune = runeAt(level, tile);
+    if (rune) this.stepRune(rune);
+
+    const relic = relicAt(level, tile);
+    if (relic) this.takeRelic(relic);
+
+    // An orb on the floor is picked up by walking onto it; the cradle in front
+    // of its seal takes it back off the hero's hands; and an orb carried out
+    // of its wing goes home on its own.
+    const carried = carriedOrb(st);
+    if (carried) {
+      const socket = socketAt(level, tile);
+      if (socket && socket.lock.kind === 'orb' && socket.id === carried.sealId) {
+        carried.state = 'placed';
+        carried.pos = { x: tile.x, y: tile.y };
+        socket.lock.placed = true;
+        hero.carrying = null;
+        pushText(st, tile, 'The orb settles', ORB, 1100);
+        pushLog(st, 'The orb settles into its cradle');
+        pushSfx(st, 'orbSet');
+        this.openSeal(socket);
+      } else if (!hiddenAt(level, tile)) {
+        carried.state = 'floor';
+        carried.pos = { x: carried.home.x, y: carried.home.y };
+        hero.carrying = null;
+        pushText(st, tile, 'The orb slips away', ORB, 1100);
+        pushLog(st, 'The orb slips back to where it lay');
+        pushSfx(st, 'orbSet');
+        this.dirty = true;
+      }
+    } else {
+      const orb = orbAt(level, tile);
+      if (orb) {
+        orb.state = 'carried';
+        hero.carrying = orb.id;
+        pushText(st, tile, 'ORB', ORB, 1000);
+        pushLog(st, 'Picked up the orb. Hands full: you set it down to fight');
+        pushSfx(st, 'orbLift');
+        this.dirty = true;
+      }
+    }
+
+    if (exitAt(level, tile)) {
       // The stairs of a minotaur / angel chamber ARE the objective: claim the
-      // reward first, then descend once the player dismisses the popup.
+      // reward first, then descend once the player dismisses the popup. A
+      // wing's own stairs (`level.wingExit`) go down exactly the same way.
       if (level.kind === 'boss' && level.boss && !level.boss.defeated) this.winBoss();
       st.descending = DESCEND_MS;
       st.path.length = 0;
@@ -929,6 +1288,18 @@ export class Game {
       }
       this.dirty = true;
     }
+  }
+
+  /** A relic off the floor and into the pack, for a seal on some deeper floor. */
+  private takeRelic(relic: Relic): void {
+    const st = this.state;
+    relic.taken = true;
+    st.hero.relics.push(relic.kind);
+    st.fx.push({ kind: 'ring', pos: { x: relic.pos.x, y: relic.pos.y }, radius: 1.4, color: RELIC_COLOR, t: 0, ttl: 500 });
+    pushText(st, relic.pos, relicName(relic.kind).toUpperCase(), RELIC_COLOR, 1300);
+    pushLog(st, `Found the ${relicName(relic.kind)}`);
+    pushSfx(st, 'relic');
+    this.dirty = true;
   }
 
   // -------------------------------------------------------------------------
@@ -1111,6 +1482,9 @@ export class Game {
     if (!boss || boss.defeated) return;
     boss.defeated = true;
     st.stats.bosses += 1;
+    if (!Array.isArray(hero.trophies)) hero.trophies = [];
+    hero.trophies.push(boss.kind);
+    pushLog(st, `Took the ${trophyName(boss.kind)}`);
 
     const upgraded = upgradeRandomItem(hero, this.rng);
     const heart = upgraded === null;
@@ -1265,7 +1639,7 @@ export class Game {
     const hero = st.hero;
     const dists = bfsDistances(st.level, hero.pos, {
       maxDist: FROST_RANGE,
-      blocked: (p) => closedDoorAt(st.level, p) !== null || !sameSide(st.level, p, hero.pos),
+      blocked: (p) => closedDoorAt(st.level, p) !== null || closedSealAt(st.level, p) !== null || !sameSide(st.level, p, hero.pos),
     });
     let target: Monster | null = null;
     let best = Infinity;
@@ -1414,7 +1788,7 @@ export class Game {
     const hero = st.hero;
     const dists = bfsDistances(st.level, hero.pos, {
       maxDist: stats.fireRange,
-      blocked: (p) => closedDoorAt(st.level, p) !== null || !sameSide(st.level, p, hero.pos),
+      blocked: (p) => closedDoorAt(st.level, p) !== null || closedSealAt(st.level, p) !== null || !sameSide(st.level, p, hero.pos),
     });
     let target: Monster | null = null;
     let best = Infinity;
@@ -1561,6 +1935,14 @@ export class Game {
   }
 }
 
+/**
+ * Coins a magic item melts down for when the hero would rather keep what
+ * they wear: a slice of what the shop would charge for it.
+ */
+function magicGold(item: MagicItem): number {
+  return Math.max(5, Math.round(itemPrice(item.kind, item.level) * 0.4 / 5) * 5);
+}
+
 function dirFromVec(v: Vec): Dir | null {
   if (v.x > 0) return 'E';
   if (v.x < 0) return 'W';
@@ -1598,6 +1980,10 @@ function reviveState(saved: GameState): GameState {
   if (!hero.rpos) hero.rpos = { x: hero.pos.x, y: hero.pos.y };
   // A lens is only a lens while it names the set of floors it works in.
   if (!hero.lens || typeof hero.lens.set !== 'number') hero.lens = null;
+  if (typeof hero.carrying !== 'string') hero.carrying = null;
+  if (!Array.isArray(hero.relics)) hero.relics = [];
+  if (!Array.isArray(hero.trophies)) hero.trophies = [];
+  if (!Array.isArray(s.boons)) s.boons = [];
   hero.stun = 0;
   if (typeof hero.sleeping !== 'boolean') hero.sleeping = false;
   hero.hitFlash = 0;

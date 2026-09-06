@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { Loot } from '../engine/types';
+import type { Loot, MagicItem } from '../engine/types';
 import { HEART } from '../engine/types';
-import { itemName } from '../engine/items';
+import { itemDescription, itemName } from '../engine/items';
 import { LENS_NAME } from '../engine/lens';
 import { PixelIcon, type IconName } from './icons';
 import { PixelArt } from './PixelArt';
@@ -32,14 +32,22 @@ function prize(loot: Loot): { icon: IconName; amount: number | null; label?: str
 
 export interface ChestModalProps {
   loot: Loot;
+  /**
+   * A magic item found with that slot already filled: the popup asks whether
+   * to wear it or melt it down, and only closes on an answer.
+   */
+  choice: { magic: MagicItem; replaces: MagicItem; sellGold: number } | null;
+  onTake: () => void;
+  onSell: () => void;
   onClose: () => void;
 }
 
 /**
  * Wordless "you opened a chest" popup: the chest wobbles, the lid pops, and
- * the prize floats out. Tap anywhere to continue.
+ * the prize floats out. Tap anywhere to continue — unless the prize is a
+ * magic item the hero has to choose about, in which case two buttons do.
  */
-export function ChestModal({ loot, onClose }: ChestModalProps) {
+export function ChestModal({ loot, choice, onTake, onSell, onClose }: ChestModalProps) {
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
   const { icon, amount, label } = prize(loot);
@@ -55,7 +63,7 @@ export function ChestModal({ loot, onClose }: ChestModalProps) {
   }, []);
 
   const close = () => {
-    if (ready) onClose();
+    if (ready && !choice) onClose();
   };
 
   return (
@@ -79,9 +87,40 @@ export function ChestModal({ loot, onClose }: ChestModalProps) {
             <span>+{loot.gold}</span>
           </div>
         )}
-        <div className="chest-tap" aria-hidden="true">
-          <span className="chest-tap-dot" />
-        </div>
+        {choice ? (
+          <div className={`chest-choice${ready ? ' chest-choice-ready' : ''}`} onPointerDown={(e) => e.stopPropagation()}>
+            <p className="shop-desc chest-choice-desc">{itemDescription(choice.magic)}</p>
+            <div className="shop-swap">
+              <span className="shop-swap-label">Replaces</span>
+              <PixelIcon name={choice.replaces.kind} size={16} />
+              <span className="shop-swap-name">
+                {itemName(choice.replaces.kind)} <span className="shop-muted">Lv {choice.replaces.level}</span>
+              </span>
+            </div>
+            <div className="shop-actions chest-choice-actions">
+              <button type="button" className="shop-btn shop-btn-buy" onClick={onTake} disabled={!ready} aria-label="Wear it">
+                <span className="shop-btn-label">Wear it</span>
+              </button>
+              <button
+                type="button"
+                className="shop-btn shop-btn-exit shop-btn-wide"
+                onClick={onSell}
+                disabled={!ready}
+                aria-label={`Melt it down for ${choice.sellGold} gold`}
+              >
+                <span className="shop-btn-label">Melt down</span>
+                <span className="shop-price">
+                  <PixelIcon name="coin" size={14} />
+                  {choice.sellGold}
+                </span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="chest-tap" aria-hidden="true">
+            <span className="chest-tap-dot" />
+          </div>
+        )}
       </div>
     </div>
   );

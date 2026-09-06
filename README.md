@@ -69,31 +69,67 @@ Play it at **https://postazure.github.io/table-maze/**
     it through another passage. Kill one when you're well over its level and the
     reward is the biggest in the dungeon. The first floor has none — it is
     patrols and guards while you learn the controls.
-- Behind the walls of every maze floor is a second floor plan. **Hidden
-  passages** are real corridors, with monsters in them, that the floor draws as
-  unbroken brick: a trunk running one course of brick behind the outer wall,
-  another two courses further out, the pair stitched together so the whole
-  thing loops, and a neck down into the maze at up to eight places along it. A
-  deep floor carries three of these and a hundred and fifty tiles of ground
-  nobody can see.
-  You cannot see one, and you cannot walk into one, without a **Cracked Lens**.
-  That turns up in a chest on the first or second floor of each three-floor
-  theme — no chest is marked, so finding it means opening them. It comes out
-  with a fracture already running across the glass, which is your notice that
-  it is not going to last. Carry it and the wall opens as you walk past a way
-  in: the brick goes clear at your feet and back to solid a few paces off.
-  That is the only sign you ever get. Nothing marks a passage from across the
-  room, so the way to find one is to walk the floor, and a player who took the
-  direct route down will simply have missed them. Even inside, only the tiles
-  around you come clear, so a passage is something you feel your way along
-  rather than a map handed to you. Unlike a warren, a passage rejoins the maze
-  somewhere else, and the walk behind the wall is always shorter than the walk
-  round; on the last floor of a theme one of them ends in a vault with a magic
-  item in the chest. What is in them is trash: patrols and the odd guard, never
-  a hunter.
-  Nothing on a floor ever needs a passage: the stairs, every key and every
-  shrine are reachable without one, so the lens buys you time and loot, never
-  the way out. Walk out of that theme's shop and it shatters on the stairs.
+- Behind the walls of every maze floor is a **hidden wing**: a dungeon of its
+  own, dug into the rock outside the maze. A grid of rooms joined by short
+  corridors — four rooms on the first floors, forty-odd on the deepest, by
+  which point the wing holds more floor than the maze it hangs off — entered through
+  a single mouth knocked through the outer wall (now and then a second, a back
+  door further along), and drawn as unbroken brick. You cannot see one, and you cannot walk into one, without a
+  **Cracked Lens**. That turns up in a chest on the first or second floor of
+  each three-floor theme — no chest is marked, so finding it means opening
+  them. It comes out with a fracture already running across the glass, which
+  is your notice that it is not going to last. Carry it and the wall opens as
+  you walk past the mouth: the brick goes clear at your feet and back to solid
+  a few paces off. That is the only sign you ever get. Nothing marks a wing
+  from across the room, so the way to find one is to walk the floor, and a
+  player who took the direct route down will simply have missed it. Even
+  inside, only the tiles around you come clear, so a wing is something you
+  feel your way through room by room rather than a map handed to you. Walk
+  out of that theme's shop and the lens shatters on the stairs.
+  A wing is the hard end of its floor. Its rooms hold **lurkers** and elite
+  guards a level over anything the maze outside would roll — a lurker in a
+  wing has the room loops to be baited round, the same as in a warren — and
+  none of it is ever on the way to the stairs, so none of it has to be
+  beatable. A side chest in a wing is sometimes a **mimic**: a chest that is a
+  monster, sprung the moment you touch it, no key needed, and it pays like
+  the treasure it was pretending to be. Watch a chest for a moment before you
+  walk up to it.
+  At the far end of every wing is a **treasure room** with a chest holding a
+  magic item — the same kind the shop sells, at the floor's level — behind a
+  **sealed door**. Any wing of six rooms or more also has its own **stairs
+  down** in that room, so clearing a long wing is a way down in itself and
+  never a walk back out. If the item's slot is empty it goes straight on; if not,
+  the chest asks whether to wear it in place of what you have or melt it down
+  for coins. The seal is a lock, and each floor rolls one of three:
+  - **Runes**: three or four runes on the floors of the other rooms. Step on
+    them in the right order and the seal opens; step on the wrong one and
+    every rune goes dark again. How the order is told varies. Sometimes each
+    rune shows its place as dots. Sometimes the order is carved on the sealed
+    door itself, and you have to go and read it. Sometimes nothing anywhere
+    says, and three runes are six orders and a walk each.
+  - **The orb**: an orb lies in the room furthest from the door, and a cradle
+    stands in front of the seal. Walk onto the orb to pick it up and carry it
+    to the cradle. Both hands are full while you carry it: the hero sets it
+    down to fight, under their own feet, and you step back onto it to pick it
+    up again. Get knocked down and it lands where you fell. Carry it out of
+    the wing and it slips back to where it lay.
+  - **A keystone**: the door is carved with a shape — a sun, a moon, a star —
+    and opens only for the matching **relic**. Relics lie in the wings of
+    earlier floors, so a keystone seal is only ever asking for something the
+    run put behind you; whether you went looking for it with a lens at the
+    time is another matter. Relics ride in your pack for the rest of the run
+    (the help screen's Hero tab lists them), and a seal takes its relic when
+    you walk into it.
+  From the second theme on, some wings hold an **altar**, carved with a skull,
+  a pair of horns or a single tear. Beat a boss and you keep its **trophy**;
+  an altar carved for that trophy trades it for a **boon**: a Deathless Pact
+  (two extra hearts), Bull's Vigor (attack and defense) or Second Sight (a
+  lens for the first three floors). A boon is yours at once, and it is the one
+  thing in the game that outlives a run: it holds for the next two runs as
+  well, and then it breaks.
+  Nothing on a floor ever needs a wing: the stairs, every key and every shrine
+  are reachable without one, so the lens buys you loot and a harder fight,
+  never the way out.
 - Four **shrines** stand in alcoves on every maze floor, and no two are worth the
   same walk. One sits in a dead end hanging straight off the route down, where you
   cannot miss it. One or two are at the back of the longer **warrens**, so clearing
@@ -139,14 +175,16 @@ Play it at **https://postazure.github.io/table-maze/**
   you gain a heart if you're wearing nothing), and your hearts refill. Lose in a boss
   chamber and the run ends there — no waking up nearby this time — and a stats screen
   shows how far you got, your level, kills, bosses beaten, gold, and time played before
-  you start a new run.
+  you start a new run. Win and you also keep the boss's trophy, for the altars.
 - After every third floor you visit a **shop**: a room with three podiums, one magic
   item per slot. Each podium wears its slot emblem — a sword for offense, a shield for
   defense, a star for spirit — so you can see what kind of item it holds from across
   the room. Walk into a podium and a card tells you the item's name, what it does and
-  what it costs; buy it with the green button or walk away with the red one. You can
-  buy one item per shop, and a new item replaces whatever was in that slot. Items
-  scale with the floor you bought them on.
+  what it costs; buy it with the green button or walk away with the red one. Below the
+  podiums stands the **forge**: walk into it and it offers a level on any magic item
+  you already wear, for less than a new one would cost. You can buy one thing per
+  shop — an item or an upgrade — and a new item replaces whatever was in that slot.
+  Items scale with the floor you bought them on.
 - Magic items are all passive, so the controls never change. Some fire on a timer
   (a fireball staff, a shield bubble that recharges), some on a hit (poison, frost,
   chain lightning, thorns), some on a condition (berserker rage at low hearts, a

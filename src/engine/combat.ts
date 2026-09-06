@@ -14,6 +14,7 @@ import type {
   KeyItem,
   LevelData,
   Monster,
+  Orb,
   Rng,
   RunStats,
   SfxId,
@@ -24,6 +25,7 @@ import { BOSS_HIT_FRACTION, HEART, eq, key, manhattan, parseKey } from './types'
 import { bossRetryCost, damage, xpShare } from './balance';
 import { bfsDistances, floorNeighbors, isFloor } from './pathfind';
 import { hiddenAt, sameSide } from './lens';
+import { altarAt, closedSealAt, orbById } from './puzzles';
 import type { ItemStats } from './items';
 import { berserkActive, heroStats } from './items';
 import { SHRINE_COLORS, buffAtk, buffDef } from './shrines';
@@ -109,6 +111,13 @@ export function closedDoorAt(level: LevelData, p: Vec): Door | null {
   return d && !d.open ? d : null;
 }
 
+/** Is `p` a stairs down — the floor's own, or the wing's? */
+export function exitAt(level: LevelData, p: Vec): boolean {
+  if (p.x === level.exit.x && p.y === level.exit.y) return true;
+  const w = level.wingExit;
+  return !!w && w.x === p.x && w.y === p.y;
+}
+
 /** An un-picked-up key on `p`. */
 export function keyAt(level: LevelData, p: Vec): KeyItem | null {
   for (const k of level.keys) if (!k.taken && k.pos.x === p.x && k.pos.y === p.y) return k;
@@ -143,10 +152,37 @@ export function chestAt(level: LevelData, p: Vec): Chest | null {
 export function heroCanStand(level: LevelData, p: Vec, from?: Vec): boolean {
   if (!isFloor(level, p)) return false;
   if (closedDoorAt(level, p)) return false;
+  if (closedSealAt(level, p)) return false;
   if (liveMonsterAt(level, p)) return false;
   if (chestAt(level, p)) return false;
+  if (altarAt(level, p)) return false;
   if (hiddenAt(level, p) !== (from ? hiddenAt(level, from) : false)) return false;
   return true;
+}
+
+/** The orb the hero is carrying, or null. */
+export function carriedOrb(state: GameState): Orb | null {
+  const id = state.hero.carrying;
+  return id ? orbById(state.level, id) : null;
+}
+
+/** The lens' own blue, which the orbs and runes share. */
+export const ORB = '#8fe3ff';
+
+/**
+ * Set the carried orb down on `at`. Both hands are free again; the orb lies
+ * where it was put and is picked up again by stepping onto it. Silent when
+ * nothing is carried.
+ */
+export function dropOrb(state: GameState, at: Vec): Orb | null {
+  const orb = carriedOrb(state);
+  if (!orb) return null;
+  orb.state = 'floor';
+  orb.pos = { x: at.x, y: at.y };
+  state.hero.carrying = null;
+  pushText(state, at, 'Set down', ORB, 800);
+  pushSfx(state, 'orbSet');
+  return orb;
 }
 
 /** Unit step from `a` toward the 4-adjacent `b`. */
@@ -520,6 +556,8 @@ function knockDown(state: GameState, attacker: Monster | null = null): void {
   hero.hp = 1;
   hero.stun = 0;
   hero.sleeping = true;
+  // Whatever was in the hero's arms lands where they fell.
+  dropOrb(state, hero.pos);
   // A nap ends every shrine the hero was running on. They lit those alcoves to
   // win a fight they have just lost; the floor's other alcoves are still there.
   hero.buffs = [];
