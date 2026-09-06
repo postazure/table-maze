@@ -1203,6 +1203,11 @@ export class Renderer implements TileMapper {
     if (!necroBlocksExit && this.inRange(state.level.exit, startX, endX, startY, endY)) {
       this.drawTileSprite(ctx, this.exitSprite, state.level.exit, t, 0.86);
     }
+    // The wing's own stairs, in its treasure room: hidden ground like the rest.
+    const wingExit = state.level.wingExit;
+    if (wingExit && this.inRange(wingExit, startX, endX, startY, endY)) {
+      this.drawBehindWall(ctx, state, wingExit, t, () => this.drawTileSprite(ctx, this.exitSprite, wingExit, t, 0.86));
+    }
 
     // Shop podiums. Each covers a 2x2 block and draws taller than that (the
     // item floats above it, the price tag hangs below), so the range test is
@@ -1524,16 +1529,22 @@ export class Renderer implements TileMapper {
     ctx.save();
     ctx.globalAlpha = 0.85;
     if (lock.kind === 'runes' && lock.hint === 'seal') {
-      // The order, left to right, in glyphs small enough to fit the panel.
+      // The order, reading left to right and then down, in glyphs small
+      // enough to fit the panel: one row for three, two rows past that.
       const n = lock.order.length;
-      const cell = ns / n;
-      const size = Math.max(3, Math.round(Math.min(cell, ns * 0.45)));
+      const perRow = n > 3 ? Math.ceil(n / 2) : n;
+      const rowsN = Math.ceil(n / perRow);
+      const cell = ns / perRow;
+      const rowH = ns / rowsN;
+      const size = Math.max(3, Math.round(Math.min(cell, rowH) * 0.8));
       lock.order.forEach((id, i) => {
         const glyph = this.runeGlyphOf(id);
         const sprite = glyph === null ? null : this.runeSprites[glyph];
         if (!sprite) return;
-        const x = Math.round(nx + cell * i + (cell - size) / 2);
-        const y = Math.round(ny + (ns - size) / 2);
+        const col = i % perRow;
+        const row = Math.floor(i / perRow);
+        const x = Math.round(nx + cell * col + (cell - size) / 2);
+        const y = Math.round(ny + rowH * row + (rowH - size) / 2);
         ctx.drawImage(sprite.lit, x, y, size, size);
       });
     } else if (lock.kind === 'keystone') {

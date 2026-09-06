@@ -6,7 +6,7 @@
 import type { GameState, LevelData, Monster, Rng, Vec } from './types';
 import { eq, key, manhattan } from './types';
 import { bfsDistances, bfsPath } from './pathfind';
-import { GREEN, chestAt, closedDoorAt, damageMonster, keyAt, liveMonsterAt, monsterAttack } from './combat';
+import { GREEN, chestAt, closedDoorAt, damageMonster, exitAt, keyAt, liveMonsterAt, monsterAttack } from './combat';
 import type { ItemStats } from './items';
 import { heroStats } from './items';
 import { lurkerSightRange } from './balance';
@@ -196,7 +196,7 @@ function moveBlocked(state: GameState, m: Monster): (p: Vec) => boolean {
     if (chestAt(level, p)) return true;
     if (altarAt(level, p)) return true;
     if (pickupAt(level, p)) return true;
-    if (eq(p, level.exit)) return true;
+    if (exitAt(level, p)) return true;
     return false;
   };
 }

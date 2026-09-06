@@ -37,7 +37,7 @@ import { levelDims, makeMonster, rollChestLoot } from './balance';
 import type { MonsterOpts } from './balance';
 import { lensFloor } from './lens';
 import { themeForDepth } from './themes';
-import { bfsDistances, bfsPath, floorNeighbors, isFloor } from './pathfind';
+import { bfsDistances, bfsPath, cutTiles, floorNeighbors, isFloor } from './pathfind';
 import { WING_MARGIN, canDig, digWings, pocketBeat, shiftWingContent, stockWings } from './wings';
 
 export { PASSAGE_MONSTER_CAP, PASSAGE_MONSTER_BUDGET } from './wings';
@@ -297,11 +297,17 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
       used.add(key(pos));
     }
     // One chest key per chest, anywhere free (all doors eventually open).
-    // Vault chests are counted here too: a gold key opens any chest, and a
-    // vault would be a cruel place to learn otherwise.
+    // The wing's chests are counted here too: a gold key opens any chest, and
+    // a wing would be a cruel place to learn otherwise. One shuffled pool of
+    // tiles serves every key, rather than a fresh scan of the floor per key.
+    const keyPool: Vec[] = [];
+    for (const [k, d] of distFromStart) if (d >= 2) keyPool.push(parseKey(k));
+    rng.shuffle(keyPool);
+    let poolAt = 0;
     for (let n = 0; n < level.chests.length; n++) {
-      const spot = pickFreeTile(level, used, distFromStart, 2, rng);
-      if (!spot) break;
+      while (poolAt < keyPool.length && used.has(key(keyPool[poolAt]))) poolAt++;
+      if (poolAt >= keyPool.length) break;
+      const spot = keyPool[poolAt++];
       level.keys.push({ id: `k${++keyCount}`, pos: spot, kind: 'chest', taken: false });
       used.add(key(spot));
     }
@@ -368,15 +374,16 @@ function isCorridor(level: LevelData, p: Vec): boolean {
   return nb[0].x === nb[1].x || nb[0].y === nb[1].y;
 }
 
-/** Removing `p` disconnects start from exit. */
-function isChoke(level: LevelData, p: Vec): boolean {
-  return bfsPath(level, level.start, level.exit, { blocked: (q) => eq(q, p) }) === null;
-}
-
-/** Evenly spread corridor tiles along the main path, preferring chokepoints. */
+/**
+ * Evenly spread corridor tiles along the main path, preferring chokepoints —
+ * the tiles whose removal would cut the stairs off from the start, found for
+ * the whole floor in one walk (`cutTiles`).
+ */
 function pickDoors(level: LevelData, fullPath: Vec[], depth: number, rng: Rng): Vec[] {
   const count = Math.min(4, 1 + Math.floor(depth / 3));
   const len = fullPath.length;
+  const chokeTiles = cutTiles(level, level.start, level.exit);
+  const isChoke = (p: Vec): boolean => chokeTiles.has(key(p));
   const cands: number[] = [];
   for (let i = 3; i <= len - 4; i++) {
     if (isCorridor(level, fullPath[i])) cands.push(i);
@@ -390,7 +397,7 @@ function pickDoors(level: LevelData, fullPath: Vec[], depth: number, rng: Rng): 
     if (!pool.length) break;
     pool.sort((a, b) => Math.abs(a - target) - Math.abs(b - target) || a - b);
     const near = pool.slice(0, 6);
-    const chokes = near.filter((i) => isChoke(level, fullPath[i]));
+    const chokes = near.filter((i) => isChoke(fullPath[i]));
     chosen.push(chokes.length ? chokes[0] : near[0]);
   }
   chosen.sort((a, b) => a - b);
@@ -460,22 +467,6 @@ function pickChestSpots(
     out.push(p);
   }
   return out;
-}
-
-function pickFreeTile(
-  level: LevelData,
-  used: Set<string>,
-  dist: Map<string, number>,
-  minDist: number,
-  rng: Rng,
-): Vec | null {
-  const cands: Vec[] = [];
-  for (const [k, d] of dist) {
-    if (d < minDist || used.has(k)) continue;
-    cands.push(parseKey(k));
-  }
-  if (!cands.length) return null;
-  return rng.pick(cands);
 }
 
 // ---------------------------------------------------------------------------
@@ -1112,6 +1103,7 @@ function validate(level: LevelData): boolean {
     return true;
   };
   if (!claim(start) || !claim(exit)) return false;
+  if (level.wingExit && !claim(level.wingExit)) return false;
   for (const d of level.doors) if (!claim(d.pos) || d.open) return false;
   for (const k of level.keys) if (!claim(k.pos) || k.taken) return false;
   for (const c of level.chests) if (!claim(c.pos) || c.opened) return false;
@@ -1159,15 +1151,23 @@ function validate(level: LevelData): boolean {
   // Nothing past the stairs. Walking onto them ends the floor, so every tile
   // has to be reachable without crossing them, or it is ground the hero can
   // see on the way down and never stand on.
+  const stairs = new Set([key(exit), ...(level.wingExit ? [key(level.wingExit)] : [])]);
   const beyondStairs = bfsDistances(level, start, {
-    blocked: (p) => solidTiles.has(key(p)) || eq(p, exit),
+    blocked: (p) => solidTiles.has(key(p)) || stairs.has(key(p)),
   });
   for (let y = 1; y < level.height - 1; y++) {
     for (let x = 1; x < level.width - 1; x++) {
       const p = { x, y };
-      if (!isFloor(level, p) || eq(p, exit) || solidTiles.has(key(p))) continue;
+      if (!isFloor(level, p) || stairs.has(key(p)) || solidTiles.has(key(p))) continue;
       if (!beyondStairs.has(key(p))) return false;
     }
+  }
+  // The wing's stairs are the wing's: hidden ground, in the treasure room,
+  // behind the seal like the chest.
+  if (level.wingExit) {
+    const w = level.wingExit;
+    if (!hidden.has(key(w)) || !lensed.has(key(w))) return false;
+    if (!(level.passages ?? []).some((pg) => inRect(pg.rooms[pg.treasure], w) || floorNeighbors(level, w).some((nb) => inRect(pg.rooms[pg.treasure], nb)))) return false;
   }
 
   // Wings: every tile of one is hidden ground, every one of them is walkable

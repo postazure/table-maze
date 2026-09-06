@@ -69,11 +69,12 @@ Play it at **https://postazure.github.io/table-maze/**
     it through another passage. Kill one when you're well over its level and the
     reward is the biggest in the dungeon. The first floor has none — it is
     patrols and guards while you learn the controls.
-- Behind the walls of every maze floor is a **hidden wing**: a small dungeon of
-  its own, dug into the rock outside the maze. Four to eight rooms joined by
-  short corridors, entered through a single mouth knocked through the outer
-  wall (now and then a second, a back door further along), and drawn as
-  unbroken brick. You cannot see one, and you cannot walk into one, without a
+- Behind the walls of every maze floor is a **hidden wing**: a dungeon of its
+  own, dug into the rock outside the maze. A grid of rooms joined by short
+  corridors — four rooms on the first floors, forty-odd on the deepest, by
+  which point the wing holds more floor than the maze it hangs off — entered through
+  a single mouth knocked through the outer wall (now and then a second, a back
+  door further along), and drawn as unbroken brick. You cannot see one, and you cannot walk into one, without a
   **Cracked Lens**. That turns up in a chest on the first or second floor of
   each three-floor theme — no chest is marked, so finding it means opening
   them. It comes out with a fracture already running across the glass, which
@@ -95,7 +96,9 @@ Play it at **https://postazure.github.io/table-maze/**
   walk up to it.
   At the far end of every wing is a **treasure room** with a chest holding a
   magic item — the same kind the shop sells, at the floor's level — behind a
-  **sealed door**. If the item's slot is empty it goes straight on; if not,
+  **sealed door**. Any wing of six rooms or more also has its own **stairs
+  down** in that room, so clearing a long wing is a way down in itself and
+  never a walk back out. If the item's slot is empty it goes straight on; if not,
   the chest asks whether to wear it in place of what you have or melt it down
   for coins. The seal is a lock, and each floor rolls one of three:
   - **Runes**: three or four runes on the floors of the other rooms. Step on

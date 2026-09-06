@@ -2,15 +2,17 @@
  * Hidden wings: the dungeon behind the wall.
  *
  * A wing is a small crawl of its own dug into the rock outside the maze: a
- * grid of rooms (`WING_COLS(depth)` along the wall by `WING_ROWS` deep) joined
- * by short corridors, hung off one tile of the maze's outer wall. Every tile
+ * grid of rooms (`wingGrid(depth)`: two by two on the first floors, five by
+ * four on the deepest, by then more floor than the maze itself) joined by
+ * short corridors, hung off one tile of the maze's outer wall. Every tile
  * of one is hidden ground — brick to look at and brick to walk into without a
  * Cracked Lens (see lens.ts) — and nothing on a floor ever needs one: the
  * stairs, the keys and the shrines all stay out in the maze.
  *
  * What a wing is for:
  *  - a **treasure room** at the far end of the room graph, a leaf, with a
- *    chest holding a magic item — the same thing the shop sells;
+ *    chest holding a magic item — the same thing the shop sells — and, in a
+ *    wing of `WING_STAIRS_FROM_ROOMS` rooms or more, its own stairs down;
  *  - a **sealed door** on the one corridor into it, opened by a lock chosen
  *    per floor: runes stepped on in order, an orb carried from another room
  *    to the cradle before the door, or a keystone relic picked up in a wing
@@ -56,19 +58,30 @@ import { BOSS_EVERY, bossKindForDepth } from './boss';
 // Dimensions
 // ---------------------------------------------------------------------------
 
-/** A room cell is this many tiles along the wall: a room of 3 to 5 plus rock either side. */
-export const WING_CELL_ALONG = 7;
-/** ...and this many deep: a room of 3 or 4 plus the corridor gap to the next row. */
-export const WING_CELL_DEEP = 6;
-/** Rooms deep, always. Bigger floors get more rooms along the wall instead. */
-export const WING_ROWS = 2;
+/** A room cell is this many tiles along the wall: a room of 3 to 7 plus rock either side. */
+export const WING_CELL_ALONG = 9;
+/** ...and this many deep: a room of 3 to 6 plus the corridor gap to the next row. */
+export const WING_CELL_DEEP = 8;
+/** Room sizes, inclusive. Every room covers its cell's centre line both ways, so neighbours always overlap. */
+const ROOM_MIN_W = 3;
+const ROOM_MAX_W = WING_CELL_ALONG - 2;
+const ROOM_MIN_H = 3;
+const ROOM_MAX_H = WING_CELL_DEEP - 2;
+/** The most rooms deep a wing ever goes; see `wingGrid`. */
+export const WING_MAX_ROWS = 5;
 /**
  * Rock left around the maze for the wings (and the warrens) to be dug out
- * of. A neck through the wall, `WING_ROWS` cells of rooms, a niche off the
- * back of the last row, and a ring of rock past that. Even, so the maze's
- * odd lattice carries on unbroken.
+ * of. A neck through the wall, `WING_MAX_ROWS` cells of rooms, a niche off
+ * the back of the last row, and a ring of rock past that. Even, so the
+ * maze's odd lattice carries on unbroken.
  */
-export const WING_MARGIN = WING_ROWS * WING_CELL_DEEP + 4;
+export const WING_MARGIN = WING_MAX_ROWS * WING_CELL_DEEP + 4;
+/**
+ * A wing with this many rooms or more is a real walk, and gets its own
+ * stairs down in the treasure room so that walking it is a way down rather
+ * than a detour to be walked back out of.
+ */
+export const WING_STAIRS_FROM_ROOMS = 6;
 /** Never open a wing right on the hero's first steps. */
 const WING_ANCHOR_MIN_DIST = 4;
 /** How often a wing gets a second mouth back into the maze. */
@@ -80,14 +93,32 @@ const MIMIC_CHANCE = 0.45;
 const ALTAR_FROM_DEPTH = BOSS_EVERY + 1;
 const ALTAR_CHANCE = 0.35;
 /** Most monsters one wing carries... */
-export const PASSAGE_MONSTER_CAP = 8;
+export const PASSAGE_MONSTER_CAP = 24;
 /** ...and across all of a floor's wings. */
-export const PASSAGE_MONSTER_BUDGET = 8;
+export const PASSAGE_MONSTER_BUDGET = 24;
+/** One side chest (a mimic, often enough) per this many rooms, and never more than `SIDE_CHEST_MAX`: every one wants a key out in the maze. */
+const ROOMS_PER_SIDE_CHEST = 5;
+const SIDE_CHEST_MAX = 4;
 
-/** Rooms along the wall for this depth: the wing grows with the floor. */
-export function wingCols(depth: number): number {
+/**
+ * The wing's room grid for this depth: rooms along the wall by rooms deep.
+ * The first set is a four-room den to learn the locks in; from the middle
+ * of the run a wing has as much floor in it as the maze it hangs off, and
+ * on the deepest floors more, which is what its own stairs are for.
+ */
+export function wingGrid(depth: number): { cols: number; rows: number } {
   const d = Math.max(1, Math.floor(depth));
-  return d <= 3 ? 2 : d <= 8 ? 3 : 4;
+  if (d <= 3) return { cols: 2, rows: 2 };
+  if (d <= 6) return { cols: 3, rows: 2 };
+  if (d <= 9) return { cols: 4, rows: 3 };
+  if (d <= 14) return { cols: 5, rows: 4 };
+  if (d <= 19) return { cols: 7, rows: 4 };
+  return { cols: 9, rows: WING_MAX_ROWS };
+}
+
+/** Rooms along the wall for this depth. */
+export function wingCols(depth: number): number {
+  return wingGrid(depth).cols;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,22 +166,25 @@ interface LocalPlan {
 const lk = (t: LT): string => `${t.a},${t.d}`;
 
 /**
- * Plan a wing of `cols` x `WING_ROWS` rooms whose mouth opens into cell
+ * Plan a wing of `cols` x `rows` rooms whose mouth opens into cell
  * `entryCol` of the first row. Everything here is geometry in the local frame;
  * nothing is checked against the level yet.
  */
-function planWing(cols: number, entryCol: number, rng: Rng): LocalPlan {
-  const rows = WING_ROWS;
+function planWing(cols: number, rows: number, entryCol: number, rng: Rng): LocalPlan {
   // The mouth is at a = 0; the entry cell is centred on it, so its room —
-  // whatever its width and offset — always covers the neck.
-  const origin = -(WING_CELL_ALONG * entryCol + 3);
+  // whatever its width and offset — always covers the neck. Every room
+  // covers its cell's centre line both ways, which is what guarantees two
+  // neighbours always share a row or column to run a corridor along.
+  const midA = Math.floor(WING_CELL_ALONG / 2);
+  const midD = Math.floor(WING_CELL_DEEP / 2);
+  const origin = -(WING_CELL_ALONG * entryCol + midA);
   const rooms: LocalRoom[] = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const w = rng.int(3, 5);
-      const offA = rng.int(1, WING_CELL_ALONG - 1 - w);
-      const h = rng.pick([3, 3, 4]);
-      const offD = h === 4 ? 1 : rng.int(1, 2);
+      const w = rng.int(ROOM_MIN_W, ROOM_MAX_W);
+      const offA = rng.int(Math.max(1, midA + 1 - w), Math.min(midA, WING_CELL_ALONG - 1 - w));
+      const h = rng.int(ROOM_MIN_H, ROOM_MAX_H);
+      const offD = rng.int(Math.max(1, midD + 1 - h), Math.min(midD, WING_CELL_DEEP - 1 - h));
       const a0 = origin + WING_CELL_ALONG * c + offA;
       const d0 = 2 + WING_CELL_DEEP * r + offD;
       rooms.push({ a0, a1: a0 + w - 1, d0, d1: d0 + h - 1 });
@@ -223,7 +257,7 @@ function planWing(cols: number, entryCol: number, rng: Rng): LocalPlan {
     }
   }
   rng.shuffle(extras);
-  const loops = n >= 6 ? 2 : 1;
+  const loops = Math.max(1, Math.floor(n / 3));
   const allEdges = [...treeEdges, ...extras.slice(0, loops)];
 
   // Corridors: straight, through the overlap of the two rooms' spans.
@@ -289,7 +323,7 @@ function planWing(cols: number, entryCol: number, rng: Rng): LocalPlan {
     }
     if (cands.length) {
       const room = rng.pick(cands);
-      const a = origin + WING_CELL_ALONG * (room % cols) + 3;
+      const a = origin + WING_CELL_ALONG * (room % cols) + midA;
       const back: LT[] = [];
       for (let d = 1; d < rooms[room].d0; d++) back.push({ a, d });
       plan.backNeck = back;
@@ -511,14 +545,18 @@ export function digWings(
   const dist = bfsDistances(level, level.start);
   const sides = rng.shuffle(sidesOf(level, core, dist));
   const out: Passage[] = [];
-  let cols = wingCols(depth);
-  // Widest first, narrowing only when nothing on any side will take it: a
-  // floor that could hold a six-room wing should not settle for four.
-  for (; cols >= 2 && out.length === 0; cols--) {
+  const want = wingGrid(depth);
+  // Biggest first, narrowing (then shallowing) only when nothing on any side
+  // will take it: a floor that could hold a nine-room wing should not settle
+  // for four.
+  const shapes: { cols: number; rows: number }[] = [];
+  for (let rows = want.rows; rows >= 2; rows--) for (let cols = want.cols; cols >= 2; cols--) shapes.push({ cols, rows });
+  for (const { cols, rows } of shapes) {
+    if (out.length) break;
     for (const side of sides) {
       if (out.length) break;
       for (const at of rng.shuffle(side.anchors.slice())) {
-        const plan = planWing(cols, rng.int(0, cols - 1), rng);
+        const plan = planWing(cols, rows, rng.int(0, cols - 1), rng);
         const laid = layPlan(level, at, side.out, plan, `pg${out.length + 1}`);
         if (!laid) continue;
         for (const t of laid.passage.tiles) level.tiles[t.y][t.x] = Tile.Floor;
@@ -629,7 +667,9 @@ function furnishWing(level: LevelData, laid: Laid, depth: number, runSeed: numbe
   const lock = rollLock(depth, runSeed, rng);
   let seal: Seal;
   if (lock.kind === 'runes') {
-    const count = lock.hint === 'none' ? 3 : depth >= 8 ? 4 : 3;
+    // Three runes, four in a wing of six rooms or more, five from twelve —
+    // except an unhinted lock, which stays at three and six orders.
+    const count = lock.hint === 'none' ? 3 : plan.rooms.length >= 12 ? 5 : plan.rooms.length >= 6 ? 4 : 3;
     const glyphs = rng.shuffle(Array.from({ length: RUNE_GLYPHS }, (_, i) => i)).slice(0, count);
     const ids: string[] = [];
     // One rune per room, furthest rooms first, then double up if the wing is
@@ -684,24 +724,34 @@ function furnishWing(level: LevelData, laid: Laid, depth: number, runSeed: numbe
     }
   }
 
-  // 5. A side chest, which is a mimic often enough that no chest in a wing is
-  //    quite safe to walk up to.
-  if (rng.chance(SIDE_CHEST_CHANCE)) {
-    const rooms = rng.shuffle(side.filter((i) => i !== plan.entry));
-    for (const room of rooms) {
-      const spot = nicheOf(room);
-      if (!spot) continue;
-      const mimic = rng.chance(MIMIC_CHANCE);
-      const chest: Chest = {
-        id: `v${level.chests.length + 1}`,
-        pos: claim(spot),
-        opened: false,
-        loot: mimic ? { gold: 0, xp: 0 } : rollChestLoot(depth, rng),
-      };
-      if (mimic) chest.mimic = true;
-      level.chests.push(chest);
-      break;
-    }
+  // 5. Side chests, one per few rooms, each a mimic often enough that no
+  //    chest in a wing is quite safe to walk up to.
+  let sideChests = Math.min(SIDE_CHEST_MAX, Math.floor(plan.rooms.length / ROOMS_PER_SIDE_CHEST));
+  if (sideChests === 0 && rng.chance(SIDE_CHEST_CHANCE)) sideChests = 1;
+  const chestRooms = rng.shuffle(side.filter((i) => i !== plan.entry));
+  for (const room of chestRooms) {
+    if (sideChests <= 0) break;
+    const spot = nicheOf(room);
+    if (!spot) continue;
+    const mimic = rng.chance(MIMIC_CHANCE);
+    const chest: Chest = {
+      id: `v${level.chests.length + 1}`,
+      pos: claim(spot),
+      opened: false,
+      loot: mimic ? { gold: 0, xp: 0 } : rollChestLoot(depth, rng),
+    };
+    if (mimic) chest.mimic = true;
+    level.chests.push(chest);
+    sideChests--;
+  }
+
+  // 6. The wing's own stairs, in the treasure room, when the wing is a long
+  //    enough walk that going back out of it would be a chore. In a niche if
+  //    the room has one left, else on its floor — a room is wide enough to
+  //    walk round a stairs, so nothing is ever beyond it.
+  if (plan.rooms.length >= WING_STAIRS_FROM_ROOMS) {
+    const spot = nicheOf(plan.treasure) ?? freeIn(plan.treasure);
+    if (spot) level.wingExit = claim(spot);
   }
 }
 
@@ -766,6 +816,7 @@ export function stockWings(
     ...(level.orbs ?? []).map((o) => key(o.pos)),
     ...(level.relics ?? []).map((r) => key(r.pos)),
     ...(level.seals ?? []).flatMap((s) => (s.lock.kind === 'orb' ? [key(s.pos), key(s.lock.socket)] : [key(s.pos)])),
+    ...(level.wingExit ? [key(level.wingExit)] : []),
   ]);
   for (const wing of level.passages ?? []) {
     let made = 0;
@@ -794,7 +845,7 @@ export function stockWings(
     // The treasure room's guard first: it is the fight the chest is behind.
     const spots = rng.shuffle(rectTiles(wing.rooms[wing.treasure]).filter(okSpot));
     if (spots.length && budget > 0) {
-      const chest = level.chests.find((c) => treasureTiles.has(key(c.pos)) || rectNear(wing.rooms[wing.treasure], c.pos));
+      const chest = level.chests.find((c) => c.loot.magic && (treasureTiles.has(key(c.pos)) || rectNear(wing.rooms[wing.treasure], c.pos)));
       // Beside the chest's niche if it has one, so the guard stands over the loot.
       const byChest = chest ? spots.find((p) => Math.abs(p.x - chest.pos.x) + Math.abs(p.y - chest.pos.y) === 1) : null;
       place(makeMonster('guard', depth, rng, byChest ?? spots[0], `pm${++n}`, wingSpawn));
@@ -861,4 +912,5 @@ export function shiftWingContent(level: LevelData, shift: (p: Vec) => void): voi
   for (const r of level.relics ?? []) shift(r.pos);
   for (const a of level.altars ?? []) shift(a.pos);
   for (const c of level.chests) shift(c.pos);
+  if (level.wingExit) shift(level.wingExit);
 }

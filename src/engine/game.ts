@@ -49,6 +49,7 @@ import {
   closedDoorAt,
   damageMonster,
   dropOrb,
+  exitAt,
   gameOver,
   heroAttack,
   keyAt,
@@ -1267,9 +1268,10 @@ export class Game {
       }
     }
 
-    if (eq(tile, level.exit)) {
+    if (exitAt(level, tile)) {
       // The stairs of a minotaur / angel chamber ARE the objective: claim the
-      // reward first, then descend once the player dismisses the popup.
+      // reward first, then descend once the player dismisses the popup. A
+      // wing's own stairs (`level.wingExit`) go down exactly the same way.
       if (level.kind === 'boss' && level.boss && !level.boss.defeated) this.winBoss();
       st.descending = DESCEND_MS;
       st.path.length = 0;

@@ -55,7 +55,7 @@ export function relicsBefore(runSeed: number, depth: number): RelicKind[] {
 // ---------------------------------------------------------------------------
 
 /** How many rune shapes the art table carries; `Rune.glyph` indexes it. */
-export const RUNE_GLYPHS = 4;
+export const RUNE_GLYPHS = 5;
 
 // ---------------------------------------------------------------------------
 // Altars

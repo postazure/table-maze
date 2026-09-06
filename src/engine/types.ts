@@ -423,6 +423,13 @@ export interface LevelData {
   tiles: Tile[][]; // tiles[y][x]
   start: Vec; // hero spawn (Floor)
   exit: Vec; // stairs down (Floor)
+  /**
+   * A second stairs down, in the treasure room of a wing big enough to be a
+   * real walk (see wings.ts). Stepping on it descends exactly as `exit` does,
+   * so clearing the wing is a way down rather than a detour to walk back out
+   * of. Hidden ground, like the rest of the wing.
+   */
+  wingExit?: Vec;
   keys: KeyItem[];
   doors: Door[];
   chests: Chest[];

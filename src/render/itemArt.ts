@@ -331,7 +331,7 @@ export const ORB_ART: ArtSpec = {
 };
 
 /**
- * The four rune shapes, indexed by `Rune.glyph`. Drawn on the floor: dim
+ * The five rune shapes, indexed by `Rune.glyph`. Drawn on the floor: dim
  * until stepped on in order, bright once lit. `runeArt` picks the palette.
  */
 const RUNE_ROWS: string[][] = [
@@ -339,6 +339,7 @@ const RUNE_ROWS: string[][] = [
   ['RRRRRRR.', 'R.....R.', 'R.....R.', 'R.....R.', 'R.....R.', 'R.....R.', 'RRRRRRR.', '........'],
   ['...R....', '..R.R...', '.R...R..', 'R.....R.', '.R...R..', '..R.R...', '...R....', '........'],
   ['R.....R.', '.R...R..', '..R.R...', '...R....', '..R.R...', '.R...R..', 'R.....R.', '........'],
+  ['...R....', '...R....', '...R....', 'RRRRRRR.', '...R....', '...R....', '...R....', '........'],
 ];
 
 export function runeArt(glyph: number, lit: boolean): ArtSpec {

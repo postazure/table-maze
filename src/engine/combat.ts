@@ -111,6 +111,13 @@ export function closedDoorAt(level: LevelData, p: Vec): Door | null {
   return d && !d.open ? d : null;
 }
 
+/** Is `p` a stairs down — the floor's own, or the wing's? */
+export function exitAt(level: LevelData, p: Vec): boolean {
+  if (p.x === level.exit.x && p.y === level.exit.y) return true;
+  const w = level.wingExit;
+  return !!w && w.x === p.x && w.y === p.y;
+}
+
 /** An un-picked-up key on `p`. */
 export function keyAt(level: LevelData, p: Vec): KeyItem | null {
   for (const k of level.keys) if (!k.taken && k.pos.x === p.x && k.pos.y === p.y) return k;

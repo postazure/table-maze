@@ -5,7 +5,7 @@ import { HEART, ITEM_SLOT, Tile, inRect, key } from '../src/engine/types';
 import type { Boon, LevelData, MagicItem, Modal, Seal, Vec } from '../src/engine/types';
 import { Game } from '../src/engine/game';
 import { PASSAGE_MONSTER_CAP, generateLevel, passageTilesOf } from '../src/engine/maze';
-import { WING_ROWS, wingCols } from '../src/engine/wings';
+import { WING_MAX_ROWS, WING_STAIRS_FROM_ROOMS, wingGrid } from '../src/engine/wings';
 import { bfsDistances, floorNeighbors, isFloor } from '../src/engine/pathfind';
 import { makeMonster, makeMimic, monsterLevelCap, newHero } from '../src/engine/balance';
 import { makeRng } from '../src/engine/rng';
@@ -37,8 +37,20 @@ test('a wing is a labyrinth of rooms with a sealed treasure room at the far end'
       // Rooms: a grid deep, as many along the wall as the depth allows (the
       // floor may have had to settle for narrower), every one of them open
       // floor inside the wing, no two touching.
-      assert.ok(wing.rooms.length >= 2 * WING_ROWS, `${where}: only ${wing.rooms.length} rooms`);
-      assert.ok(wing.rooms.length <= wingCols(depth) * WING_ROWS, where);
+      const grid = wingGrid(depth);
+      assert.ok(wing.rooms.length >= 4, `${where}: only ${wing.rooms.length} rooms`);
+      assert.ok(wing.rooms.length <= grid.cols * grid.rows, where);
+      assert.ok(grid.rows <= WING_MAX_ROWS, where);
+      // A wing that is a real walk has its own way down, in the treasure room.
+      if (wing.rooms.length >= WING_STAIRS_FROM_ROOMS) {
+        assert.ok(lv.wingExit, `${where}: a ${wing.rooms.length}-room wing with no stairs`);
+        const w = lv.wingExit as Vec;
+        const tr = wing.rooms[wing.treasure];
+        assert.ok(inRect(tr, w) || floorNeighbors(lv, w).some((nb) => inRect(tr, nb)), `${where}: the wing stairs are not in the treasure room`);
+        assert.ok(inside.has(key(w)), where);
+      } else {
+        assert.equal(lv.wingExit, undefined, `${where}: a small wing has no stairs of its own`);
+      }
       for (const r of wing.rooms) {
         assert.ok(r.w >= 3 && r.h >= 3, `${where}: a room ${r.w}x${r.h} is not a room`);
         for (let y = r.y; y < r.y + r.h; y++) {
@@ -632,6 +644,38 @@ test('boons live beside the save and outlive it; relics and trophies ride in it'
   assert.deepEqual(loadBoons(), [{ kind: 'deathless', runsLeft: 1 }], 'clearing the save leaves the boons');
   saveBoons([]);
   assert.deepEqual(loadBoons(), []);
+});
+
+test('by the middle of the run a wing has more floor in it than the maze it hangs off', () => {
+  const grew: number[] = [];
+  for (const depth of [2, 5, 8, 12, 16, 21]) {
+    const lv = generateLevel(depth, 4242, depth);
+    const hidden = new Set(passageTilesOf(lv).map(key));
+    let mazeFloor = 0;
+    for (let y = 0; y < lv.height; y++) for (let x = 0; x < lv.width; x++) if (isFloor(lv, { x, y }) && !hidden.has(key({ x, y }))) mazeFloor++;
+    grew.push(hidden.size / mazeFloor);
+  }
+  for (let i = 1; i < grew.length; i++) assert.ok(grew[i] >= grew[i - 1] * 0.9, `wings should grow with the floor: ${grew.map((g) => g.toFixed(2)).join(' ')}`);
+  assert.ok(grew[grew.length - 1] > 0.85, `the deepest wing should rival the maze: ${grew[grew.length - 1].toFixed(2)}`);
+});
+
+test('the wing\'s own stairs go down like any other, and nobody stands on them', () => {
+  const g = wingGame(null, { x: 9, y: 4 });
+  const st = g.state;
+  st.level.wingExit = { x: 10, y: 4 };
+  const m = makeMonster('patrol', 1, makeRng(3), { x: 9, y: 3 }, 'm1');
+  m.patrolPath = [{ x: 9, y: 3 }, { x: 10, y: 3 }, { x: 10, y: 4 }];
+  m.patrolIndex = 0;
+  m.patrolDir = 1;
+  st.level.monsters = [m];
+  updateMonsters(st, 500, makeRng(1));
+  updateMonsters(st, 500, makeRng(2));
+  assert.notDeepEqual(m.pos, { x: 10, y: 4 }, 'a monster never steps onto the stairs');
+  step(g, { x: 10, y: 4 });
+  assert.ok(st.descending > 0, 'the wing stairs start the descent');
+  g.tick(1000);
+  assert.equal(st.depth, 2);
+  assert.equal(st.hero.carrying, null);
 });
 
 // ---------------------------------------------------------------------------

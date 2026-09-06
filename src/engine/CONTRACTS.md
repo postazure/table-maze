@@ -33,6 +33,8 @@ export function floorNeighbors(level: LevelData, p: Vec): Vec[];
 export function bfsPath(level: LevelData, from: Vec, to: Vec, opts?: { blocked?: (p: Vec) => boolean; maxLen?: number }): Vec[] | null;
 /** BFS distances from `from` to every reachable floor tile (Map of key -> distance). */
 export function bfsDistances(level: LevelData, from: Vec, opts?: { blocked?: (p: Vec) => boolean; maxDist?: number }): Map<string, number>;
+/** Every floor tile whose removal cuts `to` off from `from` (neither endpoint), as keys: one DFS, not a blocked BFS per tile. */
+export function cutTiles(level: LevelData, from: Vec, to: Vec): Set<string>;
 ```
 
 ## balance.ts
@@ -139,8 +141,9 @@ Requirements:
 - The hidden wing is dug outside the maze too, in the same margin as the
   warrens and before them, and it takes the deep pocket a warren never needs
   (`WING_MARGIN`, which `WARREN_MARGIN` now equals). One per floor, by
-  `digWings` in **wings.ts**: a grid of `wingCols(depth)` x `WING_ROWS`
-  rooms, planned in a local frame (`along` the wall, `deep` into the rock)
+  `digWings` in **wings.ts**: a grid of `wingGrid(depth)` rooms (2x2 on the
+  first floors, up to 5x`WING_MAX_ROWS`, tried biggest first and narrowed
+  only when no side will take it), planned in a local frame (`along` the wall, `deep` into the rock)
   and laid off a perimeter anchor at least four tiles from the start, with a
   neck through the outer wall for a mouth and, half the time, a second neck
   from another first-row room for a back door. Same `canDig` rule as a
@@ -157,8 +160,11 @@ Requirements:
   some shallower floor of this run offered (`relicsBefore`, puzzles.ts;
   `build` takes the run seed for this). Plus, when the floor rolls them, a
   relic (`relicOffered`), an altar (from the second set, carved for a boss
-  already fought) and a side chest that may be a mimic. `trimToUsed` shifts
-  all of it along with the tiles (`shiftWingContent`).
+  already fought), a side chest per few rooms that may be a mimic, and — in
+  a wing of `WING_STAIRS_FROM_ROOMS` rooms or more — its own stairs down
+  (`LevelData.wingExit`) in the treasure room, so a long wing is a way down
+  and never a walk back out. `trimToUsed` shifts all of it along with the
+  tiles (`shiftWingContent`).
   Everything else on the floor is then planned as if the wing were still
   rock: the route, the doors, the keys, the shrines and the ordinary monsters
   all come off a BFS with the passage tiles blocked, and `gateGuards` blocks
@@ -166,7 +172,8 @@ Requirements:
   every key and every shrine must still be reachable, and with it open every
   wing tile must be — and then the locks: every seal is a corridor tile, and
   with the seals shut the treasure room is out of reach while every rune,
-  orb, cradle, relic and altar is not. A lens is loot and never a requirement.
+  orb, cradle, relic and altar is not. `wingExit`, when there is one, is
+  hidden ground in the treasure room, and nothing is beyond either stairs. A lens is loot and never a requirement.
   Monsters come last (`stockWings`, after the trim): one per room but the
   entry room, mostly lurkers and guards with `MonsterOpts.wing` (a level over
   the role, elite half the time, one level over the floor's cap), a guard
@@ -226,11 +233,13 @@ Requirements:
 ```ts
 export const WING_CELL_ALONG: number;  // 7: a room of 3-5 tiles plus rock either side
 export const WING_CELL_DEEP: number;   // 6: a room of 3-4 plus the gap to the next row
-export const WING_ROWS: number;        // 2
+export const WING_MAX_ROWS: number;    // 4
 export const WING_MARGIN: number;      // rock the wing needs around the maze
+export const WING_STAIRS_FROM_ROOMS: number; // 6: a wing this big gets its own stairs
 export const PASSAGE_MONSTER_CAP: number;
 export const PASSAGE_MONSTER_BUDGET: number;
-export function wingCols(depth: number): number;   // 2 to depth 3, 3 to 8, 4 after
+export function wingGrid(depth: number): { cols: number; rows: number }; // 2x2 to depth 3 ... 9x5 from 20
+export function wingCols(depth: number): number;
 export function canDig(level: LevelData, shape: Vec[], anchors: Vec[]): boolean;
 export function digWings(level: LevelData, core: Rect, depth: number, runSeed: number, rng: Rng, furnish: boolean): Passage[];
 export function stockWings(level: LevelData, depth: number, used: Set<string>, dist: Map<string, number>, rng: Rng, spawn: MonsterOpts, minDist: number): void;
@@ -407,6 +416,9 @@ cosmetic timers keep running.
   with the trophy in hand, the carving in the log without); a closed seal is
   bumped (a keystone seal takes its relic from `hero.relics` and opens; every
   other seal blinks red and says in the log what it wants).
+- `exitAt` (combat.ts) answers "is this a stairs?" for `level.exit` and
+  `level.wingExit` alike: `onEnter` descends from either, monsters step on
+  neither, the renderer draws both (the wing's through the wall).
 - `onEnter`: a rune lights if it is next in its seal's order (all the seal's
   runes go dark on a wrong one; a lit one is ignored); a relic is taken into
   `hero.relics`; an orb on the floor is picked up (`hero.carrying`); the
