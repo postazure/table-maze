@@ -562,7 +562,7 @@ doors / chests, deterministic for (depth, runSeed)):
   necromancer. `boss = { kind:'necromancer', defeated:false, spellMs, spellTotalMs,
   spawnMs, spawnEveryMs, maxMinions, crystalsTotal: 5 }`. Suggested numbers:
   spellTotalMs = 120000 + 3000·depth, spawnEveryMs = 3000, first spawnMs = 2500,
-  maxMinions = 12. Monster ids: `necro`, `crystal1..5`.
+  maxMinions = 5. Monster ids: `necro`, `crystal1..5`.
 - **minotaur**: a braided maze (open ~35% of dead ends so there are many
   loops) of roughly levelDims(depth) capped around 31x41, with 3-5 open
   chambers (3x3 to 5x5) carved into it. `start` in one corner region, `exit`
