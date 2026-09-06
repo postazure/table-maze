@@ -23,7 +23,7 @@ import type {
 import { BOSS_HIT_FRACTION, HEART, eq, key, manhattan, parseKey } from './types';
 import { bossRetryCost, damage, xpShare } from './balance';
 import { bfsDistances, floorNeighbors, isFloor } from './pathfind';
-import { hiddenAt } from './lens';
+import { hiddenAt, sameSide } from './lens';
 import type { ItemStats } from './items';
 import { berserkActive, heroStats } from './items';
 import { SHRINE_COLORS, buffAtk, buffDef } from './shrines';
@@ -256,7 +256,15 @@ function onHeroHit(
 /** Lightning wand: hop from the struck monster to its nearest live neighbours. */
 function chainFrom(state: GameState, m: Monster, rng: Rng, stats: ItemStats): void {
   const targets = state.level.monsters
-    .filter((o) => o.alive && !o.invulnerable && o !== m && manhattan(o.pos, m.pos) <= CHAIN_RADIUS)
+    .filter(
+      (o) =>
+        o.alive &&
+        !o.invulnerable &&
+        o !== m &&
+        manhattan(o.pos, m.pos) <= CHAIN_RADIUS &&
+        // Lightning hops between monsters, not through the wall of a passage.
+        sameSide(state.level, o.pos, m.pos),
+    )
     .sort((a, b) => manhattan(a.pos, m.pos) - manhattan(b.pos, m.pos))
     .slice(0, Math.max(0, stats.chainTargets));
   if (targets.length === 0) return;

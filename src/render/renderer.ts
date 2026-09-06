@@ -104,6 +104,12 @@ const LENS_COLOR = '#8fe3ff';
 const LENS_FADE_PER_S = 3.5;
 /** Below this the reveal is not worth a full-viewport composite. */
 const LENS_MIN = 0.02;
+/**
+ * How far around a sprite standing in a passage the clip reaches, in tiles.
+ * One is enough for the sprite itself and its badges; two leaves room for a
+ * monster caught mid-step between two tiles.
+ */
+const CLIP_SPAN = 2;
 /** A seam in the wall pulses on this period (ms) so it reads as magic, not masonry. */
 const SEAM_PULSE_MS = 1600;
 /**
@@ -832,6 +838,46 @@ export class Renderer implements TileMapper {
   }
 
   /**
+   * Draw something standing on hidden ground, clipped to the hidden ground
+   * itself.
+   *
+   * Sprites overdraw their tile — the ring, the level tag, the guard's shield
+   * badge, the hp bar all poke a few pixels past its edges — and a passage is
+   * one tile wide, so those few pixels land on ordinary wall that the veil
+   * never covers. Unclipped, a patrol pacing a passage shows as a thin bright
+   * edge sliding along the brick, and the floor has given itself away.
+   *
+   * The clip is the hidden tiles around the entity, which is the shape of the
+   * corridor it is standing in: what you get is a monster seen through a slot
+   * in the wall. Anything at all outside the lens' reach is skipped before it
+   * is drawn at all.
+   */
+  private drawBehindWall(
+    ctx: CanvasRenderingContext2D,
+    state: GameState,
+    at: Vec,
+    t: number,
+    paint: () => void,
+  ): void {
+    if (!hiddenAt(state.level, at)) {
+      paint();
+      return;
+    }
+    if (this.tileReveal(state, at) <= LENS_MIN) return;
+    const hidden = passageTiles(state.level);
+    ctx.save();
+    ctx.beginPath();
+    for (let y = at.y - CLIP_SPAN; y <= at.y + CLIP_SPAN; y++) {
+      for (let x = at.x - CLIP_SPAN; x <= at.x + CLIP_SPAN; x++) {
+        if (hidden.has(`${x},${y}`)) ctx.rect(x * t, y * t, t, t);
+      }
+    }
+    ctx.clip();
+    paint();
+    ctx.restore();
+  }
+
+  /**
    * Ground the hero can see through the lens: the "passages are corridors"
    * picture, clipped to the hidden tiles and then to the disc of light. Drawn
    * straight after the sealed level, so the floor of a passage is under the
@@ -1088,9 +1134,11 @@ export class Renderer implements TileMapper {
       if (this.inRange(sh.pos, startX, endX, startY, endY)) this.drawShrine(ctx, sh, t);
     }
 
-    // Chests.
+    // Chests. A vault chest stands in a passage, so it is drawn through the
+    // slot the passage makes, like everything else in there.
     for (const c of state.level.chests) {
-      if (this.inRange(c.pos, startX, endX, startY, endY)) this.drawChest(ctx, c, t);
+      if (!this.inRange(c.pos, startX, endX, startY, endY)) continue;
+      this.drawBehindWall(ctx, state, c.pos, t, () => this.drawChest(ctx, c, t));
     }
 
     // Exit. Hidden while the necromancer still stands on it (his tile IS the
@@ -1118,7 +1166,8 @@ export class Renderer implements TileMapper {
 
     // Monsters.
     for (const m of state.level.monsters) {
-      if (m.alive && this.inRange(m.pos, startX, endX, startY, endY)) this.drawMonster(ctx, m, t);
+      if (!m.alive || !this.inRange(m.pos, startX, endX, startY, endY)) continue;
+      this.drawBehindWall(ctx, state, m.pos, t, () => this.drawMonster(ctx, m, t));
     }
 
     // The wall goes back on. Everything above has been drawn as if the floor

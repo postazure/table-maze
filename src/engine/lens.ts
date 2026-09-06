@@ -97,6 +97,22 @@ export function mouthAt(level: LevelData, p: Vec): boolean {
   return passageMouths(level).has(key(p));
 }
 
+/**
+ * Are these two tiles on the same side of the brick — both inside a passage,
+ * or both out in the maze?
+ *
+ * A passage touches the maze at its mouths, so a tile in one and a tile in the
+ * other really can end up neighbours. Nothing may reach across that join:
+ * a monster stationed in a passage cannot swing at a hero standing in the
+ * corridor outside it (or be swung at), and no fireball, ice ball, chain or
+ * splash crosses it either. Everything that reaches a tile it is not standing
+ * on asks this first.
+ */
+export function sameSide(level: LevelData, a: Vec, b: Vec): boolean {
+  if (!level.passages?.length) return true;
+  return hiddenAt(level, a) === hiddenAt(level, b);
+}
+
 export function passageAt(level: LevelData, p: Vec): Passage | null {
   for (const passage of level.passages ?? []) {
     for (const t of passage.tiles) if (t.x === p.x && t.y === p.y) return passage;

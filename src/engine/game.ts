@@ -26,7 +26,7 @@ import { themeForDepth } from './themes';
 import { angelPlan, applyLevelUp, newHero, trinketGold } from './balance';
 import { updateMonsters } from './monsters';
 import { angelsAct } from './angels';
-import { LENS_NAME, floorSet, hiddenAt, lensActive } from './lens';
+import { LENS_NAME, floorSet, hiddenAt, lensActive, sameSide } from './lens';
 import {
   GOLD,
   GREEN,
@@ -803,6 +803,9 @@ export class Game {
   private inReach(m: Monster, stats: ItemStats): 1 | 2 | 0 {
     const st = this.state;
     const hero = st.hero;
+    // A monster on a passage mouth is adjacent to the corridor outside it and
+    // still behind a wall. Neither of them can be reached from the other side.
+    if (!sameSide(st.level, m.pos, hero.pos)) return 0;
     const d = manhattan(m.pos, hero.pos);
     if (d === 1) return 1;
     if (d !== 2 || stats.reach < 2) return 0;
@@ -1262,7 +1265,7 @@ export class Game {
     const hero = st.hero;
     const dists = bfsDistances(st.level, hero.pos, {
       maxDist: FROST_RANGE,
-      blocked: (p) => closedDoorAt(st.level, p) !== null,
+      blocked: (p) => closedDoorAt(st.level, p) !== null || !sameSide(st.level, p, hero.pos),
     });
     let target: Monster | null = null;
     let best = Infinity;
@@ -1411,7 +1414,7 @@ export class Game {
     const hero = st.hero;
     const dists = bfsDistances(st.level, hero.pos, {
       maxDist: stats.fireRange,
-      blocked: (p) => closedDoorAt(st.level, p) !== null,
+      blocked: (p) => closedDoorAt(st.level, p) !== null || !sameSide(st.level, p, hero.pos),
     });
     let target: Monster | null = null;
     let best = Infinity;
@@ -1450,6 +1453,7 @@ export class Game {
     damageMonster(st, target, stats.fireDmg, this.rng, { source: 'fire', color: ORANGE });
     if (splash > 0) {
       for (const p of around) {
+        if (!sameSide(st.level, p, to)) continue; // splash does not go through brick
         const m = liveMonsterAt(st.level, p);
         if (m) damageMonster(st, m, splash, this.rng, { source: 'fire', color: ORANGE });
       }
