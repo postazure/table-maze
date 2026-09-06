@@ -11,19 +11,18 @@
  * 6. Shrines in dead-end alcoves, the ones hanging off the route first.
  * 7. Monsters: guards on chokepoints, patrols on corridor runs, lurkers on
  *    side branches next to the main path.
- * 8. Hidden passages behind the outer wall: shortcuts that rejoin the maze
- *    somewhere else, and (on the third floor of a themed set) vaults ending
- *    at a chest with a magic item. Only a hero with a lens can walk them.
+ * 8. A hidden wing behind the outer wall: a small dungeon of rooms with a
+ *    sealed treasure room at the far end (see wings.ts). Only a hero with a
+ *    lens can walk it.
  * 9. Validate solvability; retry with a re-mixed seed, relax as a last resort.
  */
-import { Tile, key, parseKey, eq, manhattan } from './types';
+import { Tile, inRect, key, parseKey, eq, manhattan } from './types';
 import type {
   Chest,
   Door,
   KeyItem,
   LevelData,
   Monster,
-  Passage,
   Rect,
   RosterKind,
   Rng,
@@ -32,13 +31,16 @@ import type {
   Vec,
   Warren,
 } from './types';
-import { ITEM_KINDS, SHRINE_KINDS } from './types';
+import { SHRINE_KINDS } from './types';
 import { hashSeed, makeRng } from './rng';
 import { levelDims, makeMonster, rollChestLoot } from './balance';
 import type { MonsterOpts } from './balance';
-import { lensFloor, vaultFloor } from './lens';
+import { lensFloor } from './lens';
 import { themeForDepth } from './themes';
 import { bfsDistances, bfsPath, floorNeighbors, isFloor } from './pathfind';
+import { WING_MARGIN, canDig, digWings, pocketBeat, shiftWingContent, stockWings } from './wings';
+
+export { PASSAGE_MONSTER_CAP, PASSAGE_MONSTER_BUDGET } from './wings';
 
 const MAX_ATTEMPTS = 20;
 /** Minimum BFS distance from `start` at which a monster may spawn. */
@@ -53,6 +55,8 @@ interface GenOpts {
   chests: boolean;
   /** The hero's level as they take the stairs down. See `monsterLevelCap`. */
   heroLevel?: number;
+  /** The run's own seed: the wings read earlier floors of the run off it. */
+  runSeed: number;
 }
 
 /**
@@ -65,17 +69,17 @@ export function generateLevel(depth: number, runSeed: number, heroLevel?: number
   const d = Math.max(1, Math.floor(depth));
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const seed = attempt === 0 ? hashSeed(runSeed, d) : hashSeed(runSeed, d, attempt);
-    const level = build(d, seed, { doors: true, chests: true, heroLevel });
+    const level = build(d, seed, { doors: true, chests: true, heroLevel, runSeed });
     if (validate(level)) return level;
   }
   // Relax: drop the doors (and their keys), keep the rest.
   for (let attempt = MAX_ATTEMPTS; attempt < MAX_ATTEMPTS + 8; attempt++) {
     const seed = hashSeed(runSeed, d, attempt);
-    const level = build(d, seed, { doors: false, chests: true, heroLevel });
+    const level = build(d, seed, { doors: false, chests: true, heroLevel, runSeed });
     if (validate(level)) return level;
   }
   // Never throw: a bare maze with monsters is always solvable.
-  return build(d, hashSeed(runSeed, d, 9999), { doors: false, chests: false, heroLevel });
+  return build(d, hashSeed(runSeed, d, 9999), { doors: false, chests: false, heroLevel, runSeed });
 }
 
 // ---------------------------------------------------------------------------
@@ -218,11 +222,12 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
   level.start = pickStart(level, coreRect, rng);
   level.exit = pickExit(level, bfsDistances(level, level.start), rng);
 
-  // Hidden passages go in first: they hug the outer wall, so they want the
-  // shallow margin a warren would otherwise sprawl across. Warrens are dug
-  // after and simply skip any anchor a passage has already claimed.
-  const passages = digPassages(level, coreRect, depth, rng, opts.chests);
-  level.passages = passages;
+  // The wing goes in first: it wants a wide, deep pocket of the margin, where
+  // a warren can make do with what is left. Warrens are dug after and simply
+  // skip any ground the wing has already claimed. The wing is furnished as it
+  // is dug — its chest, seal, runes and the rest are geometry — and only its
+  // monsters wait until the floor is trimmed and measured.
+  level.passages = digWings(level, coreRect, depth, opts.runSeed, rng, opts.chests);
 
   // Warrens are dug into the margin before anything is placed on the floor.
   // They hang off the maze at one tile each and lead nowhere, so the route to
@@ -276,10 +281,9 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
   for (const sh of level.shrines) used.add(key(sh.pos));
 
   if (opts.chests) {
-    // The vaults go in first so that if the floor runs out of room for chest
-    // keys, it is an ordinary chest that gets dropped and never the one thing
-    // worth walking a passage for.
-    stockVaults(level, depth, passages, rng);
+    // The wing's chests are already in `level.chests`, so if the floor runs
+    // out of room for chest keys it is an ordinary chest that gets dropped
+    // and never the one thing worth walking a wing for.
     const chestCount = Math.min(8, 3 + Math.floor(depth / 2));
     const chestSpots = pickChestSpots(level, used, onMain, chestCount, rng);
     for (const pos of chestSpots) {
@@ -311,7 +315,7 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
 
   placeMonsters(level, depth, fullPath, onMain, used, distFromStart, warrens, rng, spawnOpts(opts));
   stockWarrens(level, depth, warrens, used, distFromStart, rng, spawnOpts(opts));
-  stockPassages(level, depth, passages, used, distWithLens, rng, spawnOpts(opts));
+  stockWings(level, depth, used, distWithLens, rng, spawnOpts(opts), MONSTER_MIN_DIST);
   easeGates(level, depth, rng);
   return level;
 }
@@ -781,12 +785,13 @@ export function warrenTilesOf(level: LevelData): Vec[] {
 }
 
 /**
- * Rock left around the maze for the warrens to be dug out of. Even, so the
- * maze's odd tile lattice carries on unbroken into the margin. Whatever is not
- * dug gets trimmed off again by `trimToUsed`. Sized for the deepest warren
- * `warrenShape` can dig (`WARREN_MAX_ROWS` lobes), plus slack.
+ * Rock left around the maze for the wing and the warrens to be dug out of.
+ * Even, so the maze's odd tile lattice carries on unbroken into the margin.
+ * Whatever is not dug gets trimmed off again by `trimToUsed`. The wing is the
+ * deeper of the two (see `WING_MARGIN`); the deepest warren `warrenShape`
+ * can dig (`WARREN_MAX_ROWS` lobes) fits well inside it.
  */
-export const WARREN_MARGIN = 10;
+export const WARREN_MARGIN = WING_MARGIN;
 /** Most warrens one floor can carry. */
 const WARREN_MAX = 6;
 /** A warren's ring is this many cells across, chosen per warren (odd). */
@@ -884,34 +889,6 @@ function warrenShape(at: Vec, out: Vec, wide: number, rows: number): Vec[] {
   }
   return tiles;
 }
-
-/**
- * Can this shape be dug? Every tile of it must be rock, and every tile it
- * touches must be rock too, or part of the shape, or one of the `anchors` it
- * hangs off. That last clause is what fixes how many ways in there are: one
- * anchor for a warren or a vault, two for a shortcut, and never a third.
- */
-function canDig(level: LevelData, shape: Vec[], anchors: Vec[]): boolean {
-  const inShape = new Set(shape.map(key));
-  const isAnchor = new Set(anchors.map(key));
-  for (const t of shape) {
-    if (t.x < 1 || t.y < 1 || t.x >= level.width - 1 || t.y >= level.height - 1) return false;
-    if (level.tiles[t.y][t.x] !== Tile.Wall) return false;
-  }
-  for (const t of shape) {
-    for (const nb of [
-      { x: t.x + 1, y: t.y },
-      { x: t.x - 1, y: t.y },
-      { x: t.x, y: t.y + 1 },
-      { x: t.x, y: t.y - 1 },
-    ]) {
-      if (inShape.has(key(nb)) || isAnchor.has(key(nb))) continue;
-      if (isFloor(level, nb)) return false; // it would open onto something already dug
-    }
-  }
-  return true;
-}
-
 /**
  * Shrink the grid back onto the ground actually used, leaving a single ring of
  * wall. The margin is sized for a warren on every side; most floors do not get
@@ -970,28 +947,31 @@ function trimToUsed(level: LevelData): void {
     for (const t of passage.tiles) shift(t);
     for (const m of passage.mouths) shift(m);
   }
+  shiftWingContent(level, shift);
+}
+
+/** Every tile of every passage on the floor, flattened. */
+export function passageTilesOf(level: LevelData): Vec[] {
+  return (level.passages ?? []).flatMap((p) => p.tiles);
+}
+
+/**
+ * Put a lens in one of this floor's ordinary chests.
+ *
+ * Only the first two floors of a themed set carry one, and only a chest out in
+ * the open — a lens locked behind a wing would be a lens nobody can reach.
+ * Which chest is never marked: finding it is the point, and there are always
+ * several to open.
+ */
+function placeLens(level: LevelData, depth: number, hidden: Set<string>, rng: Rng): void {
+  if (!lensFloor(depth)) return;
+  const open = level.chests.filter((c) => !hidden.has(key(c.pos)));
+  if (!open.length) return;
+  rng.pick(open).loot.lens = true;
 }
 
 function oddAtLeast(n: number): number {
   return n % 2 === 1 ? n : n + 1;
-}
-
-
-/**
- * A patrol beat that never leaves the pocket it starts in — a warren's loop or
- * a passage's run — so the monster paces what the player came to walk rather
- * than wandering out into the maze.
- */
-function pocketBeat(level: LevelData, from: Vec, pocket: Set<string>, rng: Rng): Vec[] | null {
-  const blocked = (p: Vec) => !pocket.has(key(p));
-  const local = bfsDistances(level, from, { blocked, maxDist: 9 });
-  const ends: Vec[] = [];
-  for (const [k, d] of local) if (d >= 3) ends.push(parseKey(k));
-  if (!ends.length) return null;
-  ends.sort((a, b) => (local.get(key(b)) ?? 0) - (local.get(key(a)) ?? 0));
-  const to = rng.pick(ends.slice(0, Math.min(5, ends.length)));
-  const tail = bfsPath(level, from, to, { blocked });
-  return tail && tail.length ? [from, ...tail] : null;
 }
 
 /**
@@ -1047,394 +1027,6 @@ function stockWarrens(
     }
   }
 }
-
-// ---------------------------------------------------------------------------
-// Hidden passages
-// ---------------------------------------------------------------------------
-
-/** Every tile of every passage on the floor, flattened. */
-export function passageTilesOf(level: LevelData): Vec[] {
-  return (level.passages ?? []).flatMap((p) => p.tiles);
-}
-
-/**
- * A network's near trunk runs one course of brick behind the maze's outer
- * wall; the far trunk runs two courses further out again, and the two are
- * stitched together at intervals so the whole thing is a ring of corridor
- * rather than a line.
- */
-const TRUNK_NEAR = 2;
-const TRUNK_FAR = 4;
-/** One cross-link between the trunks every this many tiles along them. */
-const LINK_EVERY = 4;
-/** How many mouths a network opens onto the maze. */
-const NETWORK_MIN_MOUTHS = 3;
-const NETWORK_MAX_MOUTHS = 8;
-/**
- * A network has to earn its keep: walking between its two furthest mouths
- * through the maze must be this many tiles longer than walking it behind the
- * wall. Anything less is just extra doors onto the same corner of the floor.
- */
-export const SHORTCUT_MIN_SAVING = 10;
-/** Most networks one floor can carry — one per side of the maze, at most. */
-const NETWORK_MAX = 3;
-/** A vault: the neck out, then the chamber, then the niche the chest sits in. */
-const VAULT_NECK = 3;
-/** The chamber is this many tiles either side of the neck, and this many deep. */
-const VAULT_HALF_WIDE = 2;
-const VAULT_DEEP = 3;
-/**
- * One extra monster per this many passage tiles. Deliberately thinner than a
- * warren's: a passage is a way through, and a player who paid for the lens by
- * finding it should be spending the walk on getting somewhere rather than on
- * another three fights.
- */
-const PASSAGE_TILES_PER_MONSTER = 9;
-/** ...and never more than this many in one passage... */
-export const PASSAGE_MONSTER_CAP = 4;
-/** ...nor more than this many across all of a floor's passages. */
-export const PASSAGE_MONSTER_BUDGET = 10;
-
-/**
- * Dig this floor's hidden passages.
- *
- * They live in the same margin the warrens do, but where a warren is a pocket
- * that leads nowhere, a passage is a way through — so these hug the maze and
- * open onto it in several places at once.
- *
- * Two shapes:
- *  - **network**: the big one. A trunk of corridor running one course of brick
- *    behind the maze's outer wall, a second trunk two courses further out, the
- *    pair stitched together at intervals so the whole thing loops, and a neck
- *    down to the maze at every second cell along it. Three to eight mouths,
- *    thirty to forty tiles of ground, and the maze between its two ends may
- *    wind for a hundred. This is what the lens is *for*: not a shortcut so
- *    much as a second floor plan laid over the first.
- *  - **vault**: one mouth, a neck, a chamber five tiles across, and a chest in
- *    a niche at the back. Third floor of a themed set only — by then a player
- *    who found a lens on floor one or two has had it long enough to know what
- *    the walls are hiding.
- *
- * Same `canDig` rule as a warren: the whole shape and everything it touches
- * must be rock, bar the anchors it hangs off. That is what keeps a passage
- * from brushing the maze anywhere but at a mouth, or running into a warren.
- */
-function digPassages(
-  level: LevelData,
-  core: Rect,
-  depth: number,
-  rng: Rng,
-  vaults: boolean,
-): Passage[] {
-  const out: Passage[] = [];
-  const dug = new Set<string>();
-  const sides = rng.shuffle(anchorsBySide(level, core));
-
-  // The maze as it stands, with nothing dug: this is the walk a network has to
-  // beat. Passages already dug are blocked out of it, so the second network is
-  // never measured against a walk the first one had already shortened.
-  const mazeDist = new Map<string, Map<string, number>>();
-  const distFrom = (p: Vec): Map<string, number> => {
-    let d = mazeDist.get(key(p));
-    if (!d) {
-      d = bfsDistances(level, p, { blocked: (q) => dug.has(key(q)) });
-      mazeDist.set(key(p), d);
-    }
-    return d;
-  };
-  const claim = (shape: Vec[]): void => {
-    for (const t of shape) {
-      level.tiles[t.y][t.x] = Tile.Floor;
-      dug.add(key(t));
-    }
-    mazeDist.clear();
-  };
-
-  // Vaults go in before the networks. A vault needs a clear pocket five tiles
-  // across and seven deep and there is only one shape that fits it, where a
-  // network can slide along a wall until it finds room.
-  if (vaults && vaultFloor(depth)) {
-    const want = depth >= 9 ? 2 : 1;
-    let made = 0;
-    for (const side of sides) {
-      if (made >= want) break;
-      for (const at of rng.shuffle(side.anchors.slice())) {
-        const shape = vaultShape(at, side.out);
-        if (!canDig(level, shape, [at])) continue;
-        claim(shape);
-        out.push({
-          id: `pg${out.length + 1}`,
-          kind: 'vault',
-          tiles: shape,
-          mouths: [step(at, side.out)],
-        });
-        made++;
-        break;
-      }
-    }
-  }
-
-  // Then one network per side, biggest window of anchors that will fit.
-  const wantNetworks = Math.min(NETWORK_MAX, 1 + Math.floor(depth / 4));
-  for (const side of sides) {
-    if (out.length - (out.filter((p) => p.kind === 'vault').length) >= wantNetworks) break;
-    const shape = fitNetwork(level, side, distFrom, rng);
-    if (!shape) continue;
-    claim(shape.tiles);
-    out.push({ id: `pg${out.length + 1}`, kind: 'shortcut', tiles: shape.tiles, mouths: shape.mouths });
-  }
-  return out;
-}
-
-function step(p: Vec, dir: Vec, n = 1): Vec {
-  return { x: p.x + dir.x * n, y: p.y + dir.y * n };
-}
-
-/** One side of the maze: which way it faces, and its perimeter tiles in order. */
-interface Side {
-  out: Vec;
-  anchors: Vec[];
-}
-
-/**
- * The maze tiles that sit against its outer wall, grouped by which way that
- * wall faces and ordered along it. A passage can only be dug from one of
- * these: anywhere else there is more maze on the other side, not rock.
- */
-function anchorsBySide(level: LevelData, core: Rect): Side[] {
-  const sides: Side[] = [
-    { out: { x: 0, y: -1 }, anchors: [] },
-    { out: { x: 0, y: 1 }, anchors: [] },
-    { out: { x: -1, y: 0 }, anchors: [] },
-    { out: { x: 1, y: 0 }, anchors: [] },
-  ];
-  const push = (i: number, at: Vec) => {
-    if (!isFloor(level, at)) return;
-    if (eq(at, level.start) || eq(at, level.exit)) return;
-    sides[i].anchors.push(at);
-  };
-  for (let x = core.x + 1; x < core.x + core.w - 1; x += 2) {
-    push(0, { x, y: core.y + 1 });
-    push(1, { x, y: core.y + core.h - 2 });
-  }
-  for (let y = core.y + 1; y < core.y + core.h - 1; y += 2) {
-    push(2, { x: core.x + 1, y });
-    push(3, { x: core.x + core.w - 2, y });
-  }
-  return sides.filter((s) => s.anchors.length >= NETWORK_MIN_MOUTHS);
-}
-
-/**
- * The largest network this side will take: try the widest window of anchors
- * first and narrow until one both fits the rock and beats the maze.
- *
- * Widest-first is what makes the passages expansive rather than merely
- * numerous — a floor would happily fill up with three-mouth stubs otherwise,
- * and three stubs are not the same thing at all as one corridor running the
- * length of a wall.
- */
-function fitNetwork(
-  level: LevelData,
-  side: Side,
-  distFrom: (p: Vec) => Map<string, number>,
-  rng: Rng,
-): { tiles: Vec[]; mouths: Vec[] } | null {
-  const n = side.anchors.length;
-  for (let k = Math.min(NETWORK_MAX_MOUTHS, n); k >= NETWORK_MIN_MOUTHS; k--) {
-    const starts = rng.shuffle(Array.from({ length: n - k + 1 }, (_, i) => i));
-    for (const i of starts) {
-      const window = side.anchors.slice(i, i + k);
-      if (!worthDigging(window, distFrom)) continue;
-      const shape = networkShape(window, side.out);
-      if (!shape || !canDig(level, shape.tiles, window)) continue;
-      return shape;
-    }
-  }
-  return null;
-}
-
-/**
- * Is the walk between this window's two far ends long enough through the maze
- * to be worth a corridor behind it? Only the extremes are asked: every mouth
- * in between shortens some other walk too, and if the ends are worth it the
- * middle always is.
- */
-function worthDigging(window: Vec[], distFrom: (p: Vec) => Map<string, number>): boolean {
-  const a = window[0];
-  const b = window[window.length - 1];
-  const through = distFrom(a).get(key(b));
-  if (through === undefined) return false;
-  // Down one neck, along the near trunk, back up the other: the walk the
-  // passage actually offers between those two mouths.
-  const behind = manhattan(a, b) + 2 * TRUNK_NEAR;
-  return through - behind >= SHORTCUT_MIN_SAVING;
-}
-
-/**
- * The tiles of a network hung off `window` (perimeter tiles in order along one
- * side, two apart) facing `out`:
- *
- *   maze  ####A########B########C####     <- the outer wall, A/B/C the anchors
- *   d=1       |        |        |         <- a neck at every anchor
- *   d=2   ====+========+========+====     <- the near trunk
- *   d=3       |                 |         <- cross-links, every LINK_EVERY
- *   d=4   ====+=================+====     <- the far trunk
- *
- * The two trunks and the links between them make the whole thing a ring, so a
- * hero inside can go around a monster instead of only past it — the same
- * reason the warrens loop.
- */
-function networkShape(window: Vec[], out: Vec): { tiles: Vec[]; mouths: Vec[] } | null {
-  const a0 = window[0];
-  const last = window[window.length - 1];
-  const span = manhattan(a0, last);
-  if (span <= 0) return null;
-  const dir = { x: Math.sign(last.x - a0.x), y: Math.sign(last.y - a0.y) };
-  const tile = (along: number, deep: number): Vec => ({
-    x: a0.x + dir.x * along + out.x * deep,
-    y: a0.y + dir.y * along + out.y * deep,
-  });
-
-  const tiles: Vec[] = [];
-  const mouths: Vec[] = [];
-  // A neck at every anchor: these are the tiles that touch the maze, so these
-  // are the mouths.
-  for (let j = 0; j < window.length; j++) {
-    const neck = tile(2 * j, 1);
-    tiles.push(neck);
-    mouths.push({ x: neck.x, y: neck.y });
-  }
-  for (let i = 0; i <= span; i++) tiles.push(tile(i, TRUNK_NEAR));
-  for (let i = 0; i <= span; i++) tiles.push(tile(i, TRUNK_FAR));
-  // Links at both ends and at intervals between, never two in a row (adjacent
-  // links would open the gap between the trunks into one wide room).
-  const links = new Set<number>([0, span]);
-  for (let i = LINK_EVERY; i < span - 1; i += LINK_EVERY) links.add(i);
-  for (const i of links) tiles.push(tile(i, TRUNK_FAR - 1));
-  return { tiles, mouths };
-}
-
-/**
- * The tiles of a vault: a neck through the wall, a chamber five tiles across
- * and three deep, and a one-tile niche off the back of it. The niche is where
- * the chest goes — chests are solid, so they may only ever sit in a dead end,
- * and this is the only one the shape has.
- */
-function vaultShape(at: Vec, out: Vec): Vec[] {
-  const side = { x: out.y, y: out.x };
-  const tiles: Vec[] = [];
-  for (let d = 1; d <= VAULT_NECK; d++) tiles.push(step(at, out, d));
-  for (let d = VAULT_NECK + 1; d <= VAULT_NECK + VAULT_DEEP; d++) {
-    const centre = step(at, out, d);
-    for (let a = -VAULT_HALF_WIDE; a <= VAULT_HALF_WIDE; a++) {
-      tiles.push({ x: centre.x + side.x * a, y: centre.y + side.y * a });
-    }
-  }
-  tiles.push(step(at, out, VAULT_NECK + VAULT_DEEP + 1));
-  return tiles;
-}
-
-/** The niche at the very back of a vault: its one tile with a single way out. */
-function vaultNiche(level: LevelData, passage: Passage): Vec | null {
-  for (const t of passage.tiles) {
-    if (floorNeighbors(level, t).length === 1 && !passage.mouths.some((m) => eq(m, t))) return t;
-  }
-  return null;
-}
-
-/**
- * A chest at the back of every vault, holding a magic item of this floor's
- * level — the same thing the shop sells, for the price of finding the seam in
- * the wall instead of gold.
- */
-function stockVaults(level: LevelData, depth: number, passages: Passage[], rng: Rng): void {
-  for (const passage of passages) {
-    if (passage.kind !== 'vault') continue;
-    const pos = vaultNiche(level, passage);
-    if (!pos) continue;
-    const magic = { kind: rng.pick(ITEM_KINDS), level: depth };
-    level.chests.push({
-      id: `v${level.chests.length + 1}`,
-      pos,
-      opened: false,
-      loot: { gold: rng.int(10, 20) * depth, xp: 5 * depth, magic },
-    });
-  }
-}
-
-/**
- * Put a lens in one of this floor's ordinary chests.
- *
- * Only the first two floors of a themed set carry one, and only a chest out in
- * the open — a lens locked behind a vault would be a lens nobody can reach.
- * Which chest is never marked: finding it is the point, and there are always
- * several to open.
- */
-function placeLens(level: LevelData, depth: number, hidden: Set<string>, rng: Rng): void {
-  if (!lensFloor(depth)) return;
-  const open = level.chests.filter((c) => !hidden.has(key(c.pos)));
-  if (!open.length) return;
-  rng.pick(open).loot.lens = true;
-}
-
-/**
- * Monsters for the passages: trash, mostly.
- *
- * A passage is dark, one tile wide and full of somebody else's air; what it is
- * not is a second dungeon. Patrols shuffle up and down it and the odd guard
- * sits at a corner, so walking one costs a few swings rather than a fight you
- * have to prepare for. Never a lurker: a passage has no room to bait one in,
- * and a hunter that followed the hero out of the wall would give the whole
- * thing away.
- */
-function stockPassages(
-  level: LevelData,
-  depth: number,
-  passages: Passage[],
-  used: Set<string>,
-  dist: Map<string, number>,
-  rng: Rng,
-  spawn: MonsterOpts,
-): void {
-  let n = level.monsters.length;
-  let budget = PASSAGE_MONSTER_BUDGET;
-  for (const passage of passages) {
-    const inside = new Set(passage.tiles.map(key));
-    const want = Math.min(
-      budget,
-      PASSAGE_MONSTER_CAP,
-      Math.floor(passage.tiles.length / PASSAGE_TILES_PER_MONSTER),
-    );
-    if (want <= 0) continue;
-    // Never a mouth: a guard rooted in the doorway would seal the passage off
-    // from the outside, and the hero would never know why the seam went cold.
-    const spots = passage.tiles.filter((p) => {
-      if (passage.mouths.some((m) => eq(m, p))) return false;
-      if (level.chests.some((c) => eq(c.pos, p))) return false;
-      return (dist.get(key(p)) ?? 0) >= MONSTER_MIN_DIST;
-    });
-    rng.shuffle(spots);
-    const claimed = new Set<string>();
-    for (let i = 0; i < want && i < spots.length; i++) {
-      const spot = spots[i];
-      if (claimed.has(key(spot))) continue;
-      const kind: RosterKind = rng.chance(0.75) ? 'patrol' : 'guard';
-      const m = makeMonster(kind, depth, rng, spot, `pm${++n}`, spawn);
-      if (kind === 'patrol') {
-        const beat = pocketBeat(level, spot, inside, rng);
-        if (!beat) continue; // nowhere to pace: leave the tile empty
-        m.patrolPath = beat;
-        m.patrolIndex = 0;
-        m.patrolDir = 1;
-      }
-      claimed.add(key(spot));
-      used.add(key(spot));
-      level.monsters.push(m);
-      budget--;
-    }
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Gates
 // ---------------------------------------------------------------------------
@@ -1449,9 +1041,8 @@ export function gateGuards(level: LevelData): Monster[] {
   const guards = new Map<string, Monster>();
   for (const m of level.monsters) if (m.alive && m.kind === 'guard') guards.set(key(m.pos), m);
   // Hidden passages count as rock here. A gate is the guard a hero with no
-  // lens cannot walk around; that a lens might open a way past one is the
-  // whole point of carrying it, not a reason to leave the guard at full
-  // strength for everybody else.
+  // lens cannot walk around, and a wing never leads anywhere but back out of
+  // its own mouths in any case.
   const solid = new Set([...level.chests.map((c) => key(c.pos)), ...passageTilesOf(level).map(key)]);
 
   // 0-1 BFS: stepping onto a guard costs one, every other floor tile is free.
@@ -1534,22 +1125,30 @@ function validate(level: LevelData): boolean {
   // Doors sit in corridors.
   for (const d of level.doors) if (!isCorridor(level, d.pos)) return false;
 
-  // Reachability with all doors open, twice over: `plain` is the floor as a
+  // Reachability with all doors open, twice over: `open` is the floor as a
   // hero with no lens walks it (every passage is rock), `lensed` is the same
-  // floor with the passages open. Chests are solid in both, so they count as
-  // walls; each must still be reachable via a neighbouring tile.
+  // floor with the passages open and every seal already worked. Chests and
+  // altars are solid in both, so they count as walls; each must still be
+  // reachable via a neighbouring tile.
+  const solidTiles = new Set([...level.chests.map((c) => key(c.pos)), ...(level.altars ?? []).map((a) => key(a.pos))]);
   const chestTiles = new Set(level.chests.map((c) => key(c.pos)));
   const hidden = new Set(passageTilesOf(level).map(key));
-  const lensed = bfsDistances(level, start, { blocked: (p) => chestTiles.has(key(p)) });
+  const lensed = bfsDistances(level, start, { blocked: (p) => solidTiles.has(key(p)) });
   const open = hidden.size
-    ? bfsDistances(level, start, { blocked: (p) => chestTiles.has(key(p)) || hidden.has(key(p)) })
+    ? bfsDistances(level, start, { blocked: (p) => solidTiles.has(key(p)) || hidden.has(key(p)) })
     : lensed;
   // The stairs are reachable without setting foot in a passage: a lens is
   // always a saving and never a requirement.
   if (!open.has(key(exit))) return false;
   for (const c of level.chests) {
-    if (floorNeighbors(level, c.pos).length !== 1) return false; // dead end only
+    // Out in the maze a chest may only sit in a dead end, or it walls part of
+    // the floor off. In a wing it may stand in a room, where it blocks nothing.
+    if (!hidden.has(key(c.pos)) && floorNeighbors(level, c.pos).length !== 1) return false;
     if (!floorNeighbors(level, c.pos).some((nb) => lensed.has(key(nb)))) return false;
+  }
+  for (const a of level.altars ?? []) {
+    if (!claim(a.pos) || a.used || !hidden.has(key(a.pos))) return false;
+    if (!floorNeighbors(level, a.pos).some((nb) => lensed.has(key(nb)))) return false;
   }
   // Keys and shrines never hide in a passage: everything a floor *needs* is
   // out in the maze where a hero with no lens can reach it.
@@ -1561,33 +1160,63 @@ function validate(level: LevelData): boolean {
   // has to be reachable without crossing them, or it is ground the hero can
   // see on the way down and never stand on.
   const beyondStairs = bfsDistances(level, start, {
-    blocked: (p) => chestTiles.has(key(p)) || eq(p, exit),
+    blocked: (p) => solidTiles.has(key(p)) || eq(p, exit),
   });
   for (let y = 1; y < level.height - 1; y++) {
     for (let x = 1; x < level.width - 1; x++) {
       const p = { x, y };
-      if (!isFloor(level, p) || eq(p, exit) || chestTiles.has(key(p))) continue;
+      if (!isFloor(level, p) || eq(p, exit) || solidTiles.has(key(p))) continue;
       if (!beyondStairs.has(key(p))) return false;
     }
   }
 
-  // Passages: every tile of one is hidden ground, every one of them is
-  // walkable once the hero has a lens, and each touches the maze exactly at
-  // its mouths — no passage brushes another, and none of them opens a third
-  // way in behind the renderer's back.
+  // Wings: every tile of one is hidden ground, every one of them is walkable
+  // once the hero has a lens, and each touches the maze exactly at its mouths
+  // — no wing brushes a warren, and none of them opens a third way in behind
+  // the renderer's back.
   for (const passage of level.passages ?? []) {
     const inside = new Set(passage.tiles.map(key));
-    if (!passage.mouths.length) return false;
+    if (passage.mouths.length < 1 || passage.mouths.length > 2) return false;
     for (const m of passage.mouths) if (!inside.has(key(m))) return false;
-    if (passage.kind === 'vault' && passage.mouths.length !== 1) return false;
-    // A network opens onto the maze in three places or more; that is what
-    // makes it a second floor plan rather than a shortcut between two points.
-    if (passage.kind === 'shortcut' && passage.mouths.length < NETWORK_MIN_MOUTHS) return false;
+    if (!passage.rooms.length || !passage.rooms[passage.treasure] || !passage.rooms[passage.entry]) return false;
     for (const t of passage.tiles) {
       if (!isFloor(level, t)) return false;
-      if (!lensed.has(key(t)) && !chestTiles.has(key(t))) return false;
+      if (!lensed.has(key(t)) && !solidTiles.has(key(t))) return false;
       const outside = floorNeighbors(level, t).filter((nb) => !inside.has(key(nb)));
       if (outside.length && !passage.mouths.some((m) => eq(m, t))) return false;
+    }
+  }
+
+  // The locks. Everything a puzzle is made of stands on hidden ground, on a
+  // tile of its own, and on the near side of its seal; and the seal is a real
+  // lock — with it shut, the treasure room is out of reach.
+  const sealTiles = new Set((level.seals ?? []).map((s) => key(s.pos)));
+  const sealedOff = sealTiles.size
+    ? bfsDistances(level, start, { blocked: (p) => solidTiles.has(key(p)) || sealTiles.has(key(p)) })
+    : lensed;
+  for (const s of level.seals ?? []) {
+    if (!claim(s.pos) || s.open || !hidden.has(key(s.pos))) return false;
+    if (!isCorridor(level, s.pos)) return false;
+    if (s.lock.kind === 'orb') {
+      if (!sealedOff.has(key(s.lock.socket)) || !hidden.has(key(s.lock.socket))) return false;
+      if (!(level.orbs ?? []).some((o) => o.sealId === s.id)) return false;
+    }
+    if (s.lock.kind === 'runes') {
+      if (s.lock.order.length < 3 || s.lock.lit !== 0) return false;
+      for (const id of s.lock.order) if (!(level.runes ?? []).some((r) => r.id === id && r.sealId === s.id)) return false;
+    }
+  }
+  for (const r of level.runes ?? []) if (!claim(r.pos) || r.lit || !sealedOff.has(key(r.pos))) return false;
+  for (const o of level.orbs ?? []) if (!claim(o.pos) || o.state !== 'floor' || !sealedOff.has(key(o.pos))) return false;
+  for (const r of level.relics ?? []) if (!claim(r.pos) || r.taken || !sealedOff.has(key(r.pos))) return false;
+  for (const passage of level.passages ?? []) {
+    const room = passage.rooms[passage.treasure];
+    const way = (level.seals ?? []).some((s) => floorNeighbors(level, s.pos).some((nb) => inRect(room, nb)));
+    if (!way) return false; // a treasure room with no seal on its door
+    for (let y = room.y; y < room.y + room.h; y++) {
+      for (let x = room.x; x < room.x + room.w; x++) {
+        if (sealedOff.has(key({ x, y }))) return false; // the seal is not a lock
+      }
     }
   }
 
@@ -1627,7 +1256,7 @@ function validate(level: LevelData): boolean {
  */
 function canProgress(level: LevelData): boolean {
   const closed = new Set(level.doors.map((d) => key(d.pos)));
-  const solid = new Set(level.chests.map((c) => key(c.pos)));
+  const solid = new Set([...level.chests.map((c) => key(c.pos)), ...(level.altars ?? []).map((a) => key(a.pos))]);
   const taken = new Set<string>();
   let held = 0;
   for (let iter = 0; iter <= level.doors.length + 1 && closed.size > 0; iter++) {

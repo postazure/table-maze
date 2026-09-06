@@ -7,9 +7,11 @@
  *
  * Pedestals are 2x2 tiles so the item on top and its slot emblem read at a
  * glance, and they sit two clear tiles apart so the hero can walk between
- * them without bumping into the wrong one.
+ * them without bumping into the wrong one. Below them, in the middle of the
+ * room, stands the forge: the same size, and the shop's other offer — a
+ * level on something the hero already wears, instead of a new item.
  */
-import type { Hero, LevelData, ShopOffer, Vec } from './types';
+import type { Hero, LevelData, ShopForge, ShopOffer, Vec } from './types';
 import { Tile } from './types';
 import { hashSeed, makeRng } from './rng';
 import { ITEM_SLOTS, itemPrice, rollShopOffers } from './items';
@@ -32,6 +34,12 @@ export const PEDESTAL_TILES: readonly Vec[] = [
 ];
 /** The column the stairs in and the stairs out share. */
 const AISLE_X = 7;
+/**
+ * Top-left tile of the forge: centred under the middle podium, two clear
+ * rows below it, so it is the first thing in front of the hero on the way in
+ * and there is room to walk round it on either side.
+ */
+export const FORGE_TILE: Vec = { x: 7, y: 9 };
 /** Salt so the shop roll never shares a stream with the maze generator. */
 const SHOP_SALT = 4242;
 
@@ -71,7 +79,7 @@ export function generateShopLevel(depth: number, runSeed: number, hero: Hero): L
     seed,
     kind: 'shop',
     theme: themeForDepth(depth).id,
-    shop: { offers, bought: false },
+    shop: { offers, forge: { pos: { x: FORGE_TILE.x, y: FORGE_TILE.y } }, bought: false },
     width: SHOP_WIDTH,
     height: SHOP_HEIGHT,
     tiles,
@@ -112,4 +120,19 @@ export function offerAt(level: LevelData, p: Vec): ShopOffer | null {
   if (!shop) return null;
   for (const o of shop.offers) if (offerCovers(o, p)) return o;
   return null;
+}
+
+/** The forge, if `p` is one of its four tiles. Solid, like a podium. */
+export function forgeAt(level: LevelData, p: Vec): ShopForge | null {
+  const forge = level.shop?.forge;
+  if (!forge) return null;
+  const dx = p.x - forge.pos.x;
+  const dy = p.y - forge.pos.y;
+  return dx >= 0 && dx < PEDESTAL_SIZE && dy >= 0 && dy < PEDESTAL_SIZE ? forge : null;
+}
+
+/** Middle of the forge block, in fractional tile coordinates. */
+export function forgeCenter(forge: ShopForge): Vec {
+  const half = (PEDESTAL_SIZE - 1) / 2;
+  return { x: forge.pos.x + half, y: forge.pos.y + half };
 }

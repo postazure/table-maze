@@ -147,14 +147,19 @@ test('generateLevel: structure, entities and solvability', () => {
       assert.equal(chestKeys.length, lv.chests.length, `${where}: one key per chest`);
       for (const k of lv.keys) assert.equal(k.taken, false, where);
 
-      // chests: solid tiles, so only ever in dead ends. Eight out in the maze,
-      // plus one at the back of each vault passage.
-      const vaults = (lv.passages ?? []).filter((pg) => pg.kind === 'vault').length;
-      assert.ok(lv.chests.length <= 8 + vaults, where);
+      // chests: solid tiles, so out in the maze only ever in dead ends. Eight
+      // out there at most; a wing's chests stand in its rooms, where a solid
+      // tile blocks nothing (see the wings tests), and a mimic pays as a
+      // monster rather than as a chest.
+      const hidden = new Set(passageTilesOf(lv).map(key));
+      const inMaze = lv.chests.filter((c) => !hidden.has(key(c.pos)));
+      assert.ok(inMaze.length <= 8, where);
       for (const c of lv.chests) {
         assert.equal(c.opened, false, where);
-        assert.ok(c.loot.gold > 0 && c.loot.xp > 0, where);
-        assert.equal(floorNeighbors(lv, c.pos).length, 1, `${where}: chest ${c.id} must be in a dead end`);
+        if (!c.mimic) assert.ok(c.loot.gold > 0 && c.loot.xp > 0, where);
+        if (!hidden.has(key(c.pos))) {
+          assert.equal(floorNeighbors(lv, c.pos).length, 1, `${where}: chest ${c.id} must be in a dead end`);
+        }
       }
 
       // monsters
@@ -373,10 +378,13 @@ test('a floor never spawns a monster far over the hero who walked into it', () =
     for (const heroLevel of [1, depth, depth + 1]) {
       const cap = monsterLevelCap(depth, heroLevel);
       const level = generateLevel(depth, 8888 + depth, heroLevel);
+      const hidden = new Set(passageTilesOf(level).map(key));
       assert.ok(level.monsters.length > 0, `depth ${depth}: no monsters`);
       for (const m of level.monsters) {
         const where = `depth ${depth}, hero ${heroLevel}, ${m.kind} at ${m.level}`;
-        assert.ok(m.level <= cap, where);
+        // The wing is the hard end of the floor: one level over the cap the
+        // rest of it respects, and never on the way to the stairs.
+        assert.ok(m.level <= cap + (hidden.has(key(m.pos)) ? 1 : 0), where);
         assert.ok(m.level >= depth, `${where}: never under the floor's own depth`);
       }
     }
@@ -454,12 +462,16 @@ test('blocking every guard that is not a gate still leaves the stairs reachable'
 test('the first floor has no lurkers and no fight a brand-new hero can lose', () => {
   for (let seed = 1; seed <= 40; seed++) {
     const level = generateLevel(1, seed);
+    // Behind the wall is another matter: the wing is the hard end of every
+    // floor, the first included, and it takes a lens to walk into.
+    const hidden = new Set(passageTilesOf(level).map(key));
+    const open = level.monsters.filter((m) => !hidden.has(key(m.pos)));
     assert.equal(
-      level.monsters.filter((m) => m.kind === 'lurker').length,
+      open.filter((m) => m.kind === 'lurker').length,
       0,
       `seed ${seed}: floor one is patrols and guards only`,
     );
-    for (const m of level.monsters) {
+    for (const m of open) {
       const r = headOn(newHero(), m, makeRng(seed * 31 + 7));
       assert.ok(r.win, `seed ${seed}: a level-one hero loses to the ${m.kind} (level ${m.level})`);
     }

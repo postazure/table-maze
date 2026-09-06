@@ -1,4 +1,4 @@
-import type { GameState, ItemSlot, MagicItem, Modal, ShrineKind } from '../engine/types';
+import type { Boon, BossKind, GameState, ItemSlot, MagicItem, Modal, RelicKind, ShrineKind } from '../engine/types';
 import { buffAtk, buffDef, buffPhase, type BuffPhase } from '../engine/shrines';
 import { lensActive } from '../engine/lens';
 
@@ -62,6 +62,12 @@ export interface HudModel {
    * show and no clock to run down, so the HUD only ever says yes or no.
    */
   lens: boolean;
+  /** Carrying an orb through a wing right now. */
+  carrying: boolean;
+  /** Relics in the pack, boss trophies not yet spent, and the boons this run runs under. */
+  relics: RelicKind[];
+  trophies: BossKind[];
+  boons: Boon[];
   /** The kind of level the hero is currently on (drives the depth badge). */
   levelKind: 'maze' | 'shop' | 'boss';
   /** Current popup, compared by reference. */
@@ -109,6 +115,10 @@ export function deriveHudModel(state: GameState): HudModel {
     buffs,
     gear: hero.gear,
     lens: lensActive(hero, state.depth),
+    carrying: !!hero.carrying,
+    relics: hero.relics ?? [],
+    trophies: hero.trophies ?? [],
+    boons: state.boons ?? [],
     levelKind: state.level.kind,
     modal: state.modal,
     log: state.log.map((m) => m.text),
@@ -147,6 +157,10 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     a.tempHpMax !== b.tempHpMax ||
     a.buffs.length !== b.buffs.length ||
     a.lens !== b.lens ||
+    a.carrying !== b.carrying ||
+    a.relics.length !== b.relics.length ||
+    a.trophies.length !== b.trophies.length ||
+    a.boons.length !== b.boons.length ||
     a.levelKind !== b.levelKind ||
     a.modal !== b.modal ||
     a.log.length !== b.log.length ||
@@ -158,6 +172,11 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
   }
   for (let i = 0; i < a.log.length; i++) {
     if (a.log[i] !== b.log[i]) return false;
+  }
+  for (let i = 0; i < a.relics.length; i++) if (a.relics[i] !== b.relics[i]) return false;
+  for (let i = 0; i < a.trophies.length; i++) if (a.trophies[i] !== b.trophies[i]) return false;
+  for (let i = 0; i < a.boons.length; i++) {
+    if (a.boons[i].kind !== b.boons[i].kind || a.boons[i].runsLeft !== b.boons[i].runsLeft) return false;
   }
   for (let i = 0; i < a.buffs.length; i++) {
     const x = a.buffs[i];

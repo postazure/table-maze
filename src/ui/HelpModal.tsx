@@ -4,7 +4,9 @@ import type { ItemSlot, MagicItem } from '../engine/types';
 import { itemDescription, itemName } from '../engine/items';
 import { heartsLabel, shrineDescription, shrineName } from '../engine/shrines';
 import { LENS_NAME } from '../engine/lens';
-import { PixelIcon } from './icons';
+import { relicName } from '../engine/puzzles';
+import { boonDescription, boonName, trophyName } from '../engine/boons';
+import { PixelIcon, type IconName } from './icons';
 
 export interface HelpModalProps {
   model: HudModel;
@@ -81,7 +83,25 @@ function BuffRow({ buff, tempHp }: { buff: HudBuff; tempHp: number }) {
   );
 }
 
+/** One thing the hero carries that is not gear: a lens, an orb, a relic, a trophy. */
+function CarriedRow({ icon, name, desc }: { icon: IconName; name: string; desc: string }) {
+  return (
+    <div className="help-gear help-lens">
+      <div className="help-gear-icon">
+        <PixelIcon name={icon} size={32} />
+      </div>
+      <div className="help-gear-text">
+        <div className="help-gear-title">
+          <span className="help-gear-name">{name}</span>
+        </div>
+        <p className="help-gear-desc">{desc}</p>
+      </div>
+    </div>
+  );
+}
+
 function HeroTab({ model }: { model: HudModel }) {
+  const carried = model.lens || model.carrying || model.relics.length > 0 || model.trophies.length > 0;
   return (
     <>
       <div className="help-section">
@@ -90,20 +110,30 @@ function HeroTab({ model }: { model: HudModel }) {
           <GearRow key={slot} slot={slot} label={label} item={model.gear[slot]} />
         ))}
       </div>
-      {model.lens && (
+      {carried && (
         <div className="help-section">
           <span className="help-title">Carried</span>
-          <div className="help-gear help-lens">
-            <div className="help-gear-icon">
-              <PixelIcon name="lens" size={32} />
-            </div>
-            <div className="help-gear-text">
-              <div className="help-gear-title">
-                <span className="help-gear-name">{LENS_NAME}</span>
-              </div>
-              <p className="help-gear-desc">See the unseen.</p>
-            </div>
-          </div>
+          {model.lens && <CarriedRow icon="lens" name={LENS_NAME} desc="See the unseen." />}
+          {model.carrying && <CarriedRow icon="orb" name="Orb" desc="Both hands full. You set it down to fight; it goes home if it leaves the wing." />}
+          {model.relics.map((kind, i) => (
+            <CarriedRow key={`${kind}-${i}`} icon={kind} name={relicName(kind)} desc="A keystone. Somewhere deeper, a sealed door is carved with this shape." />
+          ))}
+          {model.trophies.map((boss, i) => (
+            <CarriedRow key={`${boss}-${i}`} icon={boss} name={trophyName(boss)} desc="Proof of a boss beaten. Some altar, somewhere, is carved for it." />
+          ))}
+        </div>
+      )}
+      {model.boons.length > 0 && (
+        <div className="help-section">
+          <span className="help-title">Boons</span>
+          {model.boons.map((b) => (
+            <CarriedRow
+              key={b.kind}
+              icon={b.kind}
+              name={boonName(b.kind)}
+              desc={`${boonDescription(b.kind)} ${b.runsLeft > 0 ? `${b.runsLeft} more run${b.runsLeft === 1 ? '' : 's'} after this one.` : 'This is its last run.'}`}
+            />
+          ))}
         </div>
       )}
       <div className="help-section">
@@ -161,12 +191,16 @@ function GuideTab() {
         one in reserve and it kicks in on its own for half your hearts back, instead of a knockdown. They refill
         at the start of every floor.
       </li>
-      <li>A chest may hold a {LENS_NAME}. See the unseen.</li>
+      <li>A chest may hold a {LENS_NAME}. See the unseen: behind the wall of every floor is a wing of rooms it opens.</li>
+      <li>The wing's monsters are the floor's hardest, and a chest in one may be a mimic. Its treasure room is behind a sealed door.</li>
+      <li>Seals open three ways: step on the runes in the right order (a wrong one puts them all out), carry the orb to the cradle before the door, or bring the relic the door is carved with from an earlier floor.</li>
+      <li>You set the orb down to fight. Step back onto it to pick it up again.</li>
+      <li>Beat a boss and you keep its trophy. An altar carved for it trades it for a boon that lasts three runs.</li>
       <li>Glowing alcoves are shrines. Step on one for a gift that runs out; a dark one is already spent. The pips above your head are what you have running.</li>
       <li>Spirit makes every shrine go further: the timed ones last longer, the ward hands out more hearts. It creeps up as you level, and anything in your spirit slot adds to it.</li>
       <li>Every third floor has a shop. Walk into a podium to see what the item does, then buy it or walk away.</li>
       <li>The emblem on a podium says what the item is for: sword = offense, shield = defense, star = spirit.</li>
-      <li>You can buy one item per shop, and each slot holds one item.</li>
+      <li>You can buy one thing per shop, and each slot holds one item. The forge is the other choice: a level on something you already wear.</li>
       <li>After every third floor you face a boss. Beat it and one of your magic items gains a level.</li>
       <li>Lose in a boss chamber and the run is over.</li>
       <li>The hero faces the way they last walked. Some monsters care about that.</li>

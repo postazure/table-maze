@@ -18,7 +18,16 @@ import {
   type ShopOffer,
   type Shrine,
   type ShrineKind,
+  type Seal,
+  type Rune,
+  type Relic,
+  type RelicKind,
+  type Altar,
+  type BossKind,
+  type ShopForge,
   SHRINE_KINDS,
+  RELIC_KINDS,
+  BOSS_KINDS,
   key,
 } from '../engine/types';
 import {
@@ -29,7 +38,20 @@ import {
   SHRINE_ART,
   ALCOVE_ART,
   ALCOVE_NICHE,
+  ALTAR_ART,
+  ALTAR_NICHE,
+  FORGE_ART,
+  ORB_ART,
+  RELIC_ART,
+  RUNE_COUNT,
+  SEAL_ART,
+  SEAL_NICHE,
+  SEAL_OPEN_ART,
+  SOCKET_ART,
+  TROPHY_ART,
+  runeArt,
 } from './itemArt';
+import { carriedOrb } from '../engine/combat';
 import { BLINK_MS, SHRINE_COLORS, buffPhase } from '../engine/shrines';
 import {
   LENS_ALPHA,
@@ -115,6 +137,21 @@ const CLIP_SPAN = 2;
  * for the brick the lens is busy clearing away.
  */
 const LENS_TINT = 'rgba(143, 227, 255, 0.07)';
+
+// The wings' locks.
+/** Runes, seals and the orb all glow in the lens' own blue. */
+const RUNE_GLOW = '#8fe3ff';
+/** A lit rune's wash behind it, and a dim rune's. */
+const RUNE_LIT_ALPHA = 0.28;
+/** A spent altar and an open seal are scenery: drawn this faint. */
+const SPENT_ALPHA = 0.45;
+/**
+ * The mimic's tell. Every few seconds an unsprung mimic shivers for a moment
+ * — a sub-pixel or two, no more — which is exactly as much as a wary player
+ * standing still and watching the chest deserves to be given.
+ */
+const MIMIC_TELL_EVERY_MS = 3400;
+const MIMIC_TELL_MS = 180;
 
 // Shop podium / price tag.
 const PEDESTAL_DIM_ALPHA = 0.35;
@@ -501,6 +538,16 @@ export class Renderer implements TileMapper {
   private arrowSprites: Map<(typeof ARROW_ORDER)[number], HTMLCanvasElement> = new Map();
   private shrineSprites: Map<ShrineKind, HTMLCanvasElement> = new Map();
   private alcoveSprite: HTMLCanvasElement;
+  /** The wings' furniture. Runes come in a dim and a lit sprite per shape. */
+  private runeSprites: { dim: HTMLCanvasElement; lit: HTMLCanvasElement }[] = [];
+  private sealSprite: HTMLCanvasElement;
+  private sealOpenSprite: HTMLCanvasElement;
+  private socketSprite: HTMLCanvasElement;
+  private orbSprite: HTMLCanvasElement;
+  private altarSprite: HTMLCanvasElement;
+  private forgeSprite: HTMLCanvasElement;
+  private relicSprites: Map<RelicKind, HTMLCanvasElement> = new Map();
+  private trophySprites: Map<BossKind, HTMLCanvasElement> = new Map();
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -526,6 +573,25 @@ export class Renderer implements TileMapper {
     for (const kind of SHRINE_KINDS) {
       const art = SHRINE_ART[kind];
       this.shrineSprites.set(kind, buildIcon(art.rows, art.palette));
+    }
+    for (let g = 0; g < RUNE_COUNT; g++) {
+      const dim = runeArt(g, false);
+      const lit = runeArt(g, true);
+      this.runeSprites.push({ dim: buildIcon(dim.rows, dim.palette), lit: buildIcon(lit.rows, lit.palette) });
+    }
+    this.sealSprite = buildIcon(SEAL_ART.rows, SEAL_ART.palette);
+    this.sealOpenSprite = buildIcon(SEAL_OPEN_ART.rows, SEAL_OPEN_ART.palette);
+    this.socketSprite = buildIcon(SOCKET_ART.rows, SOCKET_ART.palette);
+    this.orbSprite = buildIcon(ORB_ART.rows, ORB_ART.palette);
+    this.altarSprite = buildIcon(ALTAR_ART.rows, ALTAR_ART.palette);
+    this.forgeSprite = buildIcon(FORGE_ART.rows, FORGE_ART.palette);
+    for (const kind of RELIC_KINDS) {
+      const art = RELIC_ART[kind];
+      this.relicSprites.set(kind, buildIcon(art.rows, art.palette));
+    }
+    for (const kind of BOSS_KINDS) {
+      const art = TROPHY_ART[kind];
+      this.trophySprites.set(kind, buildIcon(art.rows, art.palette));
     }
 
     for (const [kind, cfg] of Object.entries(MONSTER_CFGS)) {
@@ -1096,8 +1162,35 @@ export class Renderer implements TileMapper {
       if (this.inRange(sh.pos, startX, endX, startY, endY)) this.drawShrine(ctx, sh, t);
     }
 
-    // Chests. A vault chest stands in a passage, so it is drawn through the
-    // slot the passage makes, like everything else in there.
+    // The wings' floor furniture: runes, cradles, relics and orbs are ground
+    // or pickups, drawn before anything solid. All of it is hidden ground, so
+    // all of it goes through the slot the wing makes in the wall.
+    for (const r of state.level.runes ?? []) {
+      if (this.inRange(r.pos, startX, endX, startY, endY)) this.drawBehindWall(ctx, state, r.pos, t, () => this.drawRune(ctx, r, t));
+    }
+    for (const sl of state.level.seals ?? []) {
+      if (sl.lock.kind !== 'orb') continue;
+      const at = sl.lock.socket;
+      if (this.inRange(at, startX, endX, startY, endY)) this.drawBehindWall(ctx, state, at, t, () => this.drawSocket(ctx, at, t));
+    }
+    for (const r of state.level.relics ?? []) {
+      if (!r.taken && this.inRange(r.pos, startX, endX, startY, endY)) this.drawBehindWall(ctx, state, r.pos, t, () => this.drawRelic(ctx, r, t));
+    }
+    for (const o of state.level.orbs ?? []) {
+      if (o.state === 'carried' || !this.inRange(o.pos, startX, endX, startY, endY)) continue;
+      this.drawBehindWall(ctx, state, o.pos, t, () => this.drawOrb(ctx, o.pos, t, o.state === 'placed' ? 0.55 : 0.6, true));
+    }
+
+    // Seals and altars are solid, like chests, and drawn with them.
+    for (const sl of state.level.seals ?? []) {
+      if (this.inRange(sl.pos, startX, endX, startY, endY)) this.drawBehindWall(ctx, state, sl.pos, t, () => this.drawSeal(ctx, sl, t));
+    }
+    for (const a of state.level.altars ?? []) {
+      if (this.inRange(a.pos, startX, endX, startY, endY)) this.drawBehindWall(ctx, state, a.pos, t, () => this.drawAltar(ctx, a, t));
+    }
+
+    // Chests. A wing's chest stands on hidden ground, so it is drawn through
+    // the slot the wing makes, like everything else in there.
     for (const c of state.level.chests) {
       if (!this.inRange(c.pos, startX, endX, startY, endY)) continue;
       this.drawBehindWall(ctx, state, c.pos, t, () => this.drawChest(ctx, c, t));
@@ -1124,6 +1217,8 @@ export class Renderer implements TileMapper {
           offer.pos.y < endY + 2;
         if (near) this.drawShopOffer(ctx, offer, dimmed, t);
       }
+      const forge = state.level.shop.forge;
+      if (forge && this.inRange(forge.pos, startX - 2, endX + 2, startY - 2, endY + 2)) this.drawForge(ctx, forge, dimmed, t);
     }
 
     // Monsters.
@@ -1141,8 +1236,9 @@ export class Renderer implements TileMapper {
     // should be traceable through a wall.
     if (hiddenBox) this.drawPassageVeil(ctx, state, hiddenBox);
 
-    // Hero (always near the viewport center).
+    // Hero (always near the viewport center), and the orb in their arms.
     this.drawHero(ctx, state.hero, t);
+    if (carriedOrb(state)) this.drawCarriedOrb(ctx, state.hero, t);
 
     // keyCompass: arrow hovering over the hero, pointing at the tracked tile.
     if (state.compass) this.drawCompass(ctx, state.hero, state.compass, t);
@@ -1288,7 +1384,214 @@ export class Renderer implements TileMapper {
   }
 
   private drawChest(ctx: CanvasRenderingContext2D, c: Chest, t: number): void {
+    if (c.mimic && !c.opened) {
+      // The tell: a shiver, now and then, of a sub-pixel or two. Phased off
+      // the chest's own tile so two mimics never twitch in step.
+      const sub = Math.max(1, t / SUB);
+      const phase = (performance.now() + hash2(c.pos.x, c.pos.y) % MIMIC_TELL_EVERY_MS) % MIMIC_TELL_EVERY_MS;
+      if (phase < MIMIC_TELL_MS) {
+        const jog = Math.round(Math.sin((phase / MIMIC_TELL_MS) * Math.PI * 4) * sub);
+        ctx.save();
+        ctx.translate(jog, 0);
+        this.drawTileSprite(ctx, this.chestClosedSprite, c.pos, t, 0.8);
+        ctx.restore();
+        return;
+      }
+    }
     this.drawTileSprite(ctx, c.opened ? this.chestOpenSprite : this.chestClosedSprite, c.pos, t, 0.8);
+  }
+
+  /**
+   * A rune on the floor of a wing: its shape, dim until it is lit, and a soft
+   * wash of the lens' blue behind it once it is, so the row of lit ones reads
+   * as a row from across the room.
+   */
+  private drawRune(ctx: CanvasRenderingContext2D, r: Rune, t: number): void {
+    const sprite = this.runeSprites[((r.glyph % RUNE_COUNT) + RUNE_COUNT) % RUNE_COUNT];
+    if (!sprite) return;
+    if (r.lit) {
+      ctx.save();
+      ctx.globalAlpha = RUNE_LIT_ALPHA + 0.08 * (0.5 + 0.5 * Math.sin(performance.now() / 500));
+      ctx.fillStyle = RUNE_GLOW;
+      ctx.fillRect(Math.round(r.pos.x * t), Math.round(r.pos.y * t), t, t);
+      ctx.restore();
+    }
+    this.drawTileSprite(ctx, r.lit ? sprite.lit : sprite.dim, r.pos, t, 0.7);
+
+    // A seal that tells its order on the runes themselves: this rune's place
+    // in it, as a row of dots along the bottom of the tile.
+    const place = this.runePlace(r);
+    if (place > 0) {
+      const sub = Math.max(1, t / SUB);
+      const dot = Math.max(1, Math.round(sub));
+      const gap = dot;
+      const rowW = place * dot + (place - 1) * gap;
+      let x = Math.round((r.pos.x * t + (t - rowW) / 2) / sub) * sub;
+      const y = Math.round((r.pos.y * t + t - dot * 2) / sub) * sub;
+      ctx.save();
+      ctx.fillStyle = r.lit ? RUNE_GLOW : PRICE_TEXT;
+      ctx.globalAlpha = r.lit ? 1 : 0.8;
+      for (let i = 0; i < place; i++) {
+        ctx.fillRect(x, y, dot, dot);
+        x += dot + gap;
+      }
+      ctx.restore();
+    }
+  }
+
+  /** This rune's place in its seal's order (1-based), when the seal shows it on the runes; 0 otherwise. */
+  private runePlace(r: Rune): number {
+    for (const s of this.level?.seals ?? []) {
+      if (s.id !== r.sealId || s.lock.kind !== 'runes' || s.lock.hint !== 'pips') continue;
+      return s.lock.order.indexOf(r.id) + 1;
+    }
+    return 0;
+  }
+
+  /** The cradle before an orb seal: a ring on the floor. */
+  private drawSocket(ctx: CanvasRenderingContext2D, at: Vec, t: number): void {
+    this.drawTileSprite(ctx, this.socketSprite, at, t, 1);
+  }
+
+  /** A relic lying where a wing left it: gold and a slow gold ring, so it is never walked past. */
+  private drawRelic(ctx: CanvasRenderingContext2D, r: Relic, t: number): void {
+    const sprite = this.relicSprites.get(r.kind);
+    if (!sprite) return;
+    const now = performance.now();
+    const cx = r.pos.x * t + t / 2;
+    const cy = r.pos.y * t + t / 2;
+    const ringSize = Math.round(t * (0.8 + 0.2 * (0.5 + 0.5 * Math.sin(now / 800))));
+    ctx.save();
+    ctx.globalAlpha = 0.3 + 0.3 * (0.5 + 0.5 * Math.sin(now / 800));
+    ctx.strokeStyle = PRICE_COIN;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(Math.round(cx - ringSize / 2) + 0.5, Math.round(cy - ringSize / 2) + 0.5, ringSize - 1, ringSize - 1);
+    ctx.restore();
+    this.drawTileSprite(ctx, sprite, r.pos, t, 0.62);
+  }
+
+  /** The orb: a glass ball with a breathing blue halo, wherever it is. */
+  private drawOrb(ctx: CanvasRenderingContext2D, at: Vec, t: number, scale: number, halo: boolean): void {
+    const cx = at.x * t + t / 2;
+    const cy = at.y * t + t / 2;
+    if (halo) {
+      const glow = Math.round(t * (0.9 + 0.15 * (0.5 + 0.5 * Math.sin(performance.now() / 600))));
+      ctx.save();
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = RUNE_GLOW;
+      ctx.fillRect(Math.round(cx - glow / 2), Math.round(cy - glow / 2), glow, glow);
+      ctx.restore();
+    }
+    this.drawTileSprite(ctx, this.orbSprite, at, t, scale);
+  }
+
+  /** The orb in the hero's arms: held up and to the side, bobbing with the step. */
+  private drawCarriedOrb(ctx: CanvasRenderingContext2D, hero: Hero, t: number): void {
+    const sub = Math.max(1, t / SUB);
+    const size = Math.round(t * 0.42);
+    const bob = Math.round((Math.sin(performance.now() / 300) * sub) / sub) * sub;
+    const x = Math.round((hero.rpos.x * t + t * 0.62) / sub) * sub;
+    const y = Math.round((hero.rpos.y * t - t * 0.05 + bob) / sub) * sub;
+    ctx.save();
+    ctx.globalAlpha = 0.2;
+    ctx.fillStyle = RUNE_GLOW;
+    ctx.fillRect(x - 2, y - 2, size + 4, size + 4);
+    ctx.restore();
+    ctx.drawImage(this.orbSprite, x, y, size, size);
+  }
+
+  /**
+   * A sealed door: a slab across its tile with the lock carved into it. A
+   * rune seal that tells its order shows the shapes in a row; a keystone seal
+   * shows the relic it wants; an orb seal an empty circle. Open, only the
+   * frame is left, sunk into the floor.
+   */
+  private drawSeal(ctx: CanvasRenderingContext2D, sl: Seal, t: number): void {
+    const bx = Math.round(sl.pos.x * t);
+    const by = Math.round(sl.pos.y * t);
+    if (sl.open) {
+      ctx.save();
+      ctx.globalAlpha = SPENT_ALPHA;
+      ctx.drawImage(this.sealOpenSprite, bx, by, t, t);
+      ctx.restore();
+      return;
+    }
+    ctx.drawImage(this.sealSprite, bx, by, t, t);
+    const nx = bx + t * SEAL_NICHE.x;
+    const ny = by + t * SEAL_NICHE.y;
+    const ns = t * SEAL_NICHE.size;
+    const lock = sl.lock;
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    if (lock.kind === 'runes' && lock.hint === 'seal') {
+      // The order, left to right, in glyphs small enough to fit the panel.
+      const n = lock.order.length;
+      const cell = ns / n;
+      const size = Math.max(3, Math.round(Math.min(cell, ns * 0.45)));
+      lock.order.forEach((id, i) => {
+        const glyph = this.runeGlyphOf(id);
+        const sprite = glyph === null ? null : this.runeSprites[glyph];
+        if (!sprite) return;
+        const x = Math.round(nx + cell * i + (cell - size) / 2);
+        const y = Math.round(ny + (ns - size) / 2);
+        ctx.drawImage(sprite.lit, x, y, size, size);
+      });
+    } else if (lock.kind === 'keystone') {
+      const sprite = this.relicSprites.get(lock.relic);
+      const size = Math.round(ns * 0.8);
+      if (sprite) ctx.drawImage(sprite, Math.round(nx + (ns - size) / 2), Math.round(ny + (ns - size) / 2), size, size);
+    } else if (lock.kind === 'orb') {
+      const size = Math.round(ns * 0.6);
+      ctx.strokeStyle = RUNE_GLOW;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(Math.round(nx + (ns - size) / 2) + 0.5, Math.round(ny + (ns - size) / 2) + 0.5, size - 1, size - 1);
+    } else {
+      // Runes hinted on the runes themselves, or not at all: a bare glow.
+      ctx.globalAlpha = 0.25 + 0.15 * (0.5 + 0.5 * Math.sin(performance.now() / 700));
+      ctx.fillStyle = RUNE_GLOW;
+      ctx.fillRect(Math.round(nx), Math.round(ny), Math.round(ns), Math.round(ns));
+    }
+    ctx.restore();
+  }
+
+  /** The shape a rune id shows, looked up off the current level. */
+  private runeGlyphOf(id: string): number | null {
+    for (const r of this.level?.runes ?? []) if (r.id === id) return ((r.glyph % RUNE_COUNT) + RUNE_COUNT) % RUNE_COUNT;
+    return null;
+  }
+
+  /**
+   * An altar: a stone block with the trophy it wants carved into its face,
+   * dim as stone. Spent, it is scenery.
+   */
+  private drawAltar(ctx: CanvasRenderingContext2D, a: Altar, t: number): void {
+    const bx = Math.round(a.pos.x * t);
+    const by = Math.round(a.pos.y * t);
+    ctx.save();
+    if (a.used) ctx.globalAlpha = SPENT_ALPHA;
+    ctx.drawImage(this.altarSprite, bx, by, t, t);
+    const sprite = this.trophySprites.get(a.trophy);
+    if (sprite && !a.used) {
+      const size = Math.round(t * ALTAR_NICHE.size);
+      ctx.globalAlpha = 0.55 + 0.2 * (0.5 + 0.5 * Math.sin(performance.now() / 900));
+      ctx.drawImage(sprite, Math.round(bx + t * ALTAR_NICHE.x), Math.round(by + t * ALTAR_NICHE.y), size, size);
+    }
+    ctx.restore();
+  }
+
+  /** The shop's forge: a 2x2 block like a podium, dimmed with the rest once anything is bought. */
+  private drawForge(ctx: CanvasRenderingContext2D, forge: ShopForge, dimmed: boolean, t: number): void {
+    const block = PODIUM_TILES * t;
+    const bx = Math.round(forge.pos.x * t);
+    const by = Math.round(forge.pos.y * t);
+    ctx.save();
+    if (dimmed) ctx.globalAlpha = PEDESTAL_DIM_ALPHA;
+    // The coals breathe.
+    ctx.drawImage(this.forgeSprite, bx, by, Math.round(block), Math.round(block));
+    ctx.globalAlpha = (dimmed ? PEDESTAL_DIM_ALPHA : 1) * (0.1 + 0.1 * (0.5 + 0.5 * Math.sin(performance.now() / 450)));
+    ctx.fillStyle = '#ff8c3a';
+    ctx.fillRect(Math.round(bx + block * 0.3), Math.round(by), Math.round(block * 0.4), Math.round(block * 0.25));
+    ctx.restore();
   }
 
   /**

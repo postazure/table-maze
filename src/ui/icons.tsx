@@ -5,9 +5,9 @@
  */
 
 import type { ReactElement } from 'react';
-import type { ItemKind, ItemSlot, ShrineKind } from '../engine/types';
-import { ITEM_KINDS, SHRINE_KINDS } from '../engine/types';
-import { ITEM_ART, LENS_ART, SHRINE_ART, SLOT_ART } from '../render/itemArt';
+import type { BoonKind, BossKind, ItemKind, ItemSlot, RelicKind, ShrineKind } from '../engine/types';
+import { BOON_KINDS, BOSS_KINDS, ITEM_KINDS, RELIC_KINDS, SHRINE_KINDS } from '../engine/types';
+import { BOON_ART, FORGE_ART, ITEM_ART, LENS_ART, ORB_ART, RELIC_ART, SHRINE_ART, SLOT_ART, TROPHY_ART } from '../render/itemArt';
 
 type Rows = readonly string[];
 type Palette = Readonly<Record<string, string>>;
@@ -22,14 +22,16 @@ type BaseIconName =
   | 'heart'
   | 'potion'
   | 'lens'
+  | 'orb'
+  | 'forge'
   | 'sound'
   | 'soundOff';
 /**
- * Every magic item kind, gear slot and shrine kind is also a valid icon name,
- * drawn from itemArt.ts — so the HUD, the help screen and the map all show the
- * same picture for the same thing.
+ * Every magic item kind, gear slot, shrine kind, relic, boss trophy and boon
+ * is also a valid icon name, drawn from itemArt.ts — so the HUD, the help
+ * screen and the map all show the same picture for the same thing.
  */
-export type IconName = BaseIconName | ItemKind | ItemSlot | ShrineKind;
+export type IconName = BaseIconName | ItemKind | ItemSlot | ShrineKind | RelicKind | BossKind | BoonKind;
 
 const ITEM_SLOTS: readonly ItemSlot[] = ['offense', 'defense', 'spirit'];
 
@@ -105,6 +107,8 @@ const BASE_ICONS: Record<BaseIconName, { rows: Rows; palette: Palette }> = {
     palette: { D: '#8a5a10', G: '#f5c451', W: '#fff6d0' },
   },
   lens: LENS_ART,
+  orb: ORB_ART,
+  forge: FORGE_ART,
   skull: {
     rows: ['..WWWW..', '.WWWWWW.', 'WWEWWEWW', 'WWEWWEWW', 'WWWWWWWW', '.WWWWWW.', '..W.W.W.', '..WWWWW.'],
     palette: { W: '#f0ecff', E: '#141414' },
@@ -126,6 +130,9 @@ const ICONS = { ...BASE_ICONS } as Record<IconName, { rows: Rows; palette: Palet
 for (const kind of ITEM_KINDS) ICONS[kind] = ITEM_ART[kind];
 for (const slot of ITEM_SLOTS) ICONS[slot] = SLOT_ART[slot];
 for (const kind of SHRINE_KINDS) ICONS[kind] = SHRINE_ART[kind];
+for (const kind of RELIC_KINDS) ICONS[kind] = RELIC_ART[kind];
+for (const kind of BOSS_KINDS) ICONS[kind] = TROPHY_ART[kind];
+for (const kind of BOON_KINDS) ICONS[kind] = BOON_ART[kind];
 
 export interface PixelIconProps {
   name: IconName;

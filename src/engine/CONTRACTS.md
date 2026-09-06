@@ -67,7 +67,9 @@ export function gateGuards(level: LevelData): Monster[];
 export const ROUTE_MONSTER_CAP: number;      // most monsters the route and its branches carry
 export const WARREN_MONSTER_CAP: number;     // ...per warren, on top of that
 export const WARREN_MONSTER_BUDGET: number;  // ...and across all of a floor's warrens
-export const PASSAGE_MONSTER_CAP: number;    // ...and per hidden passage
+export const PASSAGE_MONSTER_CAP: number;    // ...and per hidden wing (re-exported from wings.ts)
+export const PASSAGE_MONSTER_BUDGET: number; // ...and across all of a floor's wings
+export const WARREN_MARGIN: number;          // rock around the maze the wings and warrens are dug from (= WING_MARGIN)
 /** Every tile of every hidden passage on the floor, flattened. */
 export function passageTilesOf(level: LevelData): Vec[];
 ```
@@ -134,40 +136,43 @@ Requirements:
   a floor than either needs. Kinds come off a shuffle of `SHRINE_KINDS`, so a
   floor rarely rolls the same one twice. Never generated on boss or shop floors.
   Recorded in `LevelData.shrines`.
-- Hidden passages are dug outside the maze too, in the same margin as the
-  warrens and before them, but they hug it. Two shapes: a **network**
-  (`kind: 'shortcut'`) is a trunk of corridor at depth 2 behind the maze's
-  outer wall, a second trunk at depth 4, cross-links between them every
-  `LINK_EVERY` tiles so the pair loops, and a neck at every second perimeter
-  cell along it — three to eight mouths, thirty to forty tiles, one per side
-  and at most `NETWORK_MAX` a floor. A **vault** (third floor of a themed set
-  only) runs a neck out to a chamber five tiles across and three deep with a
-  chest in a one-tile niche at the back; that niche is the only dead end the
-  shape has, which is what lets a chest sit there at all. Same `canDig` rule as
-  a warren — the whole shape and everything it touches must be rock, except the
-  anchors it hangs off — so a passage touches the maze only at its mouths,
-  never another passage, and never a warren. Recorded in `LevelData.passages`;
-  every tile of one is `Tile.Floor` and every tile of one is hidden (see
-  `lens.ts`).
-  Dig the vaults first (a vault needs one exact pocket, where a network can
-  slide along a wall until it finds room), then take the *widest* window of
-  anchors each side will accept and narrow only when it will not fit —
-  widest-first is what makes the passages expansive rather than merely
-  numerous, since a floor will otherwise fill up with three-mouth stubs. A
-  window is only dug when the maze walk between its two furthest mouths beats
-  the walk behind the wall by `SHORTCUT_MIN_SAVING`. Everything else on
-  the floor is then planned as if the passages were still rock: the route, the
-  doors, the keys, the shrines and the ordinary monsters all come off a BFS
-  with the passage tiles blocked, and `gateGuards` blocks them too. Validation
-  runs both worlds — with the passages sealed the stairs, every key and every
-  shrine must still be reachable, and with them open every passage tile must
-  be. A lens is a saving and never a requirement.
-  Stock a passage with patrols and the odd guard, never a lurker and never on
-  a mouth: a passage has no room to bait a hunter, and one following the hero
-  out of a wall would give the whole thing away. Put one Cracked Lens in an
-  ordinary (never hidden) chest on the first two floors of each set, and a
-  magic item in each vault's chest — with a chest key of its own, like any
-  other chest.
+- The hidden wing is dug outside the maze too, in the same margin as the
+  warrens and before them, and it takes the deep pocket a warren never needs
+  (`WING_MARGIN`, which `WARREN_MARGIN` now equals). One per floor, by
+  `digWings` in **wings.ts**: a grid of `wingCols(depth)` x `WING_ROWS`
+  rooms, planned in a local frame (`along` the wall, `deep` into the rock)
+  and laid off a perimeter anchor at least four tiles from the start, with a
+  neck through the outer wall for a mouth and, half the time, a second neck
+  from another first-row room for a back door. Same `canDig` rule as a
+  warren — the whole shape and everything it touches must be rock, except
+  the anchors it hangs off — so a wing touches the maze only at its mouths,
+  never a warren. Recorded in `LevelData.passages` as `kind: 'wing'` with its
+  `rooms`, `entry` and `treasure` indices; every tile of one is `Tile.Floor`
+  and every tile of one is hidden (see `lens.ts`).
+  The wing is furnished as it is dug, since all of it is geometry: the
+  treasure chest (a magic item of the floor's level) in a niche off the
+  treasure room, the **seal** on the one corridor tile into that room, and
+  the seal's lock — runes in the other rooms, or an orb in the far room with
+  its cradle on the tile before the seal, or a keystone carved for a relic
+  some shallower floor of this run offered (`relicsBefore`, puzzles.ts;
+  `build` takes the run seed for this). Plus, when the floor rolls them, a
+  relic (`relicOffered`), an altar (from the second set, carved for a boss
+  already fought) and a side chest that may be a mimic. `trimToUsed` shifts
+  all of it along with the tiles (`shiftWingContent`).
+  Everything else on the floor is then planned as if the wing were still
+  rock: the route, the doors, the keys, the shrines and the ordinary monsters
+  all come off a BFS with the passage tiles blocked, and `gateGuards` blocks
+  them too. Validation runs both worlds — with the wing sealed the stairs,
+  every key and every shrine must still be reachable, and with it open every
+  wing tile must be — and then the locks: every seal is a corridor tile, and
+  with the seals shut the treasure room is out of reach while every rune,
+  orb, cradle, relic and altar is not. A lens is loot and never a requirement.
+  Monsters come last (`stockWings`, after the trim): one per room but the
+  entry room, mostly lurkers and guards with `MonsterOpts.wing` (a level over
+  the role, elite half the time, one level over the floor's cap), a guard
+  over the treasure chest, never on a mouth or a seal's doorstep, and no
+  patrol beat through the seal or the treasure room. Put one Cracked Lens in
+  an ordinary (never hidden) chest on the first two floors of each set.
 - No unwinnable gate. Guards never move and heal back to full between attempts,
   so a guard on the only way to the stairs must be beatable or the run is dead.
   After placing monsters, re-roll every guard `gateGuards` reports at the
@@ -180,7 +185,6 @@ Requirements:
 export function floorSet(depth: number): number;    // floors 1-3 are set 0, 4-6 set 1, ...
 export function floorOfSet(depth: number): 1 | 2 | 3;
 export function lensFloor(depth: number): boolean;  // a chest here holds a lens
-export function vaultFloor(depth: number): boolean; // a passage here ends in a vault
 export function lensActive(hero: Hero, depth: number): boolean;
 export const LENS_NAME: string;
 
@@ -218,6 +222,61 @@ Requirements:
 - `passageTiles`/`passageMouths` cache per `LevelData` in a `WeakMap`: they are
   asked once per BFS node while monsters path.
 
+## wings.ts
+```ts
+export const WING_CELL_ALONG: number;  // 7: a room of 3-5 tiles plus rock either side
+export const WING_CELL_DEEP: number;   // 6: a room of 3-4 plus the gap to the next row
+export const WING_ROWS: number;        // 2
+export const WING_MARGIN: number;      // rock the wing needs around the maze
+export const PASSAGE_MONSTER_CAP: number;
+export const PASSAGE_MONSTER_BUDGET: number;
+export function wingCols(depth: number): number;   // 2 to depth 3, 3 to 8, 4 after
+export function canDig(level: LevelData, shape: Vec[], anchors: Vec[]): boolean;
+export function digWings(level: LevelData, core: Rect, depth: number, runSeed: number, rng: Rng, furnish: boolean): Passage[];
+export function stockWings(level: LevelData, depth: number, used: Set<string>, dist: Map<string, number>, rng: Rng, spawn: MonsterOpts, minDist: number): void;
+export function shiftWingContent(level: LevelData, shift: (p: Vec) => void): void;
+export function pocketBeat(level: LevelData, from: Vec, pocket: Set<string>, rng: Rng): Vec[] | null;
+```
+The wing generator (see maze.ts above for what it must produce). Depends on
+`types.ts`, `rng.ts`, `pathfind.ts`, `balance.ts`, `puzzles.ts` and
+`boss.ts` (`bossKindForDepth`, for the altars); never on `maze.ts`, which
+imports it.
+
+## puzzles.ts
+```ts
+export function relicName(kind: RelicKind): string;                 // "Sun Stone"
+export function relicOffered(runSeed: number, depth: number): RelicKind | null; // the relic floor `depth` of this run lays out
+export function relicsBefore(runSeed: number, depth: number): RelicKind[];      // every kind a shallower floor offered
+export const RUNE_GLYPHS: number;                                   // 4 shapes
+export function altarCarving(trophy: BossKind): string;             // "a skull"
+export function sealAt / closedSealAt / sealById / runeAt / orbAt / orbById / socketAt / relicAt / altarAt(...)
+export function pickupAt(level: LevelData, p: Vec): boolean;        // an orb or relic lying on `p`
+```
+Lookups and the small pure rules of the locks, shared by maze.ts, game.ts,
+combat.ts, monsters.ts and the renderer. Depends only on `types.ts` and
+`rng.ts`. `relicOffered` is the contract between floors: a keystone seal on
+floor D may only name a relic that `relicOffered` returned for some floor
+shallower than D of the same run, so the run always laid it out — whether
+the hero picked it up is the hero's business.
+
+## boons.ts
+```ts
+export const BOON_RUNS: number;                       // 3, the run it is earned in included
+export function trophyName(boss: BossKind): string;   // "Necromancer's Skull"
+export function boonForTrophy(boss: BossKind): BoonKind;
+export function boonName(kind: BoonKind): string;
+export function boonDescription(kind: BoonKind): string;
+export function applyBoon(hero: Hero, kind: BoonKind, depth: number): void;
+export function spendBoons(stored: Boon[], hero: Hero): { active: Boon[]; keep: Boon[] };
+export function addBoon(stored: Boon[], kind: BoonKind, runsLeft: number): Boon[];
+```
+`deathless` (necromancer) is `DEATHLESS_HEARTS` extra hearts, `vigor`
+(minotaur) `VIGOR_ATK`/`VIGOR_DEF`, `sight` (angels) a lens for the set the
+hero is in — the first three floors at the start of a run. `spendBoons`
+applies every stored boon with runs left, counts this run off each, and
+returns what the run carries and what to write back. Depends on `types.ts`
+and `lens.ts`.
+
 ## combat.ts
 ```ts
 /** Hero attacks monster. Applies damage, pushes fx/log, handles death (xp/gold/level-up). */
@@ -230,6 +289,9 @@ export function heroAttack(state: GameState, m: Monster, rng: Rng): void;
 export function monsterAttack(state: GameState, m: Monster, rng: Rng): boolean;
 /** The unlit shrine on `p`, or null. Shrines are floor, so nothing else looks them up. */
 export function shrineAt(level: LevelData, p: Vec): Shrine | null;
+/** The orb the hero is carrying, or null; and setting it down on `at` (no-op when empty-handed). */
+export function carriedOrb(state: GameState): Orb | null;
+export function dropOrb(state: GameState, at: Vec): Orb | null;
 /** Append to `state.log`, trimming to the newest LOG_MAX. */
 export function pushLog(state: GameState, text: string): void;
 export const LOG_MAX: number;   // 30
@@ -240,7 +302,8 @@ plenty; it is now read on the help screen's Log tab, after the fact, so lines
 never expire and the newest `LOG_MAX` are kept. `Message.t` is still aged by
 `Game.ageLog` — `pushLog` reads it to tell one event that fired twice in a
 frame (one line) from the same event a minute later (two).
-Heroes never die. When hp would drop to 0: hp is set to ~40% of max, the hero is
+Heroes never die. When hp would drop to 0: any orb in the hero's arms is set
+down where they stand (`dropOrb`), hp is set to ~40% of max, the hero is
 `stun`ned for ~900ms, and moved back along the trail ~4 tiles (walk back through
 the most recently visited trail tiles that are free floor; fall back to any free
 adjacent tile). Push a "Knocked down!" message and a shake effect.
@@ -251,8 +314,10 @@ Out of combat (sinceCombat > 3000ms) hero regains 1 hp every ~600ms.
 /** Advance every monster by dt ms: movement, state changes, attacks (calls monsterAttack). */
 export function updateMonsters(state: GameState, dt: number, rng: Rng): void;
 ```
-Monsters never walk onto: walls, closed doors, other monsters, the hero, keys,
-chests, the exit. Monsters heal 1 hp every ~1.5s once out of combat for 4s. They attack when 4-adjacent to the hero and attackCooldown <= 0.
+Monsters never walk onto: walls, closed doors, closed seals, other monsters,
+the hero, keys, chests, altars, orbs or relics lying on the floor, the exit.
+A closed seal blocks sight as well as steps. A `mimic` moves as a lurker
+does, leashed to the chest it sprang from. Monsters heal 1 hp every ~1.5s once out of combat for 4s. They attack when 4-adjacent to the hero and attackCooldown <= 0.
 Lerp each monster's `rpos` toward `pos` (fast, ~14 tiles/s), decrement hitFlash/lungeT.
 A lurker that gives up the chase (`returning`) holds its give-up spot for
 `LURKER_RETURN_DELAY_MS` (3000ms) — long enough that ducking out of sight and
@@ -292,6 +357,8 @@ scrolling on the canvas (`touch-action: none` in CSS too). Use pointer capture.
 export function saveGame(state: GameState): void;   // localStorage, key "table-maze:save"
 export function loadGame(): GameState | null;       // null if none / corrupt / version mismatch
 export function clearSave(): void;
+export function loadBoons(): Boon[];                // key "table-maze:boons": the one thing that outlives a run
+export function saveBoons(boons: Boon[]): void;
 ```
 
 ## game.ts
@@ -307,6 +374,13 @@ export class Game {
   pointerEnd(): void;
   /** Buy the shop offer the 'shopOffer' popup is showing. No-op if sold out or too dear. */
   buyOffer(offerId: string): void;
+  /** Pay the forge to raise the item in `slot` a level ('shopForge' popup). Same refusals. */
+  buyUpgrade(slot: ItemSlot): void;
+  /** The 'chest' popup's choice: wear the magic item in place of what is worn, or melt it for coins. */
+  takeMagic(): void;
+  sellMagic(): void;
+  /** Lay the trophy down on the altar the 'altar' popup is standing at. */
+  offerTrophy(): void;
   /** Open the help screen (no-op while another popup is up). */
   openHelp(): void;
   /** Close whatever popup is up and let the simulation run again. */
@@ -323,6 +397,34 @@ does: `tick()` skips `updateMonsters` and `tickBoss` while sleeping, so no
 monster steps or swings and no boss clock (spell timer, minion spawns) moves
 while the hero's hearts refill. Only the hero's own drip-heal (`sleep()`) and
 cosmetic timers keep running.
+### The wings (game.ts)
+- `isWalkable` refuses closed seals and altars alongside chests and podiums;
+  `isTarget` allows both, since walking into one is how it is tried.
+- `stepOnce`: a monster is swung at (an orb in the hero's arms is set down
+  first, `dropOrb`); a chest is bumped (a `mimic` chest is sprung instead —
+  gone from `level.chests`, a `mimic` monster from `makeMimic` in its place,
+  `chasing`, the hero engaged, no key spent); an altar is bumped (the popup
+  with the trophy in hand, the carving in the log without); a closed seal is
+  bumped (a keystone seal takes its relic from `hero.relics` and opens; every
+  other seal blinks red and says in the log what it wants).
+- `onEnter`: a rune lights if it is next in its seal's order (all the seal's
+  runes go dark on a wrong one; a lit one is ignored); a relic is taken into
+  `hero.relics`; an orb on the floor is picked up (`hero.carrying`); the
+  cradle of the carried orb's seal takes it and opens the seal; stepping off
+  hidden ground with an orb sends it back to `orb.home`.
+- `openSeal` sets `open = true` with a ring, a shake, a log line and the
+  `seal` sound. Fire, ice and the long sword never reach through a shut one.
+- `winBoss` pushes the boss's kind onto `hero.trophies`. `offerTrophy`
+  spends one, applies the boon to the hero at once (`applyBoon`) and writes
+  it to storage with `BOON_RUNS - 1` runs left (`addBoon` + `saveBoons`).
+- `startRun` reads the stored boons (`loadBoons`, or the list handed to
+  `Game.forTest`), applies them (`spendBoons`), keeps the ones with runs to
+  come, and records the run's set in `state.boons`.
+- A chest holding a magic item equips it into an empty slot at once, but into
+  a filled one only through `takeMagic`; `sellMagic` (and dismissing the
+  popup unanswered) melts it for `magicGold`. `resetToLevel` clears
+  `hero.carrying`: an orb belongs to its wing.
+
 Path building rule (in `pointerAt`): let `tail` = last tile of `state.path`
 (or hero.pos if empty). If `tile` is 4-adjacent to `tail` and is walkable, push
 it. Else if it is walkable and within `bfsPath(level, tail, tile, {maxLen: 8})`,
@@ -382,7 +484,18 @@ a passage is a light coming up, not a switch — which matters more than it
 would otherwise, since that light is the only thing that ever announces a
 passage.
 
-Anything standing on hidden ground (a passage's monsters, a vault's chest) is
+The wing's furniture is drawn in the same pass: runes (dim, or lit with a
+blue wash, plus a row of dots for their place when the seal's hint is
+`pips`), the orb's cradle, relics (with a slow gold ring), the orb (on the
+floor, in the cradle, or held at the hero's shoulder), the seal (a slab with
+the lock carved into its niche — the rune order for a `seal` hint, the relic
+for a keystone, a circle for an orb — or its bare frame once open) and the
+altar (the trophy's art sunk into its face, faint once spent). A mimic chest
+is drawn as the chest it claims to be, with a sub-pixel shiver every few
+seconds for a player who stops to look. The shop's forge is a 2x2 block like
+a podium, dimmed with the podiums once anything is bought.
+
+Anything standing on hidden ground (a wing's monsters, chests and furniture) is
 drawn through `drawBehindWall`, which clips it to the hidden tiles around it
 and skips it entirely outside the lens' reach. Sprites overdraw their tile —
 the ring, the level tag, the guard's shield badge, the hp bar — and a passage
@@ -407,8 +520,9 @@ backlog.
   down. Never give one of these a melody: a tune heard a thousand times a run
   is a tune the player turns off.
 - Everything else means exactly one thing (`chestOpen`, `levelUp`, `stairs`,
-  `crystal`, `lens`, `lensBreak`, `bossWin`...) and must sound identical every
-  time, so it can be learnt by ear.
+  `crystal`, `lens`, `lensBreak`, `bossWin`, `rune`, `runeFail`, `seal`,
+  `orbLift`, `orbSet`, `relic`, `mimic`, `altar`, `forge`...) and must sound
+  identical every time, so it can be learnt by ear.
 
 Nothing in `src/audio/` may import from `src/ui/`, and only `rng.ts` and
 `types.ts` come the other way. All of it is synthesised at runtime: there are
@@ -585,6 +699,8 @@ export function itemStats(item: MagicItem): ItemStats;                     // ev
 export function itemPrice(kind: ItemKind, level: number): number;          // gold
 export function rollShopOffers(depth: number, rng: Rng, owned: Hero['gear']): MagicItem[]; // one per slot, avoid kinds already owned when possible
 export function equip(hero: Hero, item: MagicItem): MagicItem | null;       // applies constant bonuses, removes the old item's, returns the replaced item
+export function upgradeItem(hero: Hero, slot: ItemSlot): MagicItem | null;   // one level on the worn item in `slot` (boss reward and forge alike)
+export function upgradePrice(item: MagicItem): number;                       // the forge's price for that level
 export function hasItem(hero: Hero, kind: ItemKind): MagicItem | null;
 export function spiritSlotBonus(level: number): number;                    // spirit every spirit-slot item carries: 1 + floor(level/3)
 ```
@@ -660,12 +776,18 @@ export function offerCovers(offer: ShopOffer, p: Vec): boolean;  // is `p` one o
 export function offerTiles(offer: ShopOffer): Vec[];             // the four tiles it stands on
 export function offerCenter(offer: ShopOffer): Vec;              // middle of the block, fractional tiles
 export function offerAt(level: LevelData, p: Vec): ShopOffer | null;
+export const FORGE_TILE: Vec;                                    // top-left of the forge, (7, 9)
+export function forgeAt(level: LevelData, p: Vec): ShopForge | null;  // one of its four tiles?
+export function forgeCenter(forge: ShopForge): Vec;
 ```
 Layout: 16 wide x 15 tall tiles, walls around a 14x13 room, start bottom-centre
 (7, 13), exit top-centre (7, 1). Podiums are 2x2 blocks with their top-left at
 (3, 5), (7, 5), (11, 5) — offense / defense / spirit left to right, two clear
 tiles between neighbours so the hero can walk between them. All four tiles of a
-podium are solid; walking into any of them opens the offer popup.
+podium are solid; walking into any of them opens the offer popup. The forge
+is another 2x2 block at (7, 9), under the middle podium: walking into it
+opens the `shopForge` popup, every worn item priced by `upgradePrice`, and
+`Game.buyUpgrade(slot)` is the shop's one purchase as much as `buyOffer` is.
 
 ## render/itemArt.ts (shared pixel art; both canvas and DOM use it)
 ```ts
@@ -951,6 +1073,13 @@ doors / chests, deterministic for (depth, runSeed)):
   says what an effect does but never how long it lasts — that would be two
   clocks for one effect. With nothing running the section explains what
   alcoves are and names the hero's spirit.
+- The Hero tab's "Carried" section lists the lens, an orb in hand, every
+  relic and every trophy; a "Boons" section lists the run's boons with runs
+  left. The chest popup grows two buttons (wear it / melt down) when it holds
+  a magic item for a filled slot, and stops closing on a tap until one is
+  pressed. `ShopForgeModal` lists the worn items with the forge's prices;
+  `AltarModal` asks for the trophy; `BoonModal` says what was granted;
+  `ItemModal` with `upgraded` shows a forged item.
 - `bossIntro`, `bossWon`, `gameOver` are button-dismissed modals (the backdrop
   never closes them). `gameOver` shows the cause and `RunStats`, a "Retry
   this fight" button priced at `retryCost` gold (greyed out and a "Not enough

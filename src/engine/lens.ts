@@ -1,10 +1,11 @@
 /**
  * The Cracked Lens and the hidden passages it is for.
  *
- * A maze floor carries a few **passages**: real corridors dug into the rock,
- * with monsters and sometimes a vault at the end, that the floor does not
+ * Every maze floor hides a **wing**: a small dungeon of rooms dug into the
+ * rock behind the outer wall, with the floor's hardest monsters, a sealed
+ * treasure room and the odd altar (see wings.ts), that the floor does not
  * admit to. Every tile of one is unbroken brick to look at and solid to walk
- * into, so a hero without the lens never knows they are there.
+ * into, so a hero without the lens never knows it is there.
  *
  * The **lens** is found in a chest on the first or second floor of a themed
  * set (see `themeForDepth`). It comes out of the chest already cracked, which
@@ -41,11 +42,6 @@ export function floorOfSet(depth: number): 1 | 2 | 3 {
 /** A lens turns up in a chest on the first two floors of a set, never the third. */
 export function lensFloor(depth: number): boolean {
   return floorOfSet(depth) < 3;
-}
-
-/** Vaults — a passage ending in a chest with a magic item — are the third floor's own. */
-export function vaultFloor(depth: number): boolean {
-  return floorOfSet(depth) === 3;
 }
 
 /** Does this hero hold a lens that still works at this depth? */

@@ -11,6 +11,7 @@ import type { ItemStats } from './items';
 import { heroStats } from './items';
 import { lurkerSightRange } from './balance';
 import { hiddenAt, sameSide } from './lens';
+import { altarAt, closedSealAt, pickupAt } from './puzzles';
 import { timeBubble } from './shrines';
 
 /** Render position catch-up speed, tiles per second. */
@@ -188,10 +189,13 @@ function moveBlocked(state: GameState, m: Monster): (p: Vec) => boolean {
   return (p: Vec): boolean => {
     if (crossesPassageWall(level, m, p)) return true;
     if (closedDoorAt(level, p)) return true;
+    if (closedSealAt(level, p)) return true;
     if (occupiedByOther(level, m, p)) return true;
     if (eq(p, state.hero.pos)) return true;
     if (keyAt(level, p)) return true;
     if (chestAt(level, p)) return true;
+    if (altarAt(level, p)) return true;
+    if (pickupAt(level, p)) return true;
     if (eq(p, level.exit)) return true;
     return false;
   };
@@ -207,8 +211,8 @@ function moveBlockedTo(state: GameState, m: Monster, target: Vec): (p: Vec) => b
 }
 
 /**
- * Line-of-sight blocking: closed doors, other monsters, and the brick between
- * the maze and a hidden passage — a lurker cannot see the hero through a wall
+ * Line-of-sight blocking: closed doors and seals, other monsters, and the
+ * brick between the maze and a hidden passage — a lurker cannot see the hero through a wall
  * it does not know is hollow, and one stationed inside cannot see out.
  */
 function sightBlocked(state: GameState, m: Monster): (p: Vec) => boolean {
@@ -216,6 +220,7 @@ function sightBlocked(state: GameState, m: Monster): (p: Vec) => boolean {
   return (p: Vec): boolean => {
     if (crossesPassageWall(level, m, p)) return true;
     if (closedDoorAt(level, p)) return true;
+    if (closedSealAt(level, p)) return true;
     if (occupiedByOther(level, m, p)) return true;
     return false;
   };
@@ -262,6 +267,7 @@ function chooseStep(state: GameState, m: Monster, stats: ItemStats): Vec | null 
     case 'patrol':
       return patrolStep(state, m, stats);
     case 'lurker':
+    case 'mimic': // sprung, it hunts like a lurker leashed to its chest
       return lurkerStep(state, m, stats);
     case 'minion':
     case 'minotaur':

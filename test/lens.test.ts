@@ -18,16 +18,8 @@ import {
   lensLit,
   lensRevealAt,
   mouthAt,
-  vaultFloor,
 } from '../src/engine/lens';
-import {
-  PASSAGE_MONSTER_BUDGET,
-  PASSAGE_MONSTER_CAP,
-  SHORTCUT_MIN_SAVING,
-  gateGuards,
-  generateLevel,
-  passageTilesOf,
-} from '../src/engine/maze';
+import { gateGuards, generateLevel, passageTilesOf } from '../src/engine/maze';
 import { bfsDistances, floorNeighbors, isFloor } from '../src/engine/pathfind';
 import { generateShopLevel } from '../src/engine/shop';
 import { makeMonster, newHero } from '../src/engine/balance';
@@ -94,7 +86,15 @@ function passageLevel(): LevelData {
     { x: 7, y: 2 },
   ];
   level.passages = [
-    { id: 'pg1', kind: 'shortcut', tiles, mouths: [{ x: 1, y: 2 }, { x: 7, y: 2 }] },
+    {
+      id: 'pg1',
+      kind: 'wing',
+      tiles,
+      mouths: [{ x: 1, y: 2 }, { x: 7, y: 2 }],
+      rooms: [{ x: 1, y: 3, w: 7, h: 1 }],
+      entry: 0,
+      treasure: 0,
+    },
   ];
   return level;
 }
@@ -107,8 +107,7 @@ test('a lens belongs to the three-floor set it was found in', () => {
   assert.deepEqual([1, 2, 3].map(floorSet), [0, 0, 0]);
   assert.deepEqual([4, 5, 6].map(floorSet), [1, 1, 1]);
   assert.deepEqual([1, 2, 3, 4].map(floorOfSet), [1, 2, 3, 1]);
-  // The first two floors of a set hold a lens; the third holds the vault.
-  for (const d of DEPTHS) assert.equal(lensFloor(d), !vaultFloor(d), `depth ${d}`);
+  // The first two floors of a set hold a lens; the third never does.
   assert.deepEqual([1, 2, 3, 4, 5, 6].map(lensFloor), [true, true, false, true, true, false]);
 });
 
@@ -173,27 +172,23 @@ test('hiddenAt and mouthAt read the passage, not the tiles', () => {
 // Generation
 // ---------------------------------------------------------------------------
 
-test('every maze floor hides passages, and they only ever open at their mouths', () => {
+test('every maze floor hides a wing, and it only ever opens at its mouths', () => {
   for (const seed of SEEDS) {
     for (const depth of DEPTHS) {
       const lv = generateLevel(depth, seed, depth);
       const where = `depth ${depth} seed ${seed}`;
       const passages = lv.passages ?? [];
-      assert.ok(passages.length > 0, `${where}: no passages at all`);
+      assert.ok(passages.length > 0, `${where}: no wing at all`);
 
       const hidden = new Set(passageTilesOf(lv).map(key));
       for (const pg of passages) {
-        assert.ok(pg.tiles.length >= 4, `${where}: ${pg.id} is too short to be a passage`);
-        // A vault has one way in. A network has at least three: that is what
-        // makes it a second floor plan rather than a shortcut between two
-        // points, and it is the whole reason the lens is worth carrying.
-        if (pg.kind === 'vault') assert.equal(pg.mouths.length, 1, `${where}: ${pg.id} mouths`);
-        else assert.ok(pg.mouths.length >= 3, `${where}: ${pg.id} has only ${pg.mouths.length} mouths`);
+        assert.equal(pg.kind, 'wing', where);
+        assert.ok(pg.mouths.length >= 1 && pg.mouths.length <= 2, `${where}: ${pg.id} has ${pg.mouths.length} mouths`);
         const inside = new Set(pg.tiles.map(key));
         for (const t of pg.tiles) {
           assert.ok(isFloor(lv, t), `${where}: ${pg.id} has a tile that is not floor`);
-          // The only tiles of a passage that touch anything else are its
-          // mouths: that is what makes the passage a passage.
+          // The only tiles of a wing that touch anything else are its mouths:
+          // that is what makes it a place behind the wall.
           const outside = floorNeighbors(lv, t).filter((nb) => !inside.has(key(nb)));
           const isMouth = pg.mouths.some((m) => m.x === t.x && m.y === t.y);
           if (!isMouth) assert.equal(outside.length, 0, `${where}: ${pg.id} leaks at ${key(t)}`);
@@ -201,19 +196,19 @@ test('every maze floor hides passages, and they only ever open at their mouths',
         }
       }
 
-      // No two passages share a tile, and none of them swallows the stairs,
-      // the start, or a door.
-      assert.equal(hidden.size, passageTilesOf(lv).length, `${where}: passages overlap`);
+      // No two wings share a tile, and none of them swallows the stairs, the
+      // start, a door, a key or a shrine.
+      assert.equal(hidden.size, passageTilesOf(lv).length, `${where}: wings overlap`);
       assert.ok(!hidden.has(key(lv.start)), where);
       assert.ok(!hidden.has(key(lv.exit)), where);
-      for (const d of lv.doors) assert.ok(!hidden.has(key(d.pos)), `${where}: a door in a passage`);
-      for (const k of lv.keys) assert.ok(!hidden.has(key(k.pos)), `${where}: a key in a passage`);
-      for (const sh of lv.shrines ?? []) assert.ok(!hidden.has(key(sh.pos)), `${where}: a shrine in a passage`);
+      for (const d of lv.doors) assert.ok(!hidden.has(key(d.pos)), `${where}: a door in a wing`);
+      for (const k of lv.keys) assert.ok(!hidden.has(key(k.pos)), `${where}: a key in a wing`);
+      for (const sh of lv.shrines ?? []) assert.ok(!hidden.has(key(sh.pos)), `${where}: a shrine in a wing`);
     }
   }
 });
 
-test('a passage is always a saving and never a requirement', () => {
+test('a wing is always a saving and never a requirement', () => {
   for (const seed of SEEDS) {
     for (const depth of DEPTHS) {
       const lv = generateLevel(depth, seed, depth);
@@ -221,7 +216,7 @@ test('a passage is always a saving and never a requirement', () => {
       const hidden = new Set(passageTilesOf(lv).map(key));
       const chests = new Set(lv.chests.map((c) => key(c.pos)));
 
-      // Wall every passage off: the stairs, the keys and the shrines are all
+      // Wall every wing off: the stairs, the keys and the shrines are all
       // still there for a hero who never found a lens.
       const sealed = bfsDistances(lv, lv.start, {
         blocked: (p) => hidden.has(key(p)) || chests.has(key(p)),
@@ -229,108 +224,37 @@ test('a passage is always a saving and never a requirement', () => {
       assert.ok(sealed.has(key(lv.exit)), `${where}: the stairs need a lens`);
       for (const k of lv.keys) assert.ok(sealed.has(key(k.pos)), `${where}: key ${k.id} needs a lens`);
       for (const sh of lv.shrines ?? []) assert.ok(sealed.has(key(sh.pos)), `${where}: ${sh.id} needs a lens`);
-
-      // A network earns its keep: with every passage sealed, the walk through
-      // the maze between its two furthest mouths is meaningfully longer than
-      // the walk behind the wall between the same two. Measured on the route
-      // the passage actually offers, not on how much ground it covers — a
-      // network is big precisely because it opens in several places, and its
-      // size is not what any one journey through it costs.
-      for (const pg of lv.passages ?? []) {
-        if (pg.kind !== 'shortcut') continue;
-        const inside = new Set(pg.tiles.map(key));
-        const ends = [pg.mouths[0], pg.mouths[pg.mouths.length - 1]];
-        const anchors = ends.map((m) => floorNeighbors(lv, m).find((nb) => !hidden.has(key(nb))));
-        const [a, b] = anchors;
-        assert.ok(a && b, `${where}: ${pg.id} has a mouth onto nothing`);
-        const round = bfsDistances(lv, a as Vec, {
-          blocked: (p) => hidden.has(key(p)) || chests.has(key(p)),
-        }).get(key(b as Vec));
-        assert.ok(round !== undefined, `${where}: ${pg.id}'s two ends are not joined at all`);
-        const behind = bfsDistances(lv, ends[0], { blocked: (p) => !inside.has(key(p)) }).get(key(ends[1]));
-        assert.ok(behind !== undefined, `${where}: ${pg.id} does not join its own two mouths`);
-        // +2 for stepping in at one end and out at the other.
-        const saving = (round as number) - ((behind as number) + 2);
-        assert.ok(
-          saving >= SHORTCUT_MIN_SAVING,
-          `${where}: ${pg.id} saves only ${saving} tiles (${round} round, ${behind} through)`,
-        );
-      }
     }
   }
 });
 
-test('vaults are the third floor of a set, and the lens the first two', () => {
+test('the lens is in an ordinary chest on the first two floors of a set, never the third', () => {
   for (const seed of SEEDS) {
     for (const depth of DEPTHS) {
       const lv = generateLevel(depth, seed, depth);
       const where = `depth ${depth} seed ${seed}`;
       const hidden = new Set(passageTilesOf(lv).map(key));
-      const vaults = (lv.passages ?? []).filter((p) => p.kind === 'vault');
-      const magic = lv.chests.filter((c) => c.loot.magic);
-
-      if (vaultFloor(depth)) {
-        assert.ok(vaults.length > 0, `${where}: the last floor of a set has no vault`);
-      } else {
-        assert.equal(vaults.length, 0, `${where}: a vault outside the last floor of a set`);
-      }
-      assert.equal(magic.length, vaults.length, `${where}: one magic chest per vault`);
-      for (const c of magic) {
-        assert.ok(hidden.has(key(c.pos)), `${where}: a magic chest out in the open`);
-        assert.equal(c.loot.magic?.level, depth, where);
-        // Still a chest: solid, in a dead end, and opened with a gold key.
-        assert.equal(floorNeighbors(lv, c.pos).length, 1, `${where}: a vault chest not in a dead end`);
-      }
+      const lenses = lv.chests.filter((c) => c.loot.lens);
+      assert.equal(lenses.length, lensFloor(depth) ? 1 : 0, `${where}: ${lenses.length} lenses`);
+      // A lens is never locked behind the thing it opens.
+      for (const c of lenses) assert.ok(!hidden.has(key(c.pos)), `${where}: the lens is inside a wing`);
       assert.equal(
         lv.keys.filter((k) => k.kind === 'chest').length,
         lv.chests.length,
         `${where}: a chest without a key`,
       );
-
-      const lenses = lv.chests.filter((c) => c.loot.lens);
-      assert.equal(lenses.length, lensFloor(depth) ? 1 : 0, `${where}: ${lenses.length} lenses`);
-      // A lens is never locked behind the thing it opens.
-      for (const c of lenses) assert.ok(!hidden.has(key(c.pos)), `${where}: the lens is inside a passage`);
     }
   }
 });
 
-test('passages hold trash, never a hunter, and never in the doorway', () => {
-  for (const seed of SEEDS) {
-    for (const depth of DEPTHS) {
-      const lv = generateLevel(depth, seed, depth);
-      const where = `depth ${depth} seed ${seed}`;
-      let allHidden = 0;
-      for (const pg of lv.passages ?? []) {
-        const inside = new Set(pg.tiles.map(key));
-        const mine = lv.monsters.filter((m) => inside.has(key(m.pos)));
-        assert.ok(mine.length <= PASSAGE_MONSTER_CAP, `${where}: ${pg.id} is overstocked`);
-        allHidden += mine.length;
-        for (const m of mine) {
-          assert.notEqual(m.kind, 'lurker', `${where}: a hunter in ${pg.id}`);
-          assert.ok(!pg.mouths.some((t) => key(t) === key(m.pos)), `${where}: ${m.id} blocks ${pg.id}`);
-          // A patrol paces the passage and never wanders out of it.
-          for (const t of m.patrolPath ?? []) {
-            assert.ok(inside.has(key(t)), `${where}: ${m.id} paces out of ${pg.id}`);
-          }
-        }
-      }
-      assert.ok(
-        allHidden <= PASSAGE_MONSTER_BUDGET,
-        `${where}: ${allHidden} monsters behind the walls is over the floor's budget`,
-      );
-    }
-  }
-});
-
-test('a passage is never a way around the guard on the stairs', () => {
+test('a wing is never a way around the guard on the stairs', () => {
   for (const seed of SEEDS) {
     for (const depth of DEPTHS) {
       const lv = generateLevel(depth, seed, depth);
       const hidden = new Set(passageTilesOf(lv).map(key));
       for (const g of gateGuards(lv)) {
-        assert.ok(!hidden.has(key(g.pos)), `depth ${depth} seed ${seed}: a gate inside a passage`);
-        // A gate is measured with the passages sealed, so it is still a fight
+        assert.ok(!hidden.has(key(g.pos)), `depth ${depth} seed ${seed}: a gate inside a wing`);
+        // A gate is measured with the wings sealed, so it is still a fight
         // the floor's own level can win.
         assert.ok(g.level <= lv.depth, `depth ${depth} seed ${seed}: gate ${g.id} is over the floor`);
       }

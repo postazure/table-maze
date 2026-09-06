@@ -196,6 +196,9 @@ export function newHero(): Hero {
     tempHpMax: 0,
     buffs: [],
     lens: null,
+    carrying: null,
+    relics: [],
+    trophies: [],
     lungeT: 0,
     sinceCombat: 99999,
   };
@@ -253,7 +256,20 @@ export interface MonsterOpts {
    * generator tests and the balance tables want.
    */
   heroLevel?: number;
+  /**
+   * This monster stocks a hidden wing. Wings are the hard end of a floor: it
+   * takes `WING_LIFT` on top of its role's lift, rolls elite far more often,
+   * and is allowed one level over the cap the rest of the floor respects.
+   * Nothing in a wing is ever on the way to the stairs, so nothing in one has
+   * to be beatable.
+   */
+  wing?: boolean;
 }
+
+/** Levels a wing monster sits above what its role would be out in the maze. */
+export const WING_LIFT = 1;
+/** How often a wing monster rolls elite, against the maze's one in five. */
+const WING_ELITE_CHANCE = 0.5;
 
 /**
  * How far above the hero a freshly spawned monster may sit.
@@ -297,10 +313,12 @@ export function makeMonster(
   // two above. From the third floor down, a few monsters roll one level higher
   // to stand out; the first two floors are read-the-controls floors and never
   // do. A gate takes neither: see MonsterOpts.gate.
-  const lift = kind === 'patrol' ? 0 : kind === 'guard' ? 1 : 2;
-  const elite = depthN >= ELITE_FROM_DEPTH && rng.chance(0.2);
-  // The lift is what the floor wants; the cap is what the hero can take.
-  const cap = monsterLevelCap(depthN, opts.heroLevel);
+  const roleLift = kind === 'patrol' ? 0 : kind === 'guard' ? 1 : 2;
+  const lift = roleLift + (opts.wing ? WING_LIFT : 0);
+  const elite = opts.wing ? rng.chance(WING_ELITE_CHANCE) : depthN >= ELITE_FROM_DEPTH && rng.chance(0.2);
+  // The lift is what the floor wants; the cap is what the hero can take. A
+  // wing is allowed one level more than the floor outside it.
+  const cap = monsterLevelCap(depthN, opts.heroLevel) + (opts.wing ? 1 : 0);
   const level = opts.gate ? depthN : Math.min(depthN + lift + (elite ? 1 : 0), cap);
   const d = level;
 
@@ -396,6 +414,58 @@ export function makeMonster(
     state: 'idle',
     sightRange,
     leash,
+    alive: true,
+    sinceCombat: 99999,
+    poisonMs: 0,
+    poisonDmg: 0,
+    slowMs: 0,
+    frozenMs: 0,
+    hitFlash: 0,
+    lungeT: 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The mimic
+// ---------------------------------------------------------------------------
+
+/** How far a sprung mimic hunts from the chest it was pretending to be. */
+export const MIMIC_LEASH = 10;
+
+/**
+ * The monster a mimic chest turns into when it is touched. Lurker-shaped — it
+ * bites for whole hearts and outlasts a hero at its level — a level over the
+ * wing's own lurkers, and it pays like the treasure it was pretending to be.
+ * `rng` only rolls its purse; everything else is fixed by depth.
+ */
+export function makeMimic(depth: number, rng: Rng, pos: Vec, id: string, opts: MonsterOpts = {}): Monster {
+  const depthN = Math.max(1, Math.floor(depth));
+  const cap = monsterLevelCap(depthN, opts.heroLevel) + 1;
+  const level = Math.min(depthN + 3, cap);
+  const hp = Math.round(levelCurve(HERO_HP_BASE, level) * 1.3);
+  const atk = Math.round(levelCurve(HERO_ATK_BASE, level) * 1.7);
+  return {
+    id,
+    kind: 'mimic',
+    name: 'Mimic',
+    glyph: '📦',
+    pos: { x: pos.x, y: pos.y },
+    rpos: { x: pos.x, y: pos.y },
+    home: { x: pos.x, y: pos.y },
+    hp,
+    maxHp: hp,
+    atk,
+    def: Math.round(levelCurve(HERO_ATK_BASE, level) * 0.2),
+    level,
+    xp: 12 + 5 * level,
+    gold: 10 * depthN + rng.int(5, 10 + 3 * depthN),
+    moveInterval: 300,
+    moveCooldown: 0,
+    attackInterval: 700,
+    attackCooldown: 0,
+    state: 'idle',
+    sightRange: 6,
+    leash: MIMIC_LEASH,
     alive: true,
     sinceCombat: 99999,
     poisonMs: 0,

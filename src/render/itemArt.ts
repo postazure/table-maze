@@ -8,7 +8,7 @@
  * `palette` (char -> hex color).
  */
 
-import type { ItemKind, ItemSlot, ShrineKind } from '../engine/types';
+import type { BoonKind, BossKind, ItemKind, ItemSlot, RelicKind, ShrineKind } from '../engine/types';
 import { ITEM_KINDS } from '../engine/types';
 
 export interface ArtSpec {
@@ -288,6 +288,217 @@ export const PODIUM_ART: ArtSpec = {
  * block: the niche is the middle 8 of 16 sub-pixels each way.
  */
 export const PODIUM_NICHE = { x: 4 / 16, y: 4 / 16, size: 8 / 16 };
+
+/**
+ * The forge as it stands on the shop floor: 16x16 for a 2x2 block, an anvil
+ * on a stone plinth with a coal glow over it. The same block size as a
+ * podium so it reads as furniture of the same shop.
+ */
+export const FORGE_ART: ArtSpec = {
+  rows: [
+    '................',
+    '......OOOO......',
+    '.....OYYYYO.....',
+    '......OOOO......',
+    '..AAAAAAAAAAAA..',
+    '...AAAAAAAAAA...',
+    '.....AAAAAA.....',
+    '......AAAA......',
+    '......AAAA......',
+    '.....AAAAAA.....',
+    '....AAAAAAAA....',
+    '..LLLLLLLLLLLL..',
+    '..PPPPPPPPPPPP..',
+    '..PPPPPPPPPPPP..',
+    '..DDDDDDDDDDDD..',
+    '................',
+  ],
+  palette: { O: '#ff8c3a', Y: '#ffcf5c', A: '#4a4863', L: '#9a97ad', P: '#6b6b7a', D: '#3f3f4d' },
+};
+
+// ---------------------------------------------------------------------------
+// The wings: seals, runes, orbs, relics, altars, trophies and boons.
+// ---------------------------------------------------------------------------
+
+/** The lens' blue, shared by everything a wing's lock is made of. */
+const WING_BLUE = '#8fe3ff';
+const WING_BLUE_DIM = '#4f6f8f';
+
+/** The orb: a glass ball lit from within. On the floor, in the cradle, and over the hero's head. */
+export const ORB_ART: ArtSpec = {
+  rows: ['..BBBB..', '.BLLLBB.', 'BLWWLBBB', 'BLWLLBBB', 'BLLLBBBB', 'BBBBBBDB', '.BBBBDB.', '..DDDD..'],
+  palette: { B: '#5aa9ff', L: '#bfe3ff', W: '#ffffff', D: '#1b3f6b' },
+};
+
+/**
+ * The four rune shapes, indexed by `Rune.glyph`. Drawn on the floor: dim
+ * until stepped on in order, bright once lit. `runeArt` picks the palette.
+ */
+const RUNE_ROWS: string[][] = [
+  ['...R....', '..R.R...', '..R.R...', '.R...R..', '.R...R..', 'R.....R.', 'RRRRRRR.', '........'],
+  ['RRRRRRR.', 'R.....R.', 'R.....R.', 'R.....R.', 'R.....R.', 'R.....R.', 'RRRRRRR.', '........'],
+  ['...R....', '..R.R...', '.R...R..', 'R.....R.', '.R...R..', '..R.R...', '...R....', '........'],
+  ['R.....R.', '.R...R..', '..R.R...', '...R....', '..R.R...', '.R...R..', 'R.....R.', '........'],
+];
+
+export function runeArt(glyph: number, lit: boolean): ArtSpec {
+  const rows = RUNE_ROWS[((glyph % RUNE_ROWS.length) + RUNE_ROWS.length) % RUNE_ROWS.length];
+  return { rows, palette: { R: lit ? WING_BLUE : WING_BLUE_DIM } };
+}
+
+export const RUNE_COUNT = RUNE_ROWS.length;
+
+/**
+ * A sealed door: a slab of stone filling its tile, with a sunk panel the
+ * renderer paints the lock's carving into (`SEAL_NICHE`). Solid until its
+ * lock is worked; open, only the frame is left, sunk into the floor.
+ */
+export const SEAL_ART: ArtSpec = {
+  rows: [
+    'SSSSSSSSSSSSSSSS',
+    'SLLLLLLLLLLLLLLS',
+    'SLPPPPPPPPPPPPLS',
+    'SLPNNNNNNNNNNPLS',
+    'SLPNNNNNNNNNNPLS',
+    'SLPNNNNNNNNNNPLS',
+    'SLPNNNNNNNNNNPLS',
+    'SLPNNNNNNNNNNPLS',
+    'SLPNNNNNNNNNNPLS',
+    'SLPNNNNNNNNNNPLS',
+    'SLPNNNNNNNNNNPLS',
+    'SLPNNNNNNNNNNPLS',
+    'SLPNNNNNNNNNNPLS',
+    'SLPPPPPPPPPPPPLS',
+    'SLLLLLLLLLLLLLLS',
+    'SSSSSSSSSSSSSSSS',
+  ],
+  palette: { S: '#3f3f4d', L: '#9a97ad', P: '#6b6b7a', N: '#1b1b2c' },
+};
+
+/** Where the carving goes inside `SEAL_ART`, as fractions of the tile. */
+export const SEAL_NICHE = { x: 3 / 16, y: 3 / 16, size: 10 / 16 };
+
+/** The open seal: its frame, and nothing in it. */
+export const SEAL_OPEN_ART: ArtSpec = {
+  rows: [
+    'SSSSSSSSSSSSSSSS',
+    'S..............S',
+    'S..............S',
+    'S..............S',
+    'S..............S',
+    'S..............S',
+    'S..............S',
+    'S..............S',
+    'S..............S',
+    'S..............S',
+    'S..............S',
+    'S..............S',
+    'S..............S',
+    'S..............S',
+    'S..............S',
+    'SSSSSSSSSSSSSSSS',
+  ],
+  palette: { S: '#3f3f4d' },
+};
+
+/** The cradle before an orb seal: a ring on the floor the orb settles into. */
+export const SOCKET_ART: ArtSpec = {
+  rows: [
+    '................',
+    '................',
+    '................',
+    '.....PPPPPP.....',
+    '....P......P....',
+    '...P........P...',
+    '...P........P...',
+    '...P........P...',
+    '...P........P...',
+    '...P........P...',
+    '...P........P...',
+    '....P......P....',
+    '.....PPPPPP.....',
+    '................',
+    '................',
+    '................',
+  ],
+  palette: { P: '#9a97ad' },
+};
+
+/** The relics: three keystones, each its own shape, all old gold and stone. */
+export const RELIC_ART: Record<RelicKind, ArtSpec> = {
+  sun: {
+    rows: ['...G....', '.G.GG.G.', '..GYYG..', 'GGYYYYGG', 'GGYYYYGG', '..GYYG..', '.G.GG.G.', '...G....'],
+    palette: { G: '#f5c451', Y: '#fff1b0' },
+  },
+  moon: {
+    rows: ['..SSSS..', '.SSSDD..', 'SSSD....', 'SSSD....', 'SSSD....', 'SSSD....', '.SSSDD..', '..SSSS..'],
+    palette: { S: '#d8e4ff', D: '#6a82a0' },
+  },
+  star: {
+    rows: ['...V....', '..VVV...', '.VVWVV..', 'VVVVVVV.', '.VVVVV..', '..VVV...', '...V....', '........'],
+    palette: { V: '#b98cff', W: '#ffffff' },
+  },
+};
+
+/**
+ * An altar: a stone block with a carving sunk into its face (`ALTAR_NICHE`)
+ * — the trophy it wants, in the trophy's own art, dimmed to read as stone.
+ */
+export const ALTAR_ART: ArtSpec = {
+  rows: [
+    '................',
+    '....LLLLLLLL....',
+    '...LPPPPPPPPL...',
+    '...LPNNNNNNPL...',
+    '...LPNNNNNNPL...',
+    '...LPNNNNNNPL...',
+    '...LPNNNNNNPL...',
+    '...LPNNNNNNPL...',
+    '...LPPPPPPPPL...',
+    '....DDDDDDDD....',
+    '.....PPPPPP.....',
+    '.....PPPPPP.....',
+    '.....PPPPPP.....',
+    '....LLLLLLLL....',
+    '...DDDDDDDDDD...',
+    '................',
+  ],
+  palette: { L: '#9a97ad', P: '#6b6b7a', N: '#16162a', D: '#3f3f4d' },
+};
+
+export const ALTAR_NICHE = { x: 5 / 16, y: 3 / 16, size: 6 / 16 };
+
+/** The trophies, one per boss: what the altar is carved with, and what the hero carries. */
+export const TROPHY_ART: Record<BossKind, ArtSpec> = {
+  necromancer: {
+    rows: ['..WWWW..', '.WWWWWW.', 'WWEWWEWW', 'WWEWWEWW', 'WWWWWWWW', '.WWWWWW.', '..W.W.W.', '..WWWWW.'],
+    palette: { W: '#f0ecff', E: '#141414' },
+  },
+  minotaur: {
+    rows: ['H......H', 'H......H', 'HH....HH', '.HH..HH.', '..HHHH..', '...DD...', '........', '........'],
+    palette: { H: '#e8d9b8', D: '#8a6a2a' },
+  },
+  angels: {
+    rows: ['...T....', '...T....', '..TTT...', '..TTT...', '.TTWTT..', '.TTTTT..', '.TTTTT..', '..TTT...'],
+    palette: { T: '#bfe3ff', W: '#ffffff' },
+  },
+};
+
+/** The boons, for the help screen. */
+export const BOON_ART: Record<BoonKind, ArtSpec> = {
+  deathless: {
+    rows: ['.DD..DD.', 'DPPDDPPD', 'DPPPPPPD', 'DPPPPPPD', '.DPPPPD.', '..DPPD..', '...DD...', '........'],
+    palette: { D: '#2a1a3a', P: '#b98cff' },
+  },
+  vigor: {
+    rows: ['R......R', 'R......R', 'RR....RR', '.RR..RR.', '..RRRR..', '...DD...', '........', '........'],
+    palette: { R: '#e5484d', D: '#7a1f1c' },
+  },
+  sight: {
+    rows: ['........', '..EEEE..', '.EWWWWE.', 'EWWIIWWE', 'EWWIIWWE', '.EWWWWE.', '..EEEE..', '........'],
+    palette: { E: '#5aa9ff', W: '#eafcff', I: '#141414' },
+  },
+};
 
 // ---------------------------------------------------------------------------
 // DOM helper: turn an ArtSpec into a flat list of unit rects a React/SVG

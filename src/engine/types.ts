@@ -80,9 +80,9 @@ export interface Loot {
    */
   lens?: boolean;
   /**
-   * A magic item, the kind the shop sells. Only ever found at the back of a
-   * vault passage on the third floor of a set — the payoff for having gone
-   * looking with the lens.
+   * A magic item, the kind the shop sells. Only ever found in the treasure
+   * room of a hidden wing, behind its seal — the payoff for having gone
+   * looking with the lens and worked the lock.
    */
   magic?: MagicItem;
 }
@@ -92,6 +92,102 @@ export interface Chest {
   pos: Vec;
   opened: boolean;
   loot: Loot;
+  /**
+   * A mimic: not a chest at all, but a monster that looks exactly like one
+   * until the hero touches it. Only ever found in the hidden wings. Bumping it
+   * springs it (see `springMimic` in game.ts): the chest is gone and a
+   * `mimic` monster stands where it was. It needs no key and gives no loot as
+   * a chest; the monster carries the gold instead.
+   */
+  mimic?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Puzzles: what stands between a wing's rooms and its treasure
+// ---------------------------------------------------------------------------
+
+/**
+ * Relics: keystones picked up in the wings of earlier floors, carried for the
+ * rest of the run, and spent on a keystone seal that is carved with the same
+ * shape. Which floors offer one is a deterministic function of the run seed
+ * (see `relicOffered` in puzzles.ts), so a seal only ever asks for a relic
+ * the run actually put somewhere behind the hero — whether they found it is
+ * another matter.
+ */
+export type RelicKind = 'sun' | 'moon' | 'star';
+export const RELIC_KINDS: readonly RelicKind[] = ['sun', 'moon', 'star'];
+
+export interface Relic {
+  id: string;
+  pos: Vec; // floor the hero walks over to pick it up
+  kind: RelicKind;
+  taken: boolean;
+}
+
+/**
+ * A rune on the floor of a wing. Lit by stepping on it, in the order its seal
+ * wants; a wrong step puts every rune of that seal out again.
+ */
+export interface Rune {
+  id: string;
+  pos: Vec;
+  /** Which of the four rune shapes this one shows (index into the art table). */
+  glyph: number;
+  sealId: string;
+  lit: boolean;
+}
+
+/**
+ * How a rune seal tells the player its order:
+ *  - pips: each rune shows its place in the sequence as dots. Obvious.
+ *  - seal: the sequence is carved on the sealed door; go and read it.
+ *  - none: nothing anywhere. Three runes, six orders, and a walk each time.
+ */
+export type RuneHint = 'pips' | 'seal' | 'none';
+
+/**
+ * An orb: something the hero picks up in one room and carries to the cradle
+ * before a sealed door in another. A hero carrying one has both hands full
+ * and sets it down to fight (see `dropOrb` in game.ts). Leaving the wing with
+ * it sends it back to where it was found.
+ */
+export interface Orb {
+  id: string;
+  pos: Vec;
+  /** Where it was first found; where it returns to if it leaves the wing. */
+  home: Vec;
+  sealId: string;
+  state: 'floor' | 'carried' | 'placed';
+}
+
+/** What a seal wants before it opens. */
+export type SealLock =
+  | { kind: 'runes'; hint: RuneHint; order: string[]; lit: number }
+  | { kind: 'orb'; socket: Vec; placed: boolean }
+  | { kind: 'keystone'; relic: RelicKind };
+
+/**
+ * A sealed doorway: the one corridor tile into a wing's treasure room, solid
+ * until its lock is satisfied. Never a door key's business.
+ */
+export interface Seal {
+  id: string;
+  pos: Vec;
+  open: boolean;
+  lock: SealLock;
+}
+
+/**
+ * An altar in a wing, carved for one boss. Bump it carrying that boss's
+ * trophy and the trophy is spent for a boon (see engine/boons.ts) that lasts
+ * the next few runs. Solid, like a chest. Nothing on it says which trophy
+ * beyond the carving.
+ */
+export interface Altar {
+  id: string;
+  pos: Vec;
+  trophy: BossKind;
+  used: boolean;
 }
 
 /**
@@ -193,7 +289,13 @@ export type RosterKind = 'guard' | 'patrol' | 'lurker';
  *                third of max hp. See angels.ts.
  */
 export type BossMonsterKind = 'minion' | 'crystal' | 'boss' | 'minotaur' | 'angel';
-export type MonsterKind = RosterKind | BossMonsterKind;
+/**
+ * The mimic: a chest in a hidden wing that was never a chest. Springs when
+ * bumped and hunts like a lurker, leashed to the wing it was waiting in.
+ * Theme-independent: every dungeon has the same one.
+ */
+export type WingMonsterKind = 'mimic';
+export type MonsterKind = RosterKind | BossMonsterKind | WingMonsterKind;
 /**
  * `closing` is the angels' own: the ring has shut and they are moving in for
  * the kill (angels.ts). Every other kind only ever uses the first three.
@@ -274,30 +376,32 @@ export interface Warren {
 }
 
 /**
- * A passage the floor keeps to itself.
+ * A passage the floor keeps to itself: a **wing** of rooms behind the wall.
  *
  * Every tile of one is real floor in `tiles` — pathfinding, monsters and the
  * renderer all treat it as ground — but it is drawn as unbroken brick and the
  * hero is refused entry unless they carry a lens (see engine/lens.ts).
  *
- * Unlike a warren, a passage is allowed to rejoin the maze somewhere else:
- *  - 'shortcut' has two mouths and cuts across a long way round;
- *  - 'vault' has one, and ends at a chest holding a magic item.
+ * A wing is a small dungeon of its own: a grid of rooms joined by short
+ * corridors, entered through one mouth (sometimes with a second, a back door
+ * further along the wall), with a treasure room at the far end behind a
+ * sealed door (see `Seal`). `rooms` are the room rectangles, `treasure` the
+ * index of the one behind the seal, `entry` the one the mouth opens into.
  *
- * They never *have* to be walked: `validate` in maze.ts wall them all off and
- * checks the stairs are still reachable, so a hero without a lens is never
- * stuck — only slower.
+ * They never *have* to be walked: `validate` in maze.ts walls them all off
+ * and checks the stairs are still reachable, so a hero without a lens is
+ * never stuck — only poorer.
  */
 export interface Passage {
   id: string;
-  kind: 'shortcut' | 'vault';
-  /** Every tile of the passage, mouths included. All hidden. */
+  kind: 'wing';
+  /** Every tile of the wing, mouths included. All hidden. */
   tiles: Vec[];
-  /**
-   * The tiles where the passage touches the maze: two for a shortcut, one for
-   * a vault. These are the seams a lens lights up from outside.
-   */
+  /** The tiles where the wing touches the maze: one, or two with a back door. */
   mouths: Vec[];
+  rooms: Rect[];
+  entry: number;
+  treasure: number;
 }
 
 export interface LevelData {
@@ -338,6 +442,16 @@ export interface LevelData {
    * absent on boss and shop floors.
    */
   shrines?: Shrine[];
+  /**
+   * What the wings hold besides monsters and chests (see engine/wings.ts and
+   * engine/puzzles.ts). All optional, all maze floors only, and every one of
+   * them stands on hidden ground.
+   */
+  seals?: Seal[];
+  runes?: Rune[];
+  orbs?: Orb[];
+  relics?: Relic[];
+  altars?: Altar[];
 }
 
 // ---------------------------------------------------------------------------
@@ -533,9 +647,19 @@ export interface ShopOffer {
   price: number; // gold
 }
 
+/**
+ * The forge in a shop: a 2x2 block like a podium. Walk into it and the hero
+ * may pay to raise one worn magic item a level instead of buying a new one.
+ * It counts as the shop's one purchase, the same as a podium does.
+ */
+export interface ShopForge {
+  pos: Vec;
+}
+
 export interface Shop {
   offers: ShopOffer[];
-  /** Set once anything is bought; the other pedestals go dark. */
+  forge: ShopForge;
+  /** Set once anything is bought (an item or an upgrade); everything else goes dark. */
   bought: boolean;
 }
 
@@ -618,6 +742,30 @@ export interface Hero {
    * open this set's hidden passages and light the way a few tiles at a time.
    */
   lens: Lens | null;
+  /**
+   * The orb the hero is carrying (its id in `LevelData.orbs`), or null. Both
+   * hands are full while it is set: the hero sets it down to swing.
+   */
+  carrying: string | null;
+  /** Relics picked up this run and not yet spent on a keystone seal. */
+  relics: RelicKind[];
+  /** One trophy per boss beaten this run, until an altar takes it. */
+  trophies: BossKind[];
+}
+
+/**
+ * A boon: what an altar hands over for a boss trophy. It outlives the run:
+ * `runsLeft` more runs start with it, and then it breaks. Kept in its own
+ * localStorage slot beside the save (see save.ts), because a save is wiped
+ * when a run ends and a boon is the one thing meant to survive that.
+ */
+export type BoonKind = 'deathless' | 'vigor' | 'sight';
+export const BOON_KINDS: readonly BoonKind[] = ['deathless', 'vigor', 'sight'];
+
+export interface Boon {
+  kind: BoonKind;
+  /** Runs it will still apply to after the current one. 0 = breaks after this run. */
+  runsLeft: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -687,7 +835,16 @@ export type SfxId =
   | 'lensBreak'
   | 'angel'
   | 'bossWin'
-  | 'gameOver';
+  | 'gameOver'
+  | 'rune'
+  | 'runeFail'
+  | 'seal'
+  | 'orbLift'
+  | 'orbSet'
+  | 'relic'
+  | 'mimic'
+  | 'altar'
+  | 'forge';
 
 /** The `SfxId`s that get per-play variation. Everything else is fixed. */
 export const VARIED_SFX: readonly SfxId[] = [
@@ -709,7 +866,12 @@ export interface Message {
 
 /** A blocking popup the UI shows while the simulation is frozen. */
 export type Modal =
-  | { kind: 'chest'; loot: Loot }
+  /**
+   * A chest opened. `choice` is set when the chest held a magic item and the
+   * hero already wears something in its slot: nothing is equipped until the
+   * player says so (`Game.takeMagic()`) or melts it down (`Game.sellMagic()`).
+   */
+  | { kind: 'chest'; loot: Loot; choice: { magic: MagicItem; replaces: MagicItem; sellGold: number } | null }
   /**
    * Standing at a shop pedestal: what the item is, what it does, what it
    * costs. The UI calls `Game.buyOffer(offerId)` or `Game.dismissModal()`.
@@ -728,6 +890,25 @@ export type Modal =
     }
   /** Bought a magic item. `replaced` is the item it pushed out of the slot, if any. */
   | { kind: 'item'; item: MagicItem; replaced: MagicItem | null }
+  /**
+   * Standing at the shop's forge: every worn item and what a level on each
+   * would cost. The UI calls `Game.buyUpgrade(slot)` or `Game.dismissModal()`.
+   */
+  | {
+      kind: 'shopForge';
+      gold: number;
+      offers: { slot: ItemSlot; item: MagicItem; price: number }[];
+      soldOut: boolean;
+    }
+  /** A worn item was raised a level at the forge. */
+  | { kind: 'upgraded'; item: MagicItem }
+  /**
+   * Standing at an altar with the trophy it is carved for. `Game.offerTrophy()`
+   * spends the trophy for the boon; `Game.dismissModal()` keeps it.
+   */
+  | { kind: 'altar'; altarId: string; trophy: BossKind; boon: BoonKind }
+  /** The altar took the trophy. Tap to continue. */
+  | { kind: 'boon'; boon: BoonKind; runsLeft: number }
   /** The help screen: current gear explained in words. Opened from the HUD. */
   | { kind: 'help' }
   /**
@@ -808,6 +989,12 @@ export interface GameState {
    * resurrects a dead run: `saveGame` clears the save instead of writing it.
    */
   over: boolean;
+  /**
+   * The boons this run started under (or picked up at an altar), with how many
+   * runs each has left after this one. Read by the help screen; the effects
+   * themselves were applied to the hero when the run began.
+   */
+  boons: Boon[];
 }
 
 /** JSON-serialisable form of GameState (Set -> array). */
@@ -836,7 +1023,7 @@ export interface Rng {
   chance(p: number): boolean;
 }
 
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 /** Health is measured in quarter-hearts. One heart = 4 hp. */
 export const HEART = 4;
