@@ -1057,49 +1057,67 @@ export function passageTilesOf(level: LevelData): Vec[] {
   return (level.passages ?? []).flatMap((p) => p.tiles);
 }
 
-/** How far out from the maze wall a shortcut runs: one course of brick behind it. */
-const SHORTCUT_DEPTH = 2;
-/** How far apart along the wall a shortcut's two mouths may be, in tiles. */
-const SHORTCUT_MIN_SPAN = 6;
-const SHORTCUT_MAX_SPAN = 16;
 /**
- * A shortcut has to earn the name: the walk it replaces must be this many
- * tiles longer than the passage itself. Anything less is just a second door
- * onto the same corner of the maze.
+ * A network's near trunk runs one course of brick behind the maze's outer
+ * wall; the far trunk runs two courses further out again, and the two are
+ * stitched together at intervals so the whole thing is a ring of corridor
+ * rather than a line.
  */
-const SHORTCUT_MIN_SAVING = 10;
-/** Most shortcuts one floor can carry. */
-const SHORTCUT_MAX = 3;
-/** Depth of a vault's neck, then the chamber, then the niche the chest sits in. */
+const TRUNK_NEAR = 2;
+const TRUNK_FAR = 4;
+/** One cross-link between the trunks every this many tiles along them. */
+const LINK_EVERY = 4;
+/** How many mouths a network opens onto the maze. */
+const NETWORK_MIN_MOUTHS = 3;
+const NETWORK_MAX_MOUTHS = 8;
+/**
+ * A network has to earn its keep: walking between its two furthest mouths
+ * through the maze must be this many tiles longer than walking it behind the
+ * wall. Anything less is just extra doors onto the same corner of the floor.
+ */
+export const SHORTCUT_MIN_SAVING = 10;
+/** Most networks one floor can carry — one per side of the maze, at most. */
+const NETWORK_MAX = 3;
+/** A vault: the neck out, then the chamber, then the niche the chest sits in. */
 const VAULT_NECK = 3;
+/** The chamber is this many tiles either side of the neck, and this many deep. */
+const VAULT_HALF_WIDE = 2;
+const VAULT_DEEP = 3;
 /**
  * One extra monster per this many passage tiles. Deliberately thinner than a
  * warren's: a passage is a way through, and a player who paid for the lens by
  * finding it should be spending the walk on getting somewhere rather than on
  * another three fights.
  */
-const PASSAGE_TILES_PER_MONSTER = 7;
-/** ...and never more than this many in one passage. */
-export const PASSAGE_MONSTER_CAP = 3;
+const PASSAGE_TILES_PER_MONSTER = 9;
+/** ...and never more than this many in one passage... */
+export const PASSAGE_MONSTER_CAP = 4;
+/** ...nor more than this many across all of a floor's passages. */
+export const PASSAGE_MONSTER_BUDGET = 10;
 
 /**
  * Dig this floor's hidden passages.
  *
- * They live in the same margin the warrens do, but they hug it: a shortcut
- * runs one course of brick behind the maze's outer wall, from one perimeter
- * tile to another further along the same side. That is the whole trick — the
- * maze between those two tiles may wind for thirty tiles, and the passage is
- * a dozen.
+ * They live in the same margin the warrens do, but where a warren is a pocket
+ * that leads nowhere, a passage is a way through — so these hug the maze and
+ * open onto it in several places at once.
  *
  * Two shapes:
- *  - **shortcut**: two mouths, a real second route between two parts of the
- *    floor. Never the only route: `validate` walls every passage off and
- *    checks the stairs are still reachable, so a hero with no lens loses time
- *    and nothing else.
- *  - **vault**: one mouth, a neck, a small chamber, and a chest in a niche at
- *    the back holding a magic item. Third floor of a themed set only — by
- *    then a player who found a lens on floor one or two has had it long
- *    enough to know what the seams in the wall mean.
+ *  - **network**: the big one. A trunk of corridor running one course of brick
+ *    behind the maze's outer wall, a second trunk two courses further out, the
+ *    pair stitched together at intervals so the whole thing loops, and a neck
+ *    down to the maze at every second cell along it. Three to eight mouths,
+ *    thirty to forty tiles of ground, and the maze between its two ends may
+ *    wind for a hundred. This is what the lens is *for*: not a shortcut so
+ *    much as a second floor plan laid over the first.
+ *  - **vault**: one mouth, a neck, a chamber five tiles across, and a chest in
+ *    a niche at the back. Third floor of a themed set only — by then a player
+ *    who found a lens on floor one or two has had it long enough to know what
+ *    the walls are hiding.
+ *
+ * Same `canDig` rule as a warren: the whole shape and everything it touches
+ * must be rock, bar the anchors it hangs off. That is what keeps a passage
+ * from brushing the maze anywhere but at a mouth, or running into a warren.
  */
 function digPassages(
   level: LevelData,
@@ -1109,60 +1127,61 @@ function digPassages(
   vaults: boolean,
 ): Passage[] {
   const out: Passage[] = [];
-  const wantShortcuts = Math.min(SHORTCUT_MAX, 1 + Math.floor(depth / 5));
-  const anchors = perimeterAnchors(level, core, rng);
-  // The maze as it stands, with nothing dug: this is the walk a shortcut has
-  // to beat, and it never changes as we dig (passages are all in the margin).
   const dug = new Set<string>();
+  const sides = rng.shuffle(anchorsBySide(level, core));
+
+  // The maze as it stands, with nothing dug: this is the walk a network has to
+  // beat. Passages already dug are blocked out of it, so the second network is
+  // never measured against a walk the first one had already shortened.
   const mazeDist = new Map<string, Map<string, number>>();
   const distFrom = (p: Vec): Map<string, number> => {
     let d = mazeDist.get(key(p));
     if (!d) {
-      // Passages already dug are blocked, so a second shortcut is never
-      // measured against a walk the first one had already shortened.
       d = bfsDistances(level, p, { blocked: (q) => dug.has(key(q)) });
       mazeDist.set(key(p), d);
     }
     return d;
   };
-
-  // Shortcuts: pairs of anchors on the same side of the maze.
-  for (const a of anchors) {
-    if (out.length >= wantShortcuts) break;
-    const partner = anchors.find((b) => pairsWith(a, b, distFrom));
-    if (!partner) continue;
-    const shape = shortcutShape(a.at, partner.at, a.out);
-    if (!shape || !canDig(level, shape, [a.at, partner.at])) continue;
+  const claim = (shape: Vec[]): void => {
     for (const t of shape) {
       level.tiles[t.y][t.x] = Tile.Floor;
       dug.add(key(t));
     }
     mazeDist.clear();
-    out.push({
-      id: `pg${out.length + 1}`,
-      kind: 'shortcut',
-      tiles: shape,
-      mouths: [step(a.at, a.out), step(partner.at, partner.out)],
-    });
+  };
+
+  // Vaults go in before the networks. A vault needs a clear pocket five tiles
+  // across and seven deep and there is only one shape that fits it, where a
+  // network can slide along a wall until it finds room.
+  if (vaults && vaultFloor(depth)) {
+    const want = depth >= 9 ? 2 : 1;
+    let made = 0;
+    for (const side of sides) {
+      if (made >= want) break;
+      for (const at of rng.shuffle(side.anchors.slice())) {
+        const shape = vaultShape(at, side.out);
+        if (!canDig(level, shape, [at])) continue;
+        claim(shape);
+        out.push({
+          id: `pg${out.length + 1}`,
+          kind: 'vault',
+          tiles: shape,
+          mouths: [step(at, side.out)],
+        });
+        made++;
+        break;
+      }
+    }
   }
 
-  // Vaults: one per third-of-a-set floor, two once the dungeon is deep. Never
-  // on a floor generating without chests (the relaxed last-resort build): a
-  // vault with nothing at the back of it is a walk for no reason.
-  if (vaults && vaultFloor(depth)) {
-    const wantVaults = depth >= 9 ? 2 : 1;
-    let made = 0;
-    for (const a of anchors) {
-      if (made >= wantVaults) break;
-      const shape = vaultShape(a.at, a.out);
-      if (!canDig(level, shape, [a.at])) continue;
-      for (const t of shape) {
-        level.tiles[t.y][t.x] = Tile.Floor;
-        dug.add(key(t));
-      }
-      out.push({ id: `pg${out.length + 1}`, kind: 'vault', tiles: shape, mouths: [step(a.at, a.out)] });
-      made++;
-    }
+  // Then one network per side, biggest window of anchors that will fit.
+  const wantNetworks = Math.min(NETWORK_MAX, 1 + Math.floor(depth / 4));
+  for (const side of sides) {
+    if (out.length - (out.filter((p) => p.kind === 'vault').length) >= wantNetworks) break;
+    const shape = fitNetwork(level, side, distFrom, rng);
+    if (!shape) continue;
+    claim(shape.tiles);
+    out.push({ id: `pg${out.length + 1}`, kind: 'shortcut', tiles: shape.tiles, mouths: shape.mouths });
   }
   return out;
 }
@@ -1171,73 +1190,147 @@ function step(p: Vec, dir: Vec, n = 1): Vec {
   return { x: p.x + dir.x * n, y: p.y + dir.y * n };
 }
 
-/**
- * Would these two perimeter tiles make a shortcut worth digging? Same side of
- * the maze, far enough apart along the wall to be two different places, and
- * a walk between them through the maze long enough that going behind the wall
- * actually saves the player something.
- */
-function pairsWith(
-  a: { at: Vec; out: Vec },
-  b: { at: Vec; out: Vec },
-  distFrom: (p: Vec) => Map<string, number>,
-): boolean {
-  if (a === b) return false;
-  if (a.out.x !== b.out.x || a.out.y !== b.out.y) return false;
-  const span = manhattan(a.at, b.at);
-  if (span < SHORTCUT_MIN_SPAN || span > SHORTCUT_MAX_SPAN) return false;
-  const through = distFrom(a.at).get(key(b.at));
-  if (through === undefined) return false;
-  // The passage itself is the two necks plus the run behind the wall.
-  const passageLen = span + 2 * SHORTCUT_DEPTH - 1;
-  return through - passageLen >= SHORTCUT_MIN_SAVING;
+/** One side of the maze: which way it faces, and its perimeter tiles in order. */
+interface Side {
+  out: Vec;
+  anchors: Vec[];
 }
 
 /**
- * The tiles of a shortcut: out through the wall at each end, and a straight
- * run between the two, `SHORTCUT_DEPTH` tiles out — close enough that a single
- * course of brick is all that separates it from the corridors it is cheating.
- * Returns null if the two anchors do not line up on one side.
+ * The maze tiles that sit against its outer wall, grouped by which way that
+ * wall faces and ordered along it. A passage can only be dug from one of
+ * these: anywhere else there is more maze on the other side, not rock.
  */
-function shortcutShape(a: Vec, b: Vec, out: Vec): Vec[] | null {
-  const side = { x: out.y, y: out.x }; // ninety degrees to the way in
-  const along = (p: Vec): number => p.x * side.x + p.y * side.y;
-  const from = along(a);
-  const to = along(b);
-  if (from === to) return null;
-  const dir = to > from ? 1 : -1;
-  const tiles: Vec[] = [];
-  for (let d = 1; d <= SHORTCUT_DEPTH; d++) tiles.push(step(a, out, d));
-  const runStart = step(a, out, SHORTCUT_DEPTH);
-  for (let i = 1; i <= Math.abs(to - from); i++) {
-    tiles.push({ x: runStart.x + side.x * dir * i, y: runStart.y + side.y * dir * i });
+function anchorsBySide(level: LevelData, core: Rect): Side[] {
+  const sides: Side[] = [
+    { out: { x: 0, y: -1 }, anchors: [] },
+    { out: { x: 0, y: 1 }, anchors: [] },
+    { out: { x: -1, y: 0 }, anchors: [] },
+    { out: { x: 1, y: 0 }, anchors: [] },
+  ];
+  const push = (i: number, at: Vec) => {
+    if (!isFloor(level, at)) return;
+    if (eq(at, level.start) || eq(at, level.exit)) return;
+    sides[i].anchors.push(at);
+  };
+  for (let x = core.x + 1; x < core.x + core.w - 1; x += 2) {
+    push(0, { x, y: core.y + 1 });
+    push(1, { x, y: core.y + core.h - 2 });
   }
-  for (let d = SHORTCUT_DEPTH - 1; d >= 1; d--) tiles.push(step(b, out, d));
-  // The run's far end and b's neck meet at depth SHORTCUT_DEPTH; drop the
-  // duplicate so `tiles` stays a set.
-  const seen = new Set<string>();
-  return tiles.filter((t) => {
-    const k = key(t);
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+  for (let y = core.y + 1; y < core.y + core.h - 1; y += 2) {
+    push(2, { x: core.x + 1, y });
+    push(3, { x: core.x + core.w - 2, y });
+  }
+  return sides.filter((s) => s.anchors.length >= NETWORK_MIN_MOUTHS);
 }
 
 /**
- * The tiles of a vault: a neck through the wall, a chamber three tiles wide
- * and two deep, and a one-tile niche off the back of it. The niche is where
- * the chest goes — chests are solid, so they may only ever sit in a dead end.
+ * The largest network this side will take: try the widest window of anchors
+ * first and narrow until one both fits the rock and beats the maze.
+ *
+ * Widest-first is what makes the passages expansive rather than merely
+ * numerous — a floor would happily fill up with three-mouth stubs otherwise,
+ * and three stubs are not the same thing at all as one corridor running the
+ * length of a wall.
+ */
+function fitNetwork(
+  level: LevelData,
+  side: Side,
+  distFrom: (p: Vec) => Map<string, number>,
+  rng: Rng,
+): { tiles: Vec[]; mouths: Vec[] } | null {
+  const n = side.anchors.length;
+  for (let k = Math.min(NETWORK_MAX_MOUTHS, n); k >= NETWORK_MIN_MOUTHS; k--) {
+    const starts = rng.shuffle(Array.from({ length: n - k + 1 }, (_, i) => i));
+    for (const i of starts) {
+      const window = side.anchors.slice(i, i + k);
+      if (!worthDigging(window, distFrom)) continue;
+      const shape = networkShape(window, side.out);
+      if (!shape || !canDig(level, shape.tiles, window)) continue;
+      return shape;
+    }
+  }
+  return null;
+}
+
+/**
+ * Is the walk between this window's two far ends long enough through the maze
+ * to be worth a corridor behind it? Only the extremes are asked: every mouth
+ * in between shortens some other walk too, and if the ends are worth it the
+ * middle always is.
+ */
+function worthDigging(window: Vec[], distFrom: (p: Vec) => Map<string, number>): boolean {
+  const a = window[0];
+  const b = window[window.length - 1];
+  const through = distFrom(a).get(key(b));
+  if (through === undefined) return false;
+  // Down one neck, along the near trunk, back up the other: the walk the
+  // passage actually offers between those two mouths.
+  const behind = manhattan(a, b) + 2 * TRUNK_NEAR;
+  return through - behind >= SHORTCUT_MIN_SAVING;
+}
+
+/**
+ * The tiles of a network hung off `window` (perimeter tiles in order along one
+ * side, two apart) facing `out`:
+ *
+ *   maze  ####A########B########C####     <- the outer wall, A/B/C the anchors
+ *   d=1       |        |        |         <- a neck at every anchor
+ *   d=2   ====+========+========+====     <- the near trunk
+ *   d=3       |                 |         <- cross-links, every LINK_EVERY
+ *   d=4   ====+=================+====     <- the far trunk
+ *
+ * The two trunks and the links between them make the whole thing a ring, so a
+ * hero inside can go around a monster instead of only past it — the same
+ * reason the warrens loop.
+ */
+function networkShape(window: Vec[], out: Vec): { tiles: Vec[]; mouths: Vec[] } | null {
+  const a0 = window[0];
+  const last = window[window.length - 1];
+  const span = manhattan(a0, last);
+  if (span <= 0) return null;
+  const dir = { x: Math.sign(last.x - a0.x), y: Math.sign(last.y - a0.y) };
+  const tile = (along: number, deep: number): Vec => ({
+    x: a0.x + dir.x * along + out.x * deep,
+    y: a0.y + dir.y * along + out.y * deep,
+  });
+
+  const tiles: Vec[] = [];
+  const mouths: Vec[] = [];
+  // A neck at every anchor: these are the tiles that touch the maze, so these
+  // are the mouths.
+  for (let j = 0; j < window.length; j++) {
+    const neck = tile(2 * j, 1);
+    tiles.push(neck);
+    mouths.push({ x: neck.x, y: neck.y });
+  }
+  for (let i = 0; i <= span; i++) tiles.push(tile(i, TRUNK_NEAR));
+  for (let i = 0; i <= span; i++) tiles.push(tile(i, TRUNK_FAR));
+  // Links at both ends and at intervals between, never two in a row (adjacent
+  // links would open the gap between the trunks into one wide room).
+  const links = new Set<number>([0, span]);
+  for (let i = LINK_EVERY; i < span - 1; i += LINK_EVERY) links.add(i);
+  for (const i of links) tiles.push(tile(i, TRUNK_FAR - 1));
+  return { tiles, mouths };
+}
+
+/**
+ * The tiles of a vault: a neck through the wall, a chamber five tiles across
+ * and three deep, and a one-tile niche off the back of it. The niche is where
+ * the chest goes — chests are solid, so they may only ever sit in a dead end,
+ * and this is the only one the shape has.
  */
 function vaultShape(at: Vec, out: Vec): Vec[] {
   const side = { x: out.y, y: out.x };
   const tiles: Vec[] = [];
   for (let d = 1; d <= VAULT_NECK; d++) tiles.push(step(at, out, d));
-  for (let d = VAULT_NECK + 1; d <= VAULT_NECK + 2; d++) {
+  for (let d = VAULT_NECK + 1; d <= VAULT_NECK + VAULT_DEEP; d++) {
     const centre = step(at, out, d);
-    for (const a of [-1, 0, 1]) tiles.push({ x: centre.x + side.x * a, y: centre.y + side.y * a });
+    for (let a = -VAULT_HALF_WIDE; a <= VAULT_HALF_WIDE; a++) {
+      tiles.push({ x: centre.x + side.x * a, y: centre.y + side.y * a });
+    }
   }
-  tiles.push(step(at, out, VAULT_NECK + 3));
+  tiles.push(step(at, out, VAULT_NECK + VAULT_DEEP + 1));
   return tiles;
 }
 
@@ -1304,9 +1397,14 @@ function stockPassages(
   spawn: MonsterOpts,
 ): void {
   let n = level.monsters.length;
+  let budget = PASSAGE_MONSTER_BUDGET;
   for (const passage of passages) {
     const inside = new Set(passage.tiles.map(key));
-    const want = Math.min(PASSAGE_MONSTER_CAP, Math.floor(passage.tiles.length / PASSAGE_TILES_PER_MONSTER));
+    const want = Math.min(
+      budget,
+      PASSAGE_MONSTER_CAP,
+      Math.floor(passage.tiles.length / PASSAGE_TILES_PER_MONSTER),
+    );
     if (want <= 0) continue;
     // Never a mouth: a guard rooted in the doorway would seal the passage off
     // from the outside, and the hero would never know why the seam went cold.
@@ -1332,6 +1430,7 @@ function stockPassages(
       claimed.add(key(spot));
       used.add(key(spot));
       level.monsters.push(m);
+      budget--;
     }
   }
 }
@@ -1481,7 +1580,9 @@ function validate(level: LevelData): boolean {
     if (!passage.mouths.length) return false;
     for (const m of passage.mouths) if (!inside.has(key(m))) return false;
     if (passage.kind === 'vault' && passage.mouths.length !== 1) return false;
-    if (passage.kind === 'shortcut' && passage.mouths.length !== 2) return false;
+    // A network opens onto the maze in three places or more; that is what
+    // makes it a second floor plan rather than a shortcut between two points.
+    if (passage.kind === 'shortcut' && passage.mouths.length < NETWORK_MIN_MOUTHS) return false;
     for (const t of passage.tiles) {
       if (!isFloor(level, t)) return false;
       if (!lensed.has(key(t)) && !chestTiles.has(key(t))) return false;

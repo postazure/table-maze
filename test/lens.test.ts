@@ -20,7 +20,14 @@ import {
   mouthAt,
   vaultFloor,
 } from '../src/engine/lens';
-import { PASSAGE_MONSTER_CAP, gateGuards, generateLevel, passageTilesOf } from '../src/engine/maze';
+import {
+  PASSAGE_MONSTER_BUDGET,
+  PASSAGE_MONSTER_CAP,
+  SHORTCUT_MIN_SAVING,
+  gateGuards,
+  generateLevel,
+  passageTilesOf,
+} from '../src/engine/maze';
 import { bfsDistances, floorNeighbors, isFloor } from '../src/engine/pathfind';
 import { generateShopLevel } from '../src/engine/shop';
 import { makeMonster, newHero } from '../src/engine/balance';
@@ -177,7 +184,11 @@ test('every maze floor hides passages, and they only ever open at their mouths',
       const hidden = new Set(passageTilesOf(lv).map(key));
       for (const pg of passages) {
         assert.ok(pg.tiles.length >= 4, `${where}: ${pg.id} is too short to be a passage`);
-        assert.equal(pg.mouths.length, pg.kind === 'shortcut' ? 2 : 1, `${where}: ${pg.id} mouths`);
+        // A vault has one way in. A network has at least three: that is what
+        // makes it a second floor plan rather than a shortcut between two
+        // points, and it is the whole reason the lens is worth carrying.
+        if (pg.kind === 'vault') assert.equal(pg.mouths.length, 1, `${where}: ${pg.id} mouths`);
+        else assert.ok(pg.mouths.length >= 3, `${where}: ${pg.id} has only ${pg.mouths.length} mouths`);
         const inside = new Set(pg.tiles.map(key));
         for (const t of pg.tiles) {
           assert.ok(isFloor(lv, t), `${where}: ${pg.id} has a tile that is not floor`);
@@ -219,20 +230,30 @@ test('a passage is always a saving and never a requirement', () => {
       for (const k of lv.keys) assert.ok(sealed.has(key(k.pos)), `${where}: key ${k.id} needs a lens`);
       for (const sh of lv.shrines ?? []) assert.ok(sealed.has(key(sh.pos)), `${where}: ${sh.id} needs a lens`);
 
-      // A shortcut earns its name: with every passage sealed, the walk between
-      // its two ends is longer than walking the passage itself.
+      // A network earns its keep: with every passage sealed, the walk through
+      // the maze between its two furthest mouths is meaningfully longer than
+      // the walk behind the wall between the same two. Measured on the route
+      // the passage actually offers, not on how much ground it covers — a
+      // network is big precisely because it opens in several places, and its
+      // size is not what any one journey through it costs.
       for (const pg of lv.passages ?? []) {
         if (pg.kind !== 'shortcut') continue;
-        const ends = pg.mouths.map((m) => floorNeighbors(lv, m).find((nb) => !hidden.has(key(nb))));
-        const [a, b] = ends;
+        const inside = new Set(pg.tiles.map(key));
+        const ends = [pg.mouths[0], pg.mouths[pg.mouths.length - 1]];
+        const anchors = ends.map((m) => floorNeighbors(lv, m).find((nb) => !hidden.has(key(nb))));
+        const [a, b] = anchors;
         assert.ok(a && b, `${where}: ${pg.id} has a mouth onto nothing`);
         const round = bfsDistances(lv, a as Vec, {
           blocked: (p) => hidden.has(key(p)) || chests.has(key(p)),
         }).get(key(b as Vec));
         assert.ok(round !== undefined, `${where}: ${pg.id}'s two ends are not joined at all`);
+        const behind = bfsDistances(lv, ends[0], { blocked: (p) => !inside.has(key(p)) }).get(key(ends[1]));
+        assert.ok(behind !== undefined, `${where}: ${pg.id} does not join its own two mouths`);
+        // +2 for stepping in at one end and out at the other.
+        const saving = (round as number) - ((behind as number) + 2);
         assert.ok(
-          (round as number) > pg.tiles.length,
-          `${where}: ${pg.id} saves nothing (${round} tiles the long way, ${pg.tiles.length} through)`,
+          saving >= SHORTCUT_MIN_SAVING,
+          `${where}: ${pg.id} saves only ${saving} tiles (${round} round, ${behind} through)`,
         );
       }
     }
@@ -279,10 +300,12 @@ test('passages hold trash, never a hunter, and never in the doorway', () => {
     for (const depth of DEPTHS) {
       const lv = generateLevel(depth, seed, depth);
       const where = `depth ${depth} seed ${seed}`;
+      let allHidden = 0;
       for (const pg of lv.passages ?? []) {
         const inside = new Set(pg.tiles.map(key));
         const mine = lv.monsters.filter((m) => inside.has(key(m.pos)));
         assert.ok(mine.length <= PASSAGE_MONSTER_CAP, `${where}: ${pg.id} is overstocked`);
+        allHidden += mine.length;
         for (const m of mine) {
           assert.notEqual(m.kind, 'lurker', `${where}: a hunter in ${pg.id}`);
           assert.ok(!pg.mouths.some((t) => key(t) === key(m.pos)), `${where}: ${m.id} blocks ${pg.id}`);
@@ -292,6 +315,10 @@ test('passages hold trash, never a hunter, and never in the doorway', () => {
           }
         }
       }
+      assert.ok(
+        allHidden <= PASSAGE_MONSTER_BUDGET,
+        `${where}: ${allHidden} monsters behind the walls is over the floor's budget`,
+      );
     }
   }
 });

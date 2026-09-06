@@ -574,8 +574,19 @@ test('the three roles still read the same against a hero who keeps pace', () => 
       lurker.spent > 0.5,
       `${where}: a lurker should cost most of the hero's hearts (${lurker.spent.toFixed(2)})`,
     );
+    // "Not a fight to pick early on" is asserted on what it costs, not on
+    // whether it is won. On the early floors the fight goes to the wire: the
+    // hero ends on nothing either way, and which side of the line they land is
+    // decided by a crit or two, so the win rate here is a step function of the
+    // hero's exact attack. Any change to level generation reshuffles which
+    // trinkets a floor rolls, moves attack by one, and swings that rate from
+    // near zero to near one without the balance having moved at all. Hearts
+    // spent says the same thing and holds still.
     if (depth <= 6) {
-      assert.ok(lurker.winRate < 0.5, `${where}: a lurker is not a fight to pick early on`);
+      assert.ok(
+        lurker.spent > 0.8,
+        `${where}: a lurker should take nearly everything the hero has (${lurker.spent.toFixed(2)})`,
+      );
     }
     if (depth >= 10 && depth <= 16) {
       assert.ok(
