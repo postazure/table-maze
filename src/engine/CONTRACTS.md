@@ -531,7 +531,8 @@ Shared types: `RosterKind` (the three maze roles) vs `BossMonsterKind`
 `Monster.invulnerable`, `Monster.roomId`, `LevelData.kind: 'boss'`,
 `LevelData.boss: BossData` (a union keyed on `BossKind`), `Rect`, `inRect`,
 `BOSS_HIT_FRACTION`, `Modal` kinds `bossIntro | bossWon | gameOver`,
-`RunStats`, `GameState.over`, `stats.bosses`. See types.ts.
+`RunStats`, `GameState.over`, `stats.bosses`, `stats.bossRetries`,
+`bossRetryCost` (balance.ts), `Game.retryBoss()`. See types.ts.
 
 ## Level flow
 Maze depth 1, 2, 3 -> **boss (depth 3)** -> shop (depth 3) -> maze 4, 5, 6 ->
@@ -613,13 +614,33 @@ doors / chests, deterministic for (depth, runSeed)):
   HEART`, `hp += HEART`). On any boss win the hero is healed to full and
   `stats.bosses += 1`.
 - Game over: `gameOver(state, cause)` in combat.ts sets `state.over = true`,
-  clears the path, and sets `modal = { kind:'gameOver', cause, boss, stats }`
-  with a `RunStats` snapshot. In a boss level a knockdown (hp <= 0 after the
-  phoenix feather has had its chance) is a game over instead of a sleep:
-  minotaur -> "The Minotaur caught you.", angel -> "You were turned to stone.",
-  anything else -> "The skeletons wore you down." `Game.dismissModal()` on a
-  `gameOver` modal starts a new run. `saveGame` clears the save instead of
-  writing when `state.over`; `loadGame` returns null for an `over` save.
+  clears the path, and sets
+  `modal = { kind:'gameOver', cause, boss, stats, retryCost }` with a
+  `RunStats` snapshot (`stats.retries` = `state.stats.bossRetries` at that
+  moment). In a boss level a knockdown (hp <= 0 after the phoenix feather has
+  had its chance) is a game over instead of a sleep: minotaur -> "The
+  Minotaur caught you.", angel -> "You were turned to stone.", anything else
+  -> "The skeletons wore you down." `Game.dismissModal()` on a `gameOver`
+  modal starts a new run. `saveGame` clears the save instead of writing when
+  `state.over`; `loadGame` returns null for an `over` save.
+- Boss retry: `retryCost = bossRetryCost(state.depth, state.stats.bossRetries)`
+  (balance.ts) — pricier the deeper the run, and pricier again for every
+  retry already bought this run, anywhere, so it never becomes a free
+  checkpoint. `Game.retryBoss()` is the only way to spend it: no-ops off any
+  modal but `gameOver`, or when `hero.gold < retryCost` (the modal's own
+  button is already greyed out then, this is belt and braces). On success:
+  gold spent, `stats.bossRetries += 1`, `state.over = false`, the same
+  `depth`'s boss chamber is regenerated from scratch via `generateBossLevel`
+  (fresh crystals/necromancer/minotaur/angels — never the stale, partly-dead
+  monsters from the lost attempt) and entered exactly like arriving at a
+  fresh level: hero moved to its start, healed to full (unlike the half-heal
+  an ordinary floor transition gives), keys/potions/trail/fx/path/pointer/
+  compass reset, this tick's rng reseeded off a salt that folds in the new
+  retry count (so it does not replay the same random events as the attempt
+  it is repeating), and `modal = { kind:'bossIntro', boss }` — the player
+  reads the briefing again before anything runs, same as any other arrival.
+  `advanceLevel` and `retryBoss` share this reset via a private
+  `resetToLevel(level, salt, healFraction)` on `Game`.
 - Boss hits: a `minotaur` or `angel` attack takes
   `ceil(hero.maxHp * BOSS_HIT_FRACTION)` hp, ignoring defense. The shield
   amulet still eats it. Knockback as for any non-patrol monster.
@@ -743,5 +764,9 @@ doors / chests, deterministic for (depth, runSeed)):
   clocks for one effect. With nothing running the section explains what
   alcoves are and names the hero's spirit.
 - `bossIntro`, `bossWon`, `gameOver` are button-dismissed modals (the backdrop
-  never closes them). `gameOver` shows the cause and `RunStats`, button
-  "New Game". HUD depth badge reads BOSS on boss levels.
+  never closes them). `gameOver` shows the cause and `RunStats`, a "Retry
+  this fight" button priced at `retryCost` gold (greyed out and a "Not enough
+  gold" line when the purse is short — calls `Game.retryBoss()`) above the
+  "New Game" button (`Game.dismissModal()`, always enabled: no confirm, there
+  is nothing left to lose by starting over). HUD depth badge reads BOSS on
+  boss levels.

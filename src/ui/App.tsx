@@ -13,7 +13,7 @@ import { useAudio } from './useAudio';
 import { useGame } from './useGame';
 
 export function App() {
-  const { game, hud, newGame, dismissModal, openHelp, buyOffer } = useGame();
+  const { game, hud, newGame, dismissModal, openHelp, buyOffer, retryBoss } = useGame();
   const { audio, soundOn, toggleSound, sfxVolume, setSfxVolume, musicVolume, setMusicVolume } = useAudio();
   const [volumeOpen, setVolumeOpen] = useState(false);
   return (
@@ -48,7 +48,14 @@ export function App() {
         <BossWonModal boss={hud.modal.boss} upgraded={hud.modal.upgraded} heart={hud.modal.heart} onClose={dismissModal} />
       )}
       {hud.modal?.kind === 'gameOver' && (
-        <GameOverModal cause={hud.modal.cause} boss={hud.modal.boss} stats={hud.modal.stats} onClose={dismissModal} />
+        <GameOverModal
+          cause={hud.modal.cause}
+          boss={hud.modal.boss}
+          stats={hud.modal.stats}
+          retryCost={hud.modal.retryCost}
+          onRetry={retryBoss}
+          onClose={dismissModal}
+        />
       )}
     </div>
   );

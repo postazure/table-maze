@@ -16,6 +16,7 @@ import {
   HERO_ATK_BASE,
   HERO_HP_BASE,
   applyLevelUp,
+  bossRetryCost,
   damage,
   levelCurve,
   levelDims,
@@ -793,4 +794,18 @@ test('chest loot is sane', () => {
   }
   assert.ok(withItem > 100 && withItem < 300, `item rate ${withItem / 400}`);
   assert.ok(withPotion > 0, 'a potion should turn up somewhere in 400 rolls');
+});
+
+test('a boss retry costs more the deeper the run and the more you lean on it', () => {
+  // Deeper floor, same retry count: pricier.
+  assert.ok(bossRetryCost(6, 0) > bossRetryCost(3, 0));
+  // Same floor, more retries already bought this run: pricier still.
+  assert.ok(bossRetryCost(3, 1) > bossRetryCost(3, 0));
+  assert.ok(bossRetryCost(3, 3) > bossRetryCost(3, 1));
+  // Always a real, round number.
+  for (const [d, n] of [[1, 0], [3, 2], [12, 5], [20, 10]] as const) {
+    const cost = bossRetryCost(d, n);
+    assert.ok(cost >= 10, `depth ${d} retry ${n}: ${cost}`);
+    assert.equal(cost % 5, 0, `depth ${d} retry ${n}: ${cost} not a multiple of 5`);
+  }
 });

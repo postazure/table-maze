@@ -21,7 +21,7 @@ import type {
   Vec,
 } from './types';
 import { BOSS_HIT_FRACTION, HEART, eq, key, manhattan, parseKey } from './types';
-import { damage, xpShare } from './balance';
+import { bossRetryCost, damage, xpShare } from './balance';
 import { bfsDistances, floorNeighbors, isFloor } from './pathfind';
 import type { ItemStats } from './items';
 import { berserkActive, heroStats } from './items';
@@ -407,6 +407,7 @@ export function gameOver(state: GameState, cause: string): void {
     bosses: state.stats.bosses,
     gold: hero.gold,
     playMs: state.stats.playMs,
+    retries: state.stats.bossRetries,
   };
   state.over = true;
   hero.hp = Math.max(0, hero.hp);
@@ -417,7 +418,8 @@ export function gameOver(state: GameState, cause: string): void {
   pushLog(state, cause);
   pushSfx(state, 'gameOver');
   const boss: BossKind = state.level.boss?.kind ?? 'necromancer';
-  state.modal = { kind: 'gameOver', cause, boss, stats };
+  const retryCost = bossRetryCost(state.depth, state.stats.bossRetries);
+  state.modal = { kind: 'gameOver', cause, boss, stats, retryCost };
 }
 
 /** What finished the hero off, in one sentence, keyed on who landed the blow. */

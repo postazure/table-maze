@@ -16,13 +16,13 @@ import type {
 } from '../src/engine/types';
 import { makeRng } from '../src/engine/rng';
 import { Game } from '../src/engine/game';
-import { LOG_MAX, damageMonster, heroAttack, heroAttackValue, monsterAttack, pushLog, pushSfx } from '../src/engine/combat';
+import { LOG_MAX, damageMonster, gameOver, heroAttack, heroAttackValue, monsterAttack, pushLog, pushSfx } from '../src/engine/combat';
 import { updateMonsters } from '../src/engine/monsters';
 import { clearSave, loadGame, saveGame } from '../src/engine/save';
 import { equip, heroMoveMs, upgradeRandomItem } from '../src/engine/items';
 import { generateShopLevel, offerAt } from '../src/engine/shop';
 import { makeBossMonster } from '../src/engine/boss';
-import { lurkerSightRange, newHero } from '../src/engine/balance';
+import { bossRetryCost, lurkerSightRange, newHero } from '../src/engine/balance';
 import { generateLevel } from '../src/engine/maze';
 import {
   BUFF_URGENT_MS,
@@ -1814,11 +1814,97 @@ test('a minotaur hit takes a third of the hearts and three of them end the run',
   assert.equal(hero.hp, 0, 'left on the floor at zero');
   assert.equal(hero.sleeping, false, 'nobody naps in a boss chamber');
   assert.equal(st.over, true);
-  const modal = st.modal as { kind: string; cause: string; boss: string } | null;
+  const modal = st.modal as { kind: string; cause: string; boss: string; retryCost: number } | null;
   assert.ok(modal);
   assert.equal(modal.kind, 'gameOver');
   assert.equal(modal.cause, 'The Minotaur caught you.');
   assert.equal(modal.boss, 'minotaur');
+  assert.equal(modal.retryCost, bossRetryCost(st.depth, 0), 'priced at this depth, no retries spent yet');
+});
+
+test('retryBoss: paying for another shot heals the hero, refreshes the chamber, and costs gold', () => {
+  const g = Game.forTest(11);
+  const level = mkBossLevel(LONG_CORRIDOR, { kind: 'minotaur', defeated: false });
+  const bull = makeBossMonster('minotaur', 3, { x: 6, y: 1 }, 'minotaur');
+  level.monsters.push(bull);
+  install(g, level, { x: 7, y: 1 });
+  const st = g.state;
+  const hero = st.hero;
+  st.depth = 3;
+  hero.maxHp = 12;
+  hero.hp = 12;
+  hero.def = 99;
+  hero.gold = 1000;
+
+  monsterAttack(st, bull, makeRng(3));
+  monsterAttack(st, bull, makeRng(3));
+  monsterAttack(st, bull, makeRng(3));
+  assert.equal(st.over, true);
+  const cost = (st.modal as { retryCost: number }).retryCost;
+  assert.equal(cost, bossRetryCost(3, 0));
+
+  g.retryBoss();
+  assert.equal(st.over, false, 'the run is back on');
+  assert.equal(hero.gold, 1000 - cost, 'paid in full');
+  assert.equal(st.stats.bossRetries, 1);
+  assert.equal(hero.hp, hero.maxHp, 'a fresh shot means full hearts');
+  assert.deepEqual(hero.pos, st.level.start, 'back at the chamber entrance');
+  assert.equal(st.level.kind, 'boss', 'still a boss chamber');
+  assert.equal(st.level.boss?.defeated, false, 'the fight is on again, not already won');
+  assert.equal(st.modal?.kind, 'bossIntro', 'briefed again before anything runs');
+});
+
+test('retryBoss: refuses without enough gold, and the run stays over', () => {
+  const g = Game.forTest(11);
+  const level = mkBossLevel(LONG_CORRIDOR, { kind: 'minotaur', defeated: false });
+  const bull = makeBossMonster('minotaur', 3, { x: 6, y: 1 }, 'minotaur');
+  level.monsters.push(bull);
+  install(g, level, { x: 7, y: 1 });
+  const st = g.state;
+  const hero = st.hero;
+  st.depth = 3;
+  hero.maxHp = 12;
+  hero.hp = 12;
+  hero.def = 99;
+  hero.gold = 1;
+
+  monsterAttack(st, bull, makeRng(3));
+  monsterAttack(st, bull, makeRng(3));
+  monsterAttack(st, bull, makeRng(3));
+  assert.equal(st.over, true);
+
+  g.retryBoss();
+  assert.equal(st.over, true, 'still over: too poor to buy back in');
+  assert.equal(hero.gold, 1, 'nothing spent');
+  assert.equal(st.stats.bossRetries, 0);
+  assert.equal(st.modal?.kind, 'gameOver', 'the same modal is still up');
+});
+
+test('retryBoss: a second retry this run costs more than the first', () => {
+  const g = Game.forTest(11);
+  const level = mkBossLevel(LONG_CORRIDOR, { kind: 'minotaur', defeated: false });
+  const bull = makeBossMonster('minotaur', 3, { x: 6, y: 1 }, 'minotaur');
+  level.monsters.push(bull);
+  install(g, level, { x: 7, y: 1 });
+  const st = g.state;
+  const hero = st.hero;
+  st.depth = 3;
+  hero.gold = 100000;
+
+  monsterAttack(st, bull, makeRng(3));
+  monsterAttack(st, bull, makeRng(3));
+  monsterAttack(st, bull, makeRng(3));
+  const firstCost = (st.modal as { retryCost: number }).retryCost;
+  g.retryBoss();
+  assert.equal(st.stats.bossRetries, 1);
+
+  // A second death this run (whatever the freshly generated chamber holds —
+  // gameOver only needs the state, not a specific attacker) prices the next
+  // retry one notch higher.
+  gameOver(st, 'test cause');
+  const secondCost = (st.modal as { retryCost: number }).retryCost;
+  assert.equal(secondCost, bossRetryCost(3, 1));
+  assert.ok(secondCost > firstCost, 'leaning on it again costs more');
 });
 
 test('a health potion also saves the hero in a boss chamber', () => {
