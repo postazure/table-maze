@@ -180,7 +180,7 @@ test('necromancer: five crystals down five private corridors', () => {
     assert.equal(boss.spellMs, boss.spellTotalMs, where);
     assert.equal(boss.spawnEveryMs, 3000, where);
     assert.equal(boss.spawnMs, 2500, where);
-    assert.equal(boss.maxMinions, 12, where);
+    assert.equal(boss.maxMinions, 5, where);
     assert.equal(boss.crystalsTotal, 5, where);
 
     const necros = lv.monsters.filter((m) => m.kind === 'boss');

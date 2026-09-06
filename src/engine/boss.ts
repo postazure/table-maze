@@ -271,7 +271,7 @@ const NECRO_SPELL_BASE_MS = 120000;
 const NECRO_SPELL_PER_DEPTH_MS = 3000;
 const NECRO_SPAWN_EVERY_MS = 3000;
 const NECRO_FIRST_SPAWN_MS = 2500;
-const NECRO_MAX_MINIONS = 12;
+const NECRO_MAX_MINIONS = 5;
 /** Corridor length in lattice cells; every cell is two tiles (wall + cell). */
 const NECRO_MIN_CELLS = 10; // 20 tiles
 const NECRO_MAX_CELLS = 20; // 40 tiles
