@@ -7,7 +7,7 @@
 import type { ReactElement } from 'react';
 import type { ItemKind, ItemSlot, ShrineKind } from '../engine/types';
 import { ITEM_KINDS, SHRINE_KINDS } from '../engine/types';
-import { ITEM_ART, SHRINE_ART, SLOT_ART } from '../render/itemArt';
+import { ITEM_ART, LENS_ART, SHRINE_ART, SLOT_ART } from '../render/itemArt';
 
 type Rows = readonly string[];
 type Palette = Readonly<Record<string, string>>;
@@ -21,6 +21,7 @@ type BaseIconName =
   | 'skull'
   | 'heart'
   | 'potion'
+  | 'lens'
   | 'sound'
   | 'soundOff';
 /**
@@ -103,6 +104,7 @@ const BASE_ICONS: Record<BaseIconName, { rows: Rows; palette: Palette }> = {
     rows: ['...DD...', '...DD...', '..DDDD..', '.DGGGGD.', 'DGGGGGGD', 'DGWGGGGD', '.DGGGGD.', '..DDDD..'],
     palette: { D: '#8a5a10', G: '#f5c451', W: '#fff6d0' },
   },
+  lens: LENS_ART,
   skull: {
     rows: ['..WWWW..', '.WWWWWW.', 'WWEWWEWW', 'WWEWWEWW', 'WWWWWWWW', '.WWWWWW.', '..W.W.W.', '..WWWWW.'],
     palette: { W: '#f0ecff', E: '#141414' },

@@ -1,5 +1,6 @@
 :root {
   --bg: #0b0b16;
+  --lens: #8fe3ff;
   --panel: #1a1a2e;
   --panel-2: #22223a;
   --border: #3c3c5c;
@@ -129,6 +130,26 @@ button {
 .hud-badge b {
   color: var(--gold);
   font-weight: normal;
+}
+
+/* The lens badge: a chip that glows faintly, so a floor where the walls have
+   something behind them looks different from one where they do not. */
+.hud-badge-lens {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 5px;
+  border: 2px solid var(--lens);
+  box-shadow: 0 0 6px rgba(143, 227, 255, 0.35);
+  animation: lens-badge-pulse 2.2s steps(8) infinite alternate;
+}
+
+@keyframes lens-badge-pulse {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .hud-btn-newgame {
@@ -516,6 +537,15 @@ button {
     opacity: 0;
     transform: scale(0.5);
   }
+}
+
+/* The name of a find that is not a number: a magic item, or the lens. */
+.chest-label {
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--lens);
+  text-align: center;
+  text-shadow: 2px 2px 0 #050509;
 }
 
 .chest-coins {
@@ -1436,4 +1466,134 @@ button {
 .gameover-stat-value {
   font-size: 12px;
   color: var(--gold);
+}
+
+/* The lens on the help screen's Hero tab: cold, where the gear rows are warm. */
+.help-lens .help-gear-name {
+  color: var(--lens);
+}
+
+/* ---------------------------------------------------------------------------
+   The Lens of Truth shattering, on the way out of a set's shop.
+
+   No button and no backdrop to tap: the world is already frozen and the hero
+   is already on the stairs. It cracks, it falls, and the game moves on.
+   --------------------------------------------------------------------------- */
+
+.lens-backdrop {
+  background: rgba(5, 5, 9, 0.82);
+}
+
+.lens-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.lens-stage {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The glass itself: held, shivering, then gone in one frame. */
+.lens-glass {
+  animation: lens-shiver 550ms steps(4, jump-both) 1;
+}
+
+.lens-glass .pixel-icon {
+  filter: drop-shadow(0 0 8px rgba(143, 227, 255, 0.6));
+}
+
+.lens-broken .lens-glass {
+  opacity: 0;
+}
+
+@keyframes lens-shiver {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-3px, 1px);
+  }
+  50% {
+    transform: translate(3px, -2px);
+  }
+  75% {
+    transform: translate(-2px, 2px);
+  }
+}
+
+/* A burst of light at the break, so the shards read as coming out of it.
+   `jump-both` matters on every animation here: a plain steps() never emits
+   its last keyframe, which would leave the flash and the shards frozen
+   half-faded on screen for the rest of the popup. */
+.lens-flash {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  background: var(--lens);
+  opacity: 0;
+}
+
+.lens-broken .lens-flash {
+  animation: lens-flash 300ms steps(5, jump-both) 1 forwards;
+}
+
+@keyframes lens-flash {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.4);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+
+.lens-shard {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--lens);
+  box-shadow: 2px 2px 0 #2f6f8f;
+  opacity: 0;
+}
+
+.lens-broken .lens-shard {
+  animation: lens-shard-fly 1000ms steps(12, jump-both) var(--shard-delay) forwards;
+}
+
+@keyframes lens-shard-fly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--shard-x), calc(var(--shard-y) + 70px)) rotate(var(--shard-spin)) scale(0.4);
+  }
+}
+
+.lens-caption {
+  font-size: 10px;
+  line-height: 1.8;
+  color: var(--muted);
+  text-align: center;
+  opacity: 0;
+  animation: lens-caption-in 500ms steps(5, jump-both) 700ms forwards;
+}
+
+@keyframes lens-caption-in {
+  to {
+    opacity: 1;
+  }
 }

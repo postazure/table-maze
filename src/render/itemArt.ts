@@ -210,6 +210,29 @@ export const ALCOVE_ART: ArtSpec = {
   palette: { P: '#6b6b7a', L: '#9a97ad', D: '#3f3f4d', N: '#16162a' },
 };
 
+// ---------------------------------------------------------------------------
+// The Lens of Truth — the one thing in the game that is not a stat.
+// ---------------------------------------------------------------------------
+
+/**
+ * A round glass lens in a bright rim, with a gold tab to hold it by. Pale and
+ * cold on purpose: it belongs with the seams it lights up, not with the gold
+ * of the keys and chests it turns up beside.
+ */
+export const LENS_ART: ArtSpec = {
+  rows: [
+    '..RRRR..',
+    '.RGGGGR.',
+    'RGWWGGGR',
+    'RGWGGGGR',
+    'RGGGGGGR',
+    'RGGGGGGR',
+    '.RGGGGR.',
+    '..RRHH..',
+  ],
+  palette: { R: '#8fe3ff', G: '#2f6f8f', W: '#eafcff', H: '#f5c451' },
+};
+
 /** Where the shrine glyph goes inside `ALCOVE_ART`, as fractions of the tile. */
 export const ALCOVE_NICHE = { x: 4 / 16, y: 4 / 16, size: 8 / 16 };
 

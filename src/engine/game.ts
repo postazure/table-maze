@@ -26,6 +26,7 @@ import { themeForDepth } from './themes';
 import { angelPlan, applyLevelUp, newHero, trinketGold } from './balance';
 import { updateMonsters } from './monsters';
 import { angelsAct } from './angels';
+import { LENS_NAME, floorSet, hiddenAt, lensActive } from './lens';
 import {
   GOLD,
   GREEN,
@@ -116,6 +117,8 @@ const BANE_PULSE_MS = 2000;
 const COMPASS_MS = 500;
 /** The necromancer's colour: his channelling ring and his exit. */
 const PURPLE = '#b98cff';
+/** The lens' own colour, used for its pickup text and its last moments. */
+const LENS_COLOR = '#8fe3ff';
 /** ms between the ripples a time-bubble shrine sends out. */
 const TIME_PULSE_MS = 900;
 
@@ -473,10 +476,22 @@ export class Game {
     this.minionSeq = level.monsters.length;
   }
 
+  /**
+   * Does the hero's lens work on this floor? Everything about a hidden passage
+   * — whether the hero may walk into one, whether the renderer lights it —
+   * comes back to this one question.
+   */
+  private canSeeHidden(): boolean {
+    return lensActive(this.state.hero, this.state.depth);
+  }
+
   /** Tiles the hero may walk *through* while path-finding a drag. */
   private isWalkable(p: Vec): boolean {
     const st = this.state;
     if (!isFloor(st.level, p)) return false;
+    // Hidden ground is wall to anyone who cannot see it. With a lens it is
+    // corridor like any other, which is exactly what a lens is for.
+    if (!this.canSeeHidden() && hiddenAt(st.level, p)) return false;
     // Monsters are solid: a drag never routes through one. Walking into a
     // monster is how you start a fight (see stepOnce).
     if (liveMonsterAt(st.level, p)) return false;
@@ -494,6 +509,7 @@ export class Game {
   private isTarget(p: Vec): boolean {
     const st = this.state;
     if (!isFloor(st.level, p)) return false;
+    if (!this.canSeeHidden() && hiddenAt(st.level, p)) return false;
     if (closedDoorAt(st.level, p) && st.hero.keys.door <= 0) return false;
     const chest = chestAt(st.level, p);
     if (chest && chest.opened) return false;
@@ -507,6 +523,14 @@ export class Game {
     if (!next) return;
     if (manhattan(next, hero.pos) !== 1) {
       // Path desynced (knockback etc): drop it, the player can re-drag.
+      st.path.length = 0;
+      return;
+    }
+
+    // Brick is brick. The drag that queued this path was planned against the
+    // lens the hero had at the time, so re-ask here rather than trust it: a
+    // hidden tile is a wall to walk into, not a tile to walk onto.
+    if (!this.canSeeHidden() && hiddenAt(st.level, next)) {
       st.path.length = 0;
       return;
     }
@@ -592,6 +616,13 @@ export class Game {
     }
     hero.keys.chest -= 1;
     chest.opened = true;
+    // A second lens is no more use than a second Rusty Sword: one is all the
+    // hero can look through, and the one they have already covers this set of
+    // floors. It melts down for coins the same way a duplicate trinket does.
+    if (chest.loot.lens && this.canSeeHidden()) {
+      chest.loot.lens = false;
+      chest.loot.gold += trinketGold(st.depth);
+    }
     // Gold charm / xp tome swell the loot itself, so the popup shows what the
     // hero really pockets.
     const stats = heroStats(hero);
@@ -609,6 +640,21 @@ export class Game {
     chest.loot.xp = Math.round(chest.loot.xp * stats.xpMult);
     hero.gold += chest.loot.gold;
     hero.xp += chest.loot.xp;
+    if (chest.loot.lens) {
+      hero.lens = { depth: st.depth, set: floorSet(st.depth) };
+      pushText(st, chest.pos, LENS_NAME.toUpperCase(), LENS_COLOR, 1400);
+      pushLog(st, `Found the ${LENS_NAME}`);
+      pushSfx(st, 'lens');
+    }
+    // A vault chest: a magic item, straight into its slot, whatever was there
+    // pushed out — the same trade the shop makes, paid in walking instead of
+    // gold.
+    const magic = chest.loot.magic;
+    if (magic) {
+      const replaced = equip(hero, magic);
+      const found = `Found the ${itemName(magic.kind)}`;
+      pushLog(st, replaced ? `${found} (replacing the ${itemName(replaced.kind)})` : found);
+    }
     const item = chest.loot.item;
     if (item) {
       if (item.atk) hero.atk += item.atk;
@@ -699,6 +745,12 @@ export class Game {
     if (st.modal.kind === 'gameOver') {
       this.newGame();
       return;
+    }
+    // The shards have finished falling: the lens is gone, and the stairs the
+    // hero was already standing on carry on where they left off.
+    if (st.modal.kind === 'lensShatter') {
+      st.hero.lens = null;
+      pushLog(st, `The ${LENS_NAME} shattered`);
     }
     st.modal = null;
     st.path.length = 0;
@@ -864,6 +916,14 @@ export class Game {
       pushText(st, tile, 'Descending...', GREEN, 1200);
       pushLog(st, 'Stairs down!');
       pushSfx(st, 'stairs');
+      // Walking out of the shop is walking out of this set of floors, and a
+      // lens does not survive the trip. Everything stops while it goes: the
+      // descend clock is already running but a popup freezes the whole world
+      // (see `tick`), so the stairs wait until the last shard has fallen.
+      if (level.kind === 'shop' && hero.lens) {
+        st.modal = { kind: 'lensShatter' };
+        pushSfx(st, 'lensBreak');
+      }
       this.dirty = true;
     }
   }
@@ -1532,6 +1592,8 @@ function reviveState(saved: GameState): GameState {
   if (!hero.keys) hero.keys = { door: 0, chest: 0 };
   if (!Array.isArray(hero.items)) hero.items = [];
   if (!hero.rpos) hero.rpos = { x: hero.pos.x, y: hero.pos.y };
+  // A lens is only a lens while it names the set of floors it works in.
+  if (!hero.lens || typeof hero.lens.set !== 'number') hero.lens = null;
   hero.stun = 0;
   if (typeof hero.sleeping !== 'boolean') hero.sleeping = false;
   hero.hitFlash = 0;

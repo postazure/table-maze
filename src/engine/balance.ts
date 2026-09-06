@@ -195,6 +195,7 @@ export function newHero(): Hero {
     tempHp: 0,
     tempHpMax: 0,
     buffs: [],
+    lens: null,
     lungeT: 0,
     sinceCombat: 99999,
   };

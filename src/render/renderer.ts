@@ -31,6 +31,17 @@ import {
   ALCOVE_NICHE,
 } from './itemArt';
 import { BLINK_MS, SHRINE_COLORS, buffPhase } from '../engine/shrines';
+import {
+  LENS_ALPHA,
+  LENS_CORE,
+  LENS_RADIUS,
+  hiddenAt,
+  lensActive,
+  lensLit,
+  lensRevealAt,
+  passageMouths,
+  passageTiles,
+} from '../engine/lens';
 import { themeById } from '../engine/themes';
 import { MONSTER_CFGS, creatureRows, monsterSpriteKey } from './monsterArt';
 
@@ -85,6 +96,24 @@ const SHRINE_SPENT_ALPHA = 0.45;
  * over one.
  */
 const ALCOVE_SCALE = 0.88;
+
+// Lens of Truth.
+/** The cold glass colour of the lens. Used for the seams over a passage mouth. */
+const LENS_COLOR = '#8fe3ff';
+/** How fast the reveal opens and closes when the hero steps in or out, per second. */
+const LENS_FADE_PER_S = 3.5;
+/** Below this the reveal is not worth a full-viewport composite. */
+const LENS_MIN = 0.02;
+/** A seam in the wall pulses on this period (ms) so it reads as magic, not masonry. */
+const SEAM_PULSE_MS = 1600;
+/**
+ * A wash of the lens' own colour over the ground it opens. Without it a lit
+ * passage is only a slightly darker patch of wall — every theme's floor is
+ * close to its brick — and the player is left squinting. With it the light
+ * reads as light: cold, glassy, and plainly not the way the rest of the map
+ * looks.
+ */
+const LENS_TINT = 'rgba(143, 227, 255, 0.13)';
 
 // Shop podium / price tag.
 const PEDESTAL_DIM_ALPHA = 0.35;
@@ -422,6 +451,31 @@ export class Renderer implements TileMapper {
   private levelH = 1;
   private level: LevelData | null = null;
   private staticCanvas: HTMLCanvasElement | null = null;
+  /**
+   * The same level with its hidden passages painted as floor. Built only on
+   * floors that have any, and blitted over `staticCanvas` through a soft round
+   * hole at the hero's feet while a lens is lit. Two finished pictures and a
+   * mask is far cheaper than deciding, per pixel and per frame, how solid a
+   * given brick currently is.
+   */
+  private revealCanvas: HTMLCanvasElement | null = null;
+  /**
+   * White where the level hides a passage, transparent everywhere else. Both
+   * lens composites are clipped through it, so neither can touch a pixel of
+   * the maze the floor was always honest about.
+   */
+  private hiddenMask: HTMLCanvasElement | null = null;
+  /** Scratch buffer both lens composites are assembled in. */
+  private lensCanvas: HTMLCanvasElement | null = null;
+  /**
+   * How far open the reveal is, 0..1. Eased rather than switched, so stepping
+   * into a passage opens the light instead of popping it on.
+   */
+  private lensGlow = 0;
+  /** ms of wall-clock, only used to pulse the seams over the passage mouths. */
+  private clock = 0;
+  /** This frame's shake offset in screen pixels, so the reveal buffer can match it. */
+  private shake = { x: 0, y: 0 };
 
   private cam = { x: 0, y: 0 };
   private camPx = { x: 0, y: 0 };
@@ -547,22 +601,32 @@ export class Renderer implements TileMapper {
     return { x, y };
   }
 
-  private buildStatic(level: LevelData): void {
+  /**
+   * Paint the whole level into an offscreen canvas at `SUB` pixels per tile.
+   *
+   * `revealHidden` picks which of the two pictures this is: false paints a
+   * passage as unbroken brick, exactly as the floor pretends it is, and true
+   * paints it as the corridor it really is. The brick pattern is a function of
+   * the tile coordinates alone, so the sealed picture has no seam anywhere for
+   * a player to read.
+   */
+  private paintLevel(level: LevelData, revealHidden: boolean): HTMLCanvasElement | null {
     const w = level.width * SUB;
     const h = level.height * SUB;
-    if (!this.staticCanvas) this.staticCanvas = document.createElement('canvas');
-    this.staticCanvas.width = w;
-    this.staticCanvas.height = h;
-    const sctx = this.staticCanvas.getContext('2d');
-    if (!sctx) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const sctx = canvas.getContext('2d');
+    if (!sctx) return null;
     const pal = themeById(level.theme).palette;
     const { broken, rubble } = mouthMasonry(level);
+    const hidden = level.passages?.length ? passageTiles(level) : null;
     const img = sctx.createImageData(w, h);
     for (let ty = 0; ty < level.height; ty++) {
       const row = level.tiles[ty];
       for (let tx = 0; tx < level.width; tx++) {
-        const isWall = row[tx] === Tile.Wall;
         const k = key({ x: tx, y: ty });
+        const isWall = row[tx] === Tile.Wall || (!revealHidden && hidden !== null && hidden.has(k));
         const breakToward = broken.get(k);
         const rubbleToward = rubble.get(k);
         for (let ly = 0; ly < SUB; ly++) {
@@ -624,10 +688,238 @@ export class Renderer implements TileMapper {
       }
     }
     sctx.putImageData(img, 0, 0);
+    return canvas;
+  }
+
+  private buildStatic(level: LevelData): void {
+    this.staticCanvas = this.paintLevel(level, false);
+    // Only floors with something to hide pay for the second picture.
+    const hides = !!level.passages?.length;
+    this.revealCanvas = hides ? this.paintLevel(level, true) : null;
+    this.hiddenMask = hides ? this.paintHiddenMask(level) : null;
+    this.lensGlow = 0;
+  }
+
+  /** One solid block per hidden tile, at the same scale as the level canvases. */
+  private paintHiddenMask(level: LevelData): HTMLCanvasElement | null {
+    const canvas = document.createElement('canvas');
+    canvas.width = level.width * SUB;
+    canvas.height = level.height * SUB;
+    const mctx = canvas.getContext('2d');
+    if (!mctx) return null;
+    mctx.fillStyle = '#fff';
+    for (const k of passageTiles(level)) {
+      const p = parseKey(k);
+      mctx.fillRect(p.x * SUB, p.y * SUB, SUB, SUB);
+    }
+    return canvas;
   }
 
   private inRange(p: Vec, x0: number, x1: number, y0: number, y1: number): boolean {
     return p.x >= x0 && p.x < x1 && p.y >= y0 && p.y < y1;
+  }
+
+  /**
+   * How much of this tile the lens is currently showing, 0..1. Ground the maze
+   * admits to is always 1; hidden ground follows the same falloff the mask
+   * gradient uses, so anything drawn against this number keeps step with the
+   * brick beside it.
+   */
+  private tileReveal(state: GameState, p: Vec): number {
+    if (!hiddenAt(state.level, p)) return 1;
+    if (this.lensGlow <= 0) return 0;
+    const hero = state.hero.rpos;
+    const dist = Math.hypot(p.x - hero.x, p.y - hero.y);
+    return (lensRevealAt(dist) / LENS_ALPHA) * this.lensGlow;
+  }
+
+  /**
+   * The part of the view that has hidden ground in it, in tiles, or null when
+   * there is none. Both lens composites are viewport-sized operations, so the
+   * cheap answer — "the hero is nowhere near a passage, skip the whole thing"
+   * — is the one worth asking first, every frame.
+   */
+  private hiddenViewBox(
+    level: LevelData,
+    x0: number,
+    x1: number,
+    y0: number,
+    y1: number,
+  ): { x0: number; x1: number; y0: number; y1: number } | null {
+    if (!level.passages?.length) return null;
+    const hidden = passageTiles(level);
+    let minX = x1;
+    let minY = y1;
+    let maxX = x0 - 1;
+    let maxY = y0 - 1;
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        if (!hidden.has(`${x},${y}`)) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (maxX < minX) return null;
+    return { x0: minX, x1: maxX + 1, y0: minY, y1: maxY + 1 };
+  }
+
+  /**
+   * Set the scratch buffer up with the camera the main canvas is under, so the
+   * two line up pixel for pixel and nothing shivers against the wall.
+   */
+  private lensScratch(): CanvasRenderingContext2D | null {
+    if (!this.lensCanvas) this.lensCanvas = document.createElement('canvas');
+    const scratch = this.lensCanvas;
+    if (scratch.width !== this.canvas.width || scratch.height !== this.canvas.height) {
+      scratch.width = this.canvas.width;
+      scratch.height = this.canvas.height;
+    }
+    const sctx = scratch.getContext('2d');
+    if (!sctx) return null;
+    sctx.setTransform(1, 0, 0, 1, 0, 0);
+    sctx.globalCompositeOperation = 'source-over';
+    sctx.globalAlpha = 1;
+    sctx.clearRect(0, 0, scratch.width, scratch.height);
+    sctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    sctx.imageSmoothingEnabled = false;
+    sctx.translate(-this.camPx.x + this.shake.x, -this.camPx.y + this.shake.y);
+    return sctx;
+  }
+
+  /** Blit a slice of one of the level-sized canvases into `ctx`, in tile coords. */
+  private blitSlice(
+    ctx: CanvasRenderingContext2D,
+    src: HTMLCanvasElement,
+    box: { x0: number; x1: number; y0: number; y1: number },
+  ): void {
+    const t = this.tile;
+    ctx.drawImage(
+      src,
+      box.x0 * SUB,
+      box.y0 * SUB,
+      (box.x1 - box.x0) * SUB,
+      (box.y1 - box.y0) * SUB,
+      box.x0 * t,
+      box.y0 * t,
+      (box.x1 - box.x0) * t,
+      (box.y1 - box.y0) * t,
+    );
+  }
+
+  /** The lens' disc of light, as a paintable gradient in camera space. */
+  private lensDisc(state: GameState): { grad: CanvasGradient; x: number; y: number; r: number } {
+    const t = this.tile;
+    const cx = (state.hero.rpos.x + 0.5) * t;
+    const cy = (state.hero.rpos.y + 0.5) * t;
+    const r = LENS_RADIUS * t;
+    const a = LENS_ALPHA * this.lensGlow;
+    const grad = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0, `rgba(0,0,0,${a})`);
+    grad.addColorStop(LENS_CORE / LENS_RADIUS, `rgba(0,0,0,${a})`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    return { grad, x: cx, y: cy, r };
+  }
+
+  /** Put the scratch buffer down over the main canvas, camera and all. */
+  private blitScratch(ctx: CanvasRenderingContext2D): void {
+    if (!this.lensCanvas) return;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(this.lensCanvas, 0, 0);
+    ctx.restore();
+  }
+
+  /**
+   * Ground the hero can see through the lens: the "passages are corridors"
+   * picture, clipped to the hidden tiles and then to the disc of light. Drawn
+   * straight after the sealed level, so the floor of a passage is under the
+   * trail and the sprites like any other floor.
+   */
+  private drawReveal(
+    ctx: CanvasRenderingContext2D,
+    state: GameState,
+    box: { x0: number; x1: number; y0: number; y1: number },
+  ): void {
+    const reveal = this.revealCanvas;
+    const mask = this.hiddenMask;
+    if (!reveal || !mask || this.lensGlow <= LENS_MIN) return;
+    const sctx = this.lensScratch();
+    if (!sctx) return;
+    this.blitSlice(sctx, reveal, box);
+    sctx.globalCompositeOperation = 'destination-in';
+    this.blitSlice(sctx, mask, box);
+    const disc = this.lensDisc(state);
+    sctx.fillStyle = disc.grad;
+    sctx.fillRect(disc.x - disc.r, disc.y - disc.r, disc.r * 2, disc.r * 2);
+    // `source-atop` tints what is left in proportion to how much of it is
+    // left, so the wash fades out with the light rather than ending at a rim.
+    sctx.globalCompositeOperation = 'source-atop';
+    sctx.fillStyle = LENS_TINT;
+    sctx.fillRect(disc.x - disc.r, disc.y - disc.r, disc.r * 2, disc.r * 2);
+    this.blitScratch(ctx);
+  }
+
+  /**
+   * The brick, put back in front of everything.
+   *
+   * The sealed picture again, clipped to the hidden tiles and with the lens'
+   * disc subtracted out of it. Where the hero is not looking that is solid
+   * wall over the top of whatever was drawn under it; where they are, it
+   * thins to the sliver of brick that keeps a lit passage from reading like
+   * the rest of the map.
+   */
+  private drawPassageVeil(
+    ctx: CanvasRenderingContext2D,
+    state: GameState,
+    box: { x0: number; x1: number; y0: number; y1: number },
+  ): void {
+    const sealed = this.staticCanvas;
+    const mask = this.hiddenMask;
+    if (!sealed || !mask) return;
+    const sctx = this.lensScratch();
+    if (!sctx) return;
+    this.blitSlice(sctx, sealed, box);
+    sctx.globalCompositeOperation = 'destination-in';
+    this.blitSlice(sctx, mask, box);
+    if (this.lensGlow > LENS_MIN) {
+      const disc = this.lensDisc(state);
+      sctx.globalCompositeOperation = 'destination-out';
+      sctx.fillStyle = disc.grad;
+      sctx.fillRect(disc.x - disc.r, disc.y - disc.r, disc.r * 2, disc.r * 2);
+    }
+    this.blitScratch(ctx);
+  }
+
+  /**
+   * The seam over a passage mouth: the one thing a lens shows you from the
+   * outside. A thin diamond of light in the brick, breathing slowly, that
+   * fades out as the reveal itself opens over the same tile — by the time you
+   * can see the corridor you no longer need to be told it is there.
+   */
+  private drawSeam(ctx: CanvasRenderingContext2D, p: Vec, revealed: number, t: number): void {
+    const fade = 1 - Math.min(1, revealed);
+    if (fade <= 0.02) return;
+    const pulse = 0.55 + 0.45 * Math.sin((this.clock / SEAM_PULSE_MS) * Math.PI * 2);
+    const cx = p.x * t + t / 2;
+    const cy = p.y * t + t / 2;
+    const r = t * 0.3;
+    ctx.save();
+    ctx.globalAlpha = fade * (0.35 + 0.4 * pulse);
+    ctx.strokeStyle = LENS_COLOR;
+    ctx.lineWidth = Math.max(1, Math.round(t * 0.07));
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r * 0.55, cy);
+    ctx.lineTo(cx, cy + r);
+    ctx.lineTo(cx - r * 0.55, cy);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.globalAlpha = fade * (0.18 + 0.22 * pulse);
+    ctx.fillStyle = LENS_COLOR;
+    ctx.fill();
+    ctx.restore();
   }
 
   draw(state: GameState, dt: number): void {
@@ -637,8 +929,20 @@ export class Renderer implements TileMapper {
         ? state.level.boss.spellMs / state.level.boss.spellTotalMs
         : 1;
     // 1. Age & prune effects.
+    this.clock += dt;
     for (const fx of state.fx) fx.t += dt;
     state.fx = state.fx.filter((fx) => fx.t < fx.ttl);
+
+    // The lens: held (seams show) and lit (the reveal is open). The glow eases
+    // both ways so stepping in or out of a passage is a light coming up, not a
+    // switch being thrown.
+    const lensHeld = lensActive(state.hero, state.depth);
+    const lensTarget = lensLit(state.level, state.hero, state.depth) ? 1 : 0;
+    const lensStep = (LENS_FADE_PER_S * dt) / 1000;
+    this.lensGlow =
+      lensTarget > this.lensGlow
+        ? Math.min(lensTarget, this.lensGlow + lensStep)
+        : Math.max(lensTarget, this.lensGlow - lensStep);
 
     const ctx = this.ctx;
     const t = this.tile;
@@ -688,6 +992,8 @@ export class Renderer implements TileMapper {
     }
     shakeX = Math.round(shakeX);
     shakeY = Math.round(shakeY);
+    this.shake.x = shakeX;
+    this.shake.y = shakeY;
 
     // 3. Clear (device pixels), then switch to CSS-pixel space translated
     // by the camera + shake.
@@ -715,6 +1021,13 @@ export class Renderer implements TileMapper {
       ctx.drawImage(this.staticCanvas, sx, sy, sw, sh, startX * t, startY * t, (endX - startX) * t, (endY - startY) * t);
     }
 
+    // The passages, seen through the lens: a soft disc of corridor punched
+    // into the wall around the hero. `hiddenBox` is null on almost every
+    // frame — most of a floor has no passage anywhere near the viewport — and
+    // both lens composites cost nothing at all when it is.
+    const hiddenBox = this.hiddenViewBox(state.level, startX, endX, startY, endY);
+    if (hiddenBox) this.drawReveal(ctx, state, hiddenBox);
+
     // Trail highlight.
     ctx.fillStyle = themeById(state.level.theme).palette.trail;
     for (const k of state.trail) {
@@ -723,7 +1036,10 @@ export class Renderer implements TileMapper {
       ctx.fillRect(p.x * t, p.y * t, t, t);
     }
 
-    // Queued path: line from hero + square dots at tile centers.
+    // Queued path: line from hero + square dots at tile centers. Drawn one
+    // segment at a time so the part of it running through unlit passage fades
+    // out with the brick — a drag into the dark is allowed, but it must not
+    // trace out the shape of a corridor the hero has not walked yet.
     if (state.path.length > 0) {
       ctx.strokeStyle = PATH_LINE_COLOR;
       ctx.lineWidth = Math.max(1, Math.round(t * 0.06));
@@ -803,6 +1119,25 @@ export class Renderer implements TileMapper {
     // Monsters.
     for (const m of state.level.monsters) {
       if (m.alive && this.inRange(m.pos, startX, endX, startY, endY)) this.drawMonster(ctx, m, t);
+    }
+
+    // The wall goes back on. Everything above has been drawn as if the floor
+    // had nothing to hide; this paints the passages' brick over the top of it
+    // again, with a soft hole at the hero's feet where the lens is looking.
+    // Doing it here rather than per-sprite is what keeps a monster standing in
+    // a passage exactly as visible as the floor it is standing on — and it
+    // catches the trail, the drag line and the loot as well, none of which
+    // should be traceable through a wall.
+    if (hiddenBox) this.drawPassageVeil(ctx, state, hiddenBox);
+
+    // Seams last of the wall business: a mouth is a mark *on* the brick, so it
+    // goes over the veil, and fades out as the reveal opens the same tile.
+    if (lensHeld && state.level.passages?.length) {
+      for (const mk of passageMouths(state.level)) {
+        const p = parseKey(mk);
+        if (!this.inRange(p, startX, endX, startY, endY)) continue;
+        this.drawSeam(ctx, p, this.tileReveal(state, p), t);
+      }
     }
 
     // Hero (always near the viewport center).

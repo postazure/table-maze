@@ -23,6 +23,7 @@ import type {
 import { BOSS_HIT_FRACTION, HEART, eq, key, manhattan, parseKey } from './types';
 import { bossRetryCost, damage, xpShare } from './balance';
 import { bfsDistances, floorNeighbors, isFloor } from './pathfind';
+import { hiddenAt } from './lens';
 import type { ItemStats } from './items';
 import { berserkActive, heroStats } from './items';
 import { SHRINE_COLORS, buffAtk, buffDef } from './shrines';
@@ -129,12 +130,22 @@ export function chestAt(level: LevelData, p: Vec): Chest | null {
   return null;
 }
 
-/** Can the hero stand on this tile right now? Keys are fine to stand on; chests are not. */
-export function heroCanStand(level: LevelData, p: Vec): boolean {
+/**
+ * Can the hero stand on this tile right now? Keys are fine to stand on; chests
+ * are not.
+ *
+ * `from` is where the hero is being moved out of, and it settles the one
+ * question a tile alone cannot answer: hidden ground. Nothing may shove or
+ * carry the hero through the wall of a passage in either direction — a hero
+ * with no lens must never wake up inside one, and a hero standing in one is
+ * not knocked back out through solid brick either.
+ */
+export function heroCanStand(level: LevelData, p: Vec, from?: Vec): boolean {
   if (!isFloor(level, p)) return false;
   if (closedDoorAt(level, p)) return false;
   if (liveMonsterAt(level, p)) return false;
   if (chestAt(level, p)) return false;
+  if (hiddenAt(level, p) !== (from ? hiddenAt(level, from) : false)) return false;
   return true;
 }
 
@@ -341,7 +352,7 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): boolean {
   // Patrols are the "slow you down" mob: their hits never shove.
   if (!stats.knockbackImmune && m.kind !== 'patrol' && (away.x !== 0 || away.y !== 0)) {
     const back = { x: hero.pos.x + away.x, y: hero.pos.y + away.y };
-    if (heroCanStand(level, back)) {
+    if (heroCanStand(level, back, hero.pos)) {
       hero.pos = back;
       state.path.length = 0;
       state.trail.add(key(back));
@@ -548,7 +559,7 @@ const RETREAT_MAX_DIST = 16;
  * monster, and off every patrol route (a beat walker would trip over them).
  */
 function isSafeSpot(state: GameState, p: Vec): boolean {
-  if (!heroCanStand(state.level, p)) return false;
+  if (!heroCanStand(state.level, p, state.hero.pos)) return false;
   for (const m of state.level.monsters) {
     if (!m.alive) continue;
     const need = Math.max(SAFE_MONSTER_DIST, m.sightRange + SAFE_SIGHT_MARGIN);
@@ -581,5 +592,5 @@ function retreatTile(state: GameState): Vec | null {
   for (const n of floorNeighbors(level, hero.pos)) {
     if (isSafeSpot(state, n)) return n;
   }
-  return heroCanStand(level, level.start) ? { x: level.start.x, y: level.start.y } : null;
+  return heroCanStand(level, level.start, hero.pos) ? { x: level.start.x, y: level.start.y } : null;
 }
