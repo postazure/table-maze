@@ -10,7 +10,7 @@ import { GREEN, chestAt, closedDoorAt, damageMonster, keyAt, liveMonsterAt, mons
 import type { ItemStats } from './items';
 import { heroStats } from './items';
 import { lurkerSightRange } from './balance';
-import { hiddenAt } from './lens';
+import { hiddenAt, sameSide } from './lens';
 import { timeBubble } from './shrines';
 
 /** Render position catch-up speed, tiles per second. */
@@ -101,6 +101,10 @@ function cooldownFor(state: GameState, m: Monster, stats: ItemStats, base: numbe
  * Angels never reach this: they act from `angelsAct` (angels.ts) instead.
  */
 function willFight(state: GameState, m: Monster): boolean {
+  // A mouth tile is inside the passage and next to the maze at the same time,
+  // so a monster standing on one really is adjacent to a hero out in the
+  // corridor. It is still behind a wall: neither of them can touch the other.
+  if (!sameSide(state.level, m.pos, state.hero.pos)) return false;
   switch (m.kind) {
     case 'guard':
       return m.sinceCombat < GUARD_ENGAGE_MS;

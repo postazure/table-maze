@@ -71,14 +71,17 @@ Play it at **https://postazure.github.io/table-maze/**
     patrols and guards while you learn the controls.
 - Behind the walls of every maze floor are **hidden passages**: real corridors,
   with monsters in them, that the floor draws as unbroken brick. You cannot see
-  one, and you cannot walk into one, without a **Lens of Truth**. That turns up
+  one, and you cannot walk into one, without a **Cracked Lens**. That turns up
   in a chest on the first or second floor of each three-floor theme — no chest
-  is marked, so finding it means opening them. Carry it and the mouths of the
-  floor's passages show themselves: a pale seam in the wall you can walk
-  straight into. Inside, only the few tiles around you come clear, the brick
-  going thin at your feet and back to solid a few paces off, so a passage is
-  something you feel your way along rather than a corridor handed to you on the
-  map. Most of them are shortcuts — unlike a warren, a passage rejoins the maze
+  is marked, so finding it means opening them. It comes out of the chest with a
+  fracture already running across the glass, which is your notice that it is
+  not going to last. Carry it and the wall opens as
+  you walk past a way in: the brick goes thin at your feet and back to solid a
+  few paces off. That is the only sign you ever get. Nothing marks a passage
+  from across the room, so the way to find one is to walk the floor, and a
+  player who took the direct route down will simply have missed them. Inside,
+  only the few tiles around you come clear, so a passage is something you feel
+  your way along rather than a corridor handed to you on the map. Most of them are shortcuts — unlike a warren, a passage rejoins the maze
   somewhere else, and it is always a shorter walk than going round — and on the
   last floor of a theme one of them ends in a vault with a magic item in the
   chest. What is in them is trash: patrols and the odd guard, never a hunter.

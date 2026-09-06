@@ -154,7 +154,7 @@ Requirements:
   be. A lens is a saving and never a requirement.
   Stock a passage with patrols and the odd guard, never a lurker and never on
   a mouth: a passage has no room to bait a hunter, and one following the hero
-  out of a wall would give the whole thing away. Put one Lens of Truth in an
+  out of a wall would give the whole thing away. Put one Cracked Lens in an
   ordinary (never hidden) chest on the first two floors of each set, and a
   magic item in each vault's chest — with a chest key of its own, like any
   other chest.
@@ -199,8 +199,12 @@ Requirements:
   (`Hero.lens.set`), works nowhere else, and is dropped by `dismissModal` when
   the `lensShatter` popup closes on the way out of that set's shop.
 - `lensLit` is true only while the hero stands on hidden ground or one tile
-  from a mouth. Walking a corridor that happens to run alongside a passage
-  shows nothing; the mouth seams are the only thing visible from further off.
+  from a mouth, and it is the *only* thing that ever shows a passage. Nothing
+  marks one from further off — no seam, no glow, no map marker — so a passage
+  is found by walking past its mouth and watching the wall open. Walking a
+  corridor that merely runs alongside one shows nothing. Never add an
+  indicator here: the reward for covering ground is the point, and a floor is
+  meant to keep its passages from a player who took the direct route down.
 - `passageTiles`/`passageMouths` cache per `LevelData` in a `WeakMap`: they are
   asked once per BFS node while monsters path.
 
@@ -358,14 +362,23 @@ no seam anywhere for a player to read. Per frame:
 4. blit the sealed level **again**, clipped to the mask with the same gradient
    subtracted out of it, so the brick lands back in front of everything with a
    soft hole where the hero is looking;
-5. draw the hero, effects and buff pips over the top, and the mouth seams last.
+5. draw the hero, effects and buff pips over the top.
 Doing the brick as one veil rather than per-sprite is what keeps a monster
 standing in a passage exactly as visible as the floor under it, and stops the
 trail or a queued drag from tracing out a corridor the hero has not walked.
 Steps 2 and 4 are skipped entirely when no hidden tile is in view, which is
 almost every frame. The reveal eases in and out (`lensGlow`) so stepping into
-a passage is a light coming up, not a switch. A mouth seam is drawn only while
-the hero holds a lens, and fades out as the reveal opens the same tile.
+a passage is a light coming up, not a switch — which matters more than it
+would otherwise, since that light is the only thing that ever announces a
+passage.
+
+Anything standing on hidden ground (a passage's monsters, a vault's chest) is
+drawn through `drawBehindWall`, which clips it to the hidden tiles around it
+and skips it entirely outside the lens' reach. Sprites overdraw their tile —
+the ring, the level tag, the guard's shield badge, the hp bar — and a passage
+is one tile wide, so without the clip those few pixels land on ordinary wall
+that the veil never covers, and a patrol pacing a passage shows as a bright
+edge sliding along the brick.
 
 # Sound and music (added later)
 

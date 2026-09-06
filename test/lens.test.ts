@@ -5,6 +5,7 @@ import { Tile, key } from '../src/engine/types';
 import type { LevelData, Vec } from '../src/engine/types';
 import { Game } from '../src/engine/game';
 import {
+  sameSide,
   LENS_ALPHA,
   LENS_CORE,
   LENS_NAME,
@@ -22,7 +23,9 @@ import {
 import { PASSAGE_MONSTER_CAP, gateGuards, generateLevel, passageTilesOf } from '../src/engine/maze';
 import { bfsDistances, floorNeighbors, isFloor } from '../src/engine/pathfind';
 import { generateShopLevel } from '../src/engine/shop';
-import { newHero } from '../src/engine/balance';
+import { makeMonster, newHero } from '../src/engine/balance';
+import { updateMonsters } from '../src/engine/monsters';
+import { makeRng } from '../src/engine/rng';
 
 const SEEDS = [1, 2, 3, 42, 999];
 const DEPTHS = Array.from({ length: 12 }, (_, i) => i + 1);
@@ -441,4 +444,73 @@ test('a hero with no lens walks out of the shop without stopping', () => {
   g.tick(200);
   assert.equal(st.modal, null);
   assert.ok(st.descending > 0);
+});
+
+// ---------------------------------------------------------------------------
+// Nothing reaches through the brick
+// ---------------------------------------------------------------------------
+
+test('sameSide tells the two worlds apart', () => {
+  const level = passageLevel();
+  const inside = { x: 4, y: 3 };
+  const mouth = { x: 1, y: 2 };
+  const corridor = { x: 1, y: 1 };
+  assert.equal(sameSide(level, inside, mouth), true);
+  assert.equal(sameSide(level, corridor, { x: 4, y: 1 }), true);
+  // The mouth and the corridor tile outside it are neighbours, and still on
+  // opposite sides of the wall.
+  assert.equal(sameSide(level, mouth, corridor), false);
+  // A floor with nothing to hide has only one side.
+  assert.equal(sameSide(mkLevel(['#####', '#S.E#', '#####']), { x: 1, y: 1 }, { x: 3, y: 1 }), true);
+});
+
+/**
+ * A monster standing on a passage mouth, one tile from a hero out in the
+ * corridor. Adjacent on the grid, a wall apart in fact.
+ */
+function acrossTheWallGame(): Game {
+  const g = passageGame(false);
+  const st = g.state;
+  const m = makeMonster('patrol', 1, makeRng(7), { x: 1, y: 2 }, 'm1');
+  m.attackCooldown = 0;
+  st.level.monsters = [m];
+  st.hero.pos = { x: 1, y: 1 };
+  st.hero.rpos = { x: 1, y: 1 };
+  return g;
+}
+
+test('a monster in a passage cannot swing at a hero outside it', () => {
+  const g = acrossTheWallGame();
+  const st = g.state;
+  const before = st.hero.hp;
+  for (let i = 0; i < 20; i++) updateMonsters(st, 200, makeRng(i + 1));
+  assert.equal(st.hero.hp, before, 'it hit the hero through a wall');
+  assert.equal(st.hero.hitFlash, 0);
+});
+
+test('...and the hero cannot swing back at it', () => {
+  const g = acrossTheWallGame();
+  const st = g.state;
+  const m = st.level.monsters[0];
+  const before = m.hp;
+  // Standing still next to a monster is how a fight starts anywhere else.
+  for (let i = 0; i < 20; i++) g.tick(200);
+  assert.equal(st.level.monsters[0].hp, before, 'the hero swung through a wall');
+  assert.equal(st.sfx.includes('swing'), false);
+});
+
+test('with a lens the same two do fight, so the block is the wall and not the tile', () => {
+  const g = acrossTheWallGame();
+  const st = g.state;
+  st.hero.lens = { depth: 1, set: 0 };
+  // Step into the mouth's own tile: now both are inside the passage.
+  st.hero.pos = { x: 1, y: 3 };
+  st.hero.rpos = { x: 1, y: 3 };
+  const m = st.level.monsters[0];
+  m.pos = { x: 1, y: 2 };
+  m.home = { x: 1, y: 2 };
+  m.attackCooldown = 0;
+  const before = st.hero.hp;
+  for (let i = 0; i < 20; i++) updateMonsters(st, 200, makeRng(i + 1));
+  assert.ok(st.hero.hp < before, 'a monster you are standing next to inside a passage should fight');
 });

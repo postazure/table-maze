@@ -316,7 +316,7 @@ const SFX: Record<SfxId, Voice> = {
   },
 
   /**
-   * Finding the Lens of Truth: a thin glass ring that opens out instead of
+   * Finding the Cracked Lens: a thin glass ring that opens out instead of
    * landing, so it sounds like something being let in rather than picked up.
    */
   lens(ctx, dest) {
