@@ -755,28 +755,32 @@ export function warrenTilesOf(level: LevelData): Vec[] {
 /**
  * Rock left around the maze for the warrens to be dug out of. Even, so the
  * maze's odd tile lattice carries on unbroken into the margin. Whatever is not
- * dug gets trimmed off again by `trimToUsed`.
+ * dug gets trimmed off again by `trimToUsed`. Sized for the deepest warren
+ * `warrenShape` can dig (`WARREN_MAX_ROWS` lobes), plus slack.
  */
-export const WARREN_MARGIN = 6;
+export const WARREN_MARGIN = 10;
 /** Most warrens one floor can carry. */
-const WARREN_MAX = 4;
+const WARREN_MAX = 6;
 /** A warren's ring is this many cells across, chosen per warren (odd). */
 const WARREN_MIN_WIDE = 3;
-const WARREN_MAX_WIDE = 5;
+const WARREN_MAX_WIDE = 7;
+/** A warren strings this many loops end to end, chosen per warren. */
+const WARREN_MIN_ROWS = 2;
+const WARREN_MAX_ROWS = 4;
 /** One extra monster per this many warren tiles. */
 const WARREN_TILES_PER_MONSTER = 7;
 /** Never more than this many extra monsters in one warren. */
 export const WARREN_MONSTER_CAP = 3;
 /** ...nor more than this many across all of a floor's warrens. */
-export const WARREN_MONSTER_BUDGET = 14;
+export const WARREN_MONSTER_BUDGET = 16;
 
 /**
  * Dig this floor's warrens out of the rock around the maze.
  *
  * Each one hangs off a single tile of the maze's outer wall, knocked through
- * into the margin, and opens into a ring of corridor that comes back to that
- * same tile. The maze itself is untouched: a warren is ground that was not
- * there before, not floor taken away from the floor plan.
+ * into the margin, and opens into a chain of corridor loops that comes back to
+ * that same tile. The maze itself is untouched: a warren is ground that was
+ * not there before, not floor taken away from the floor plan.
  *
  * Nothing is dug unless the whole shape, and every tile around it, is solid
  * rock. That is what guarantees the one way in — a warren cannot brush against
@@ -784,11 +788,13 @@ export const WARREN_MONSTER_BUDGET = 14;
  * way around the guard standing on the route.
  */
 function digWarrens(level: LevelData, core: Rect, depth: number, rng: Rng): Warren[] {
-  const want = Math.min(WARREN_MAX, 2 + Math.floor(depth / 5));
+  const want = Math.min(WARREN_MAX, 2 + Math.floor(depth / 4));
   const warrens: Warren[] = [];
   for (const { at, out } of perimeterAnchors(level, core, rng)) {
     if (warrens.length >= want) break;
-    const shape = warrenShape(at, out, rng.int(WARREN_MIN_WIDE, WARREN_MAX_WIDE) | 1);
+    const wide = rng.int(WARREN_MIN_WIDE, WARREN_MAX_WIDE) | 1;
+    const rows = rng.int(WARREN_MIN_ROWS, WARREN_MAX_ROWS);
+    const shape = warrenShape(at, out, wide, rows);
     if (!canDig(level, shape, at)) continue;
     for (const t of shape) level.tiles[t.y][t.x] = Tile.Floor;
     warrens.push({ mouth: { x: at.x + out.x, y: at.y + out.y }, tiles: shape });
@@ -820,23 +826,34 @@ function perimeterAnchors(level: LevelData, core: Rect, rng: Rng): { at: Vec; ou
 }
 
 /**
- * The tiles a warren `wide` cells across would occupy: a neck through the maze
- * wall, then a ring of corridor around a block of rock, so whichever way you
- * turn inside it you come back to where you came in.
+ * The tiles a warren `wide` cells across and `rows` loops deep would occupy: a
+ * neck through the maze wall, then `rows` runs of full-width corridor strung
+ * together by a spine down the middle and a pair of side runs between each
+ * consecutive pair — so each pair of rows rings a block of rock, and the whole
+ * chain still comes back to the one tile it started from. `rows` of 2 is a
+ * single loop; more rows string more loops end to end for a bigger den.
  */
-function warrenShape(at: Vec, out: Vec, wide: number): Vec[] {
+function warrenShape(at: Vec, out: Vec, wide: number, rows: number): Vec[] {
   const side = { x: out.y, y: out.x }; // ninety degrees to the way in
   const half = wide - 1; // in tiles: cells sit two apart
+  const lastAlong = rows * 2;
   const tile = (along: number, across: number): Vec => ({
     x: at.x + out.x * along + side.x * across,
     y: at.y + out.y * along + side.y * across,
   });
-  const tiles: Vec[] = [tile(1, 0), tile(3, 0)]; // neck, and its way through
-  // Two runs of corridor, two and four tiles out, closed at both ends.
-  for (const along of [2, 4]) {
+  const tiles: Vec[] = [];
+  // The spine: the neck and every odd step through the middle, tying each
+  // row's centre to the next.
+  for (let along = 1; along <= lastAlong - 1; along += 2) tiles.push(tile(along, 0));
+  // The rows themselves: full-width runs of corridor, closed at both ends.
+  for (let along = 2; along <= lastAlong; along += 2) {
     for (let a = -half; a <= half; a++) tiles.push(tile(along, a));
   }
-  for (const a of [-half, half]) tiles.push(tile(3, a));
+  // The side runs between consecutive rows, at their outer edges only — the
+  // spine already carries the middle — so each gap rings a block of rock.
+  for (let along = 3; along <= lastAlong - 1; along += 2) {
+    for (const a of [-half, half]) tiles.push(tile(along, a));
+  }
   return tiles;
 }
 

@@ -99,8 +99,9 @@ Requirements:
 - Warrens are dug OUTSIDE the maze, not carved out of it. Lay the maze
   (`levelDims`) into a grid with a margin of solid rock on every side, pick
   start and exit inside the maze, then knock single tiles through the maze's
-  outer wall and dig a ring of corridor into the rock beyond each one. That
-  tile is the warren's `mouth`, and the ring is why it loops. Dig nothing
+  outer wall and dig a chain of one or more corridor loops into the rock
+  beyond each one, strung together by a spine down the middle. That tile is
+  the warren's `mouth`, and the loops are why it always leads back to it. Dig nothing
   unless the whole shape and every tile it touches is rock: that is what
   guarantees the one way in, so a warren can never become a route past a gate
   guard. Trim the grid back to the ground actually used afterwards, so a floor
