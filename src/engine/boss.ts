@@ -5,11 +5,12 @@
  *  - necromancer: smash five crystals before the spell completes.
  *  - minotaur:    find the stairs while an unkillable hunter follows.
  *  - angels:      find the stairs through rooms haunted by weeping angels
- *                 that only move while the hero's back is turned.
+ *                 that slowly take the doorways behind you.
  *
  * This module is generation + the monster factory + tiny pure helpers. The
  * per-tick rules (spell clock, skeleton spawns, angel wake-ups, win / lose)
- * live in game.ts; the movement AI lives in monsters.ts.
+ * live in game.ts; the movement AI lives in monsters.ts (angels.ts for the
+ * angels' siege).
  *
  * Generation follows the same shape as maze.ts: draw a seed from
  * `hashSeed(runSeed, depth, BOSS_SALT[, attempt])`, build one candidate,
@@ -21,7 +22,8 @@
 import { BOSS_KINDS, Tile, eq, inRect, key, manhattan, parseKey } from './types';
 import type { BossKind, BossMonsterKind, LevelData, Monster, Rect, Rng, Vec } from './types';
 import { hashSeed, makeRng } from './rng';
-import { levelDims } from './balance';
+import { angelPlan, levelDims } from './balance';
+import type { AngelPlan } from './balance';
 import { themeForDepth } from './themes';
 import { bfsDistances, bfsPath, floorNeighbors, isFloor } from './pathfind';
 
@@ -147,9 +149,8 @@ export function makeBossMonster(kind: BossMonsterKind, depth: number, pos: Vec, 
       base.state = 'chasing';
       break;
     case 'angel':
-      // Not on the monster clock: it moves once per hero step and on the
-      // creep clock (game.ts / `angelsFollow`), so NEVER for both intervals.
-      // Touch = a third of max hp.
+      // Not on the monster clock: it acts on the siege clock (game.ts /
+      // `angelsAct`), so NEVER on either interval. Touch = a third of max hp.
       base.name = 'Angel';
       base.glyph = '🗿';
       base.level = d + 3;
@@ -667,13 +668,11 @@ function buildMinotaur(depth: number, seed: number): LevelData | null {
 }
 
 // ---------------------------------------------------------------------------
-// Angels: a 3x4 grid of rooms wired together with winding corridors
+// Angels: a grid of rooms wired together with winding corridors. How many
+// rooms, how big, and how many statues stand in them all come from
+// `angelPlan(depth)` (balance.ts): deeper floors get more ground to cross.
 // ---------------------------------------------------------------------------
 
-const ANGEL_W = 29;
-const ANGEL_H = 41;
-const ANGEL_COLS = 3;
-const ANGEL_ROWS = 4;
 /** BFS tiles an angel keeps away from the hero's spawn. */
 const ANGEL_MIN_DIST = 8;
 /** Door pairs tried per corridor before giving up on that room pair. */
@@ -682,11 +681,11 @@ const DOOR_TRIES = 16;
 const EXTRA_EDGE_CHANCE = 0.3;
 
 /** The slab of the level room (c, r) lives in, outer wall excluded. */
-function cellRect(c: number, r: number): Rect {
-  const x0 = 1 + Math.floor((c * (ANGEL_W - 2)) / ANGEL_COLS);
-  const x1 = 1 + Math.floor(((c + 1) * (ANGEL_W - 2)) / ANGEL_COLS);
-  const y0 = 1 + Math.floor((r * (ANGEL_H - 2)) / ANGEL_ROWS);
-  const y1 = 1 + Math.floor(((r + 1) * (ANGEL_H - 2)) / ANGEL_ROWS);
+function cellRect(plan: AngelPlan, c: number, r: number): Rect {
+  const x0 = 1 + Math.floor((c * (plan.width - 2)) / plan.cols);
+  const x1 = 1 + Math.floor(((c + 1) * (plan.width - 2)) / plan.cols);
+  const y0 = 1 + Math.floor((r * (plan.height - 2)) / plan.rows);
+  const y1 = 1 + Math.floor(((r + 1) * (plan.height - 2)) / plan.rows);
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
@@ -774,7 +773,7 @@ function widensAnything(tiles: Tile[][], route: readonly Vec[]): boolean {
   const added = new Set(route.map(key));
   const floor = (p: Vec): boolean =>
     added.has(key(p)) ||
-    (p.x >= 0 && p.y >= 0 && p.x < ANGEL_W && p.y < ANGEL_H && tiles[p.y][p.x] === Tile.Floor);
+    (p.x >= 0 && p.y >= 0 && p.y < tiles.length && p.x < tiles[0].length && tiles[p.y][p.x] === Tile.Floor);
   for (const p of route) {
     for (const dx of [-1, 0]) {
       for (const dy of [-1, 0]) {
@@ -812,7 +811,7 @@ function connectRooms(
     const head = step(pair.from, dir);
     const tail = step(pair.to, dir, -1);
     const usable = (p: Vec): boolean => {
-      if (!inInner(ANGEL_W, ANGEL_H, p)) return false;
+      if (!inInner(tiles[0].length, tiles.length, p)) return false;
       if (roomAt(rooms, p) >= 0) return false;
       if (eq(p, head) || eq(p, tail)) return true;
       for (let i = 0; i < STEPS.length; i++) if (roomAt(rooms, step(p, i)) >= 0) return false;
@@ -832,13 +831,13 @@ interface RoomEdge {
   horizontal: boolean;
 }
 
-function gridEdges(): RoomEdge[] {
+function gridEdges(plan: AngelPlan): RoomEdge[] {
   const out: RoomEdge[] = [];
-  for (let r = 0; r < ANGEL_ROWS; r++) {
-    for (let c = 0; c < ANGEL_COLS; c++) {
-      const i = r * ANGEL_COLS + c;
-      if (c + 1 < ANGEL_COLS) out.push({ a: i, b: i + 1, horizontal: true });
-      if (r + 1 < ANGEL_ROWS) out.push({ a: i, b: i + ANGEL_COLS, horizontal: false });
+  for (let r = 0; r < plan.rows; r++) {
+    for (let c = 0; c < plan.cols; c++) {
+      const i = r * plan.cols + c;
+      if (c + 1 < plan.cols) out.push({ a: i, b: i + 1, horizontal: true });
+      if (r + 1 < plan.rows) out.push({ a: i, b: i + plan.cols, horizontal: false });
     }
   }
   return out;
@@ -846,16 +845,17 @@ function gridEdges(): RoomEdge[] {
 
 function buildAngels(depth: number, seed: number): LevelData | null {
   const rng = makeRng(seed);
-  const tiles = solidGrid(ANGEL_W, ANGEL_H);
+  const plan = angelPlan(depth);
+  const tiles = solidGrid(plan.width, plan.height);
   const rooms: Rect[] = [];
-  for (let r = 0; r < ANGEL_ROWS; r++) {
-    for (let c = 0; c < ANGEL_COLS; c++) rooms.push(pickRoom(cellRect(c, r), rng));
+  for (let r = 0; r < plan.rows; r++) {
+    for (let c = 0; c < plan.cols; c++) rooms.push(pickRoom(cellRect(plan, c, r), rng));
   }
   for (const room of rooms) fillRect(tiles, room);
 
   // A random spanning tree first, then extra edges for loops: every room ends
   // up with two ways out wherever the rock allows it.
-  const edges = rng.shuffle(gridEdges());
+  const edges = rng.shuffle(gridEdges(plan));
   const parent = rooms.map((_, i) => i);
   const find = (i: number): number => {
     let n = i;
@@ -883,8 +883,8 @@ function buildAngels(depth: number, seed: number): LevelData | null {
     degree[e.b]++;
   }
 
-  const level = makeLevel(depth, seed, ANGEL_W, ANGEL_H, tiles);
-  const startRoom = rng.int(0, ANGEL_COLS - 1);
+  const level = makeLevel(depth, seed, plan.width, plan.height, tiles);
+  const startRoom = rng.int(0, plan.cols - 1);
   level.start = rng.pick(rectTiles(rooms[startRoom]));
   const dist = bfsDistances(level, level.start);
 
@@ -892,7 +892,7 @@ function buildAngels(depth: number, seed: number): LevelData | null {
   let exitRoom = -1;
   let exit: Vec | null = null;
   let best = -1;
-  for (let i = rooms.length - ANGEL_COLS; i < rooms.length; i++) {
+  for (let i = rooms.length - plan.cols; i < rooms.length; i++) {
     for (const p of rectTiles(rooms[i])) {
       const d = dist.get(key(p));
       if (d === undefined || d <= best) continue;
@@ -904,8 +904,32 @@ function buildAngels(depth: number, seed: number): LevelData | null {
   if (!exit || exitRoom < 0) return null;
   level.exit = exit;
 
-  const count = rng.int(4, 6);
-  const pool = rng.shuffle(rooms.map((_, i) => i).filter((i) => i !== startRoom && i !== exitRoom));
+  const count = rng.int(plan.minAngels, plan.maxAngels);
+  // The rooms the shortest walk to the stairs passes through come first: a
+  // bigger floor has to be a busier walk, not a wider empty one, and the hero
+  // still has the loops in the grid to go the long way round instead.
+  const spine = bfsPath(level, level.start, level.exit) ?? [];
+  const onRoute = rng.shuffle([
+    ...new Set(
+      spine
+        .map((p) => roomAt(rooms, p))
+        .filter((i) => i >= 0 && i !== startRoom && i !== exitRoom),
+    ),
+  ]);
+  // Then the rest, one row at a time, top to bottom, before any row gets a
+  // second statue: no clump of three in one corner with the floor empty round
+  // it.
+  const lanes: number[][] = [];
+  for (let i = 0; i < rooms.length; i++) {
+    if (i === startRoom || i === exitRoom || onRoute.includes(i)) continue;
+    const row = Math.floor(i / plan.cols);
+    (lanes[row] ??= []).push(i);
+  }
+  const dealt = lanes.filter((lane) => lane?.length).map((lane) => rng.shuffle(lane));
+  const pool: number[] = [...onRoute];
+  for (let n = 0; dealt.some((lane) => n < lane.length); n++) {
+    for (const lane of dealt) if (n < lane.length) pool.push(lane[n]);
+  }
   for (const ri of pool) {
     if (level.monsters.length >= count) break;
     // Never in a doorway: a statue wedged in the only gap would be a wall the
@@ -923,7 +947,7 @@ function buildAngels(depth: number, seed: number): LevelData | null {
     angel.roomId = ri;
     level.monsters.push(angel);
   }
-  if (level.monsters.length < 4) return null;
+  if (level.monsters.length < plan.minAngels) return null;
   level.boss = { kind: 'angels', defeated: false, rooms };
   return level;
 }
@@ -993,11 +1017,12 @@ function fixedMinotaur(depth: number, seed: number): LevelData {
 
 /** Same room grid, but every room a 5x4 block wired to its neighbours straight. */
 function fixedAngels(depth: number, seed: number): LevelData {
-  const tiles = solidGrid(ANGEL_W, ANGEL_H);
+  const plan = angelPlan(depth);
+  const tiles = solidGrid(plan.width, plan.height);
   const rooms: Rect[] = [];
-  for (let r = 0; r < ANGEL_ROWS; r++) {
-    for (let c = 0; c < ANGEL_COLS; c++) {
-      const cell = cellRect(c, r);
+  for (let r = 0; r < plan.rows; r++) {
+    for (let c = 0; c < plan.cols; c++) {
+      const cell = cellRect(plan, c, r);
       rooms.push({
         x: cell.x + Math.floor((cell.w - 5) / 2),
         y: cell.y + Math.floor((cell.h - 4) / 2),
@@ -1009,7 +1034,7 @@ function fixedAngels(depth: number, seed: number): LevelData {
   for (const room of rooms) fillRect(tiles, room);
   // Straight corridors out of the middle of each facing wall; the fixed room
   // sizes keep those middles aligned, and the gaps are four tiles or more.
-  for (const e of gridEdges()) {
+  for (const e of gridEdges(plan)) {
     const a = rooms[e.a];
     const b = rooms[e.b];
     if (e.horizontal) {
@@ -1020,15 +1045,21 @@ function fixedAngels(depth: number, seed: number): LevelData {
       for (let y = a.y + a.h; y < b.y; y++) tiles[y][x] = Tile.Floor;
     }
   }
-  const level = makeLevel(depth, seed, ANGEL_W, ANGEL_H, tiles);
+  const level = makeLevel(depth, seed, plan.width, plan.height, tiles);
   level.start = { x: rooms[0].x + 1, y: rooms[0].y + 1 };
   const last = rooms[rooms.length - 1];
   level.exit = { x: last.x + 3, y: last.y + 2 };
-  [3, 5, 7, 8].forEach((ri, i) => {
-    const angel = makeBossMonster('angel', depth, { x: rooms[ri].x + 2, y: rooms[ri].y + 2 }, `angel${i + 1}`);
-    angel.roomId = ri;
-    level.monsters.push(angel);
-  });
+  // Statues below the top row, every other room, well clear of the stairs.
+  const free = rooms.map((_, i) => i).filter((i) => i >= plan.cols && i !== rooms.length - 1);
+  const spread = [...free.filter((_, i) => i % 2 === 0), ...free.filter((_, i) => i % 2 === 1)];
+  spread
+    .slice(0, plan.minAngels)
+    .sort((a, b) => a - b)
+    .forEach((ri, i) => {
+      const angel = makeBossMonster('angel', depth, { x: rooms[ri].x + 2, y: rooms[ri].y + 2 }, `angel${i + 1}`);
+      angel.roomId = ri;
+      level.monsters.push(angel);
+    });
   level.boss = { kind: 'angels', defeated: false, rooms };
   return level;
 }
@@ -1096,7 +1127,9 @@ function validateMinotaur(level: LevelData): boolean {
 }
 
 function validateAngels(level: LevelData, rooms: readonly Rect[]): boolean {
-  if (rooms.length !== ANGEL_COLS * ANGEL_ROWS) return false;
+  const plan = angelPlan(level.depth);
+  if (level.width !== plan.width || level.height !== plan.height) return false;
+  if (rooms.length !== plan.cols * plan.rows) return false;
   const claimed = new Set<string>();
   for (const r of rooms) {
     if (r.w < 4 || r.h < 4 || r.w > 7 || r.h > 6) return false;
@@ -1109,12 +1142,12 @@ function validateAngels(level: LevelData, rooms: readonly Rect[]): boolean {
   const startRoom = roomAt(rooms, level.start);
   const exitRoom = roomAt(rooms, level.exit);
   if (startRoom < 0 || exitRoom < 0 || startRoom === exitRoom) return false;
-  if (startRoom >= ANGEL_COLS) return false; // top row
-  if (exitRoom < rooms.length - ANGEL_COLS) return false; // bottom row
+  if (startRoom >= plan.cols) return false; // top row
+  if (exitRoom < rooms.length - plan.cols) return false; // bottom row
 
   const angels = level.monsters.filter((m) => m.kind === 'angel');
   if (angels.length !== level.monsters.length) return false;
-  if (angels.length < 4 || angels.length > 6) return false;
+  if (angels.length < plan.minAngels || angels.length > plan.maxAngels) return false;
   const dist = bfsDistances(level, level.start);
   const used = new Set<number>();
   for (const a of angels) {

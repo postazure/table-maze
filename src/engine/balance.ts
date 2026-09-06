@@ -3,7 +3,7 @@
  * Nothing here touches the DOM and all randomness comes from an `Rng`.
  */
 import type { Hero, Loot, LootItem, Monster, RosterKind, Rng, Vec } from './types';
-import { HEART } from './types';
+import { ANGEL_STEP_MS, HEART } from './types';
 import { themeForDepth } from './themes';
 
 // ---------------------------------------------------------------------------
@@ -23,6 +23,68 @@ export function levelDims(depth: number): { width: number; height: number } {
   const height = Math.min(MAX_H, BASE_H + 2 * grow);
   return { width, height };
 }
+
+// ---------------------------------------------------------------------------
+// The weeping angels' floor
+// ---------------------------------------------------------------------------
+
+/** The size and staffing of one angel chamber (see boss.ts, angels.ts). */
+export interface AngelPlan {
+  cols: number;
+  rows: number;
+  width: number;
+  height: number;
+  /** Statues placed, if the layout has room for them. */
+  minAngels: number;
+  maxAngels: number;
+  /** ms between the angels' steps on this floor. */
+  stepMs: number;
+}
+
+/** Angel grids by depth: rooms across, rooms down, then the next tier. */
+const ANGEL_GRIDS: readonly { untilDepth: number; cols: number; rows: number }[] = [
+  { untilDepth: 9, cols: 3, rows: 4 },
+  { untilDepth: 18, cols: 3, rows: 5 },
+  { untilDepth: 27, cols: 4, rows: 5 },
+  { untilDepth: Infinity, cols: 4, rows: 6 },
+];
+/** Tiles a room cell gets, before its walls: enough for a 4x4 to a 7x6 room. */
+const ANGEL_CELL_W = 9;
+const ANGEL_CELL_H = 10;
+/** Statues per room, low and high. A bigger floor is never a barer one. */
+const ANGEL_DENSITY = { min: 0.35, max: 0.5 };
+/** How much of the base step clock (`ANGEL_STEP_MS`) each grid tier shaves off. */
+const ANGEL_STEP_TIER = 30;
+
+/**
+ * How hard the weeping angels are on floor `depth`. The fight scales by
+ * ground rather than by speed: deeper floors add a row (then a column) of
+ * rooms, so the walk to the stairs crosses more of them and more statues are
+ * awake by the time it ends. Statues per room stay flat, so the bigger floor
+ * never feels emptier, and the step clock tightens only a little per tier —
+ * they must stay slow enough to walk away from, or the fight goes back to
+ * being a losing race.
+ */
+export function angelPlan(depth: number): AngelPlan {
+  const d = Math.max(1, Math.floor(depth));
+  const tier = Math.max(0, ANGEL_GRIDS.findIndex((g) => d <= g.untilDepth));
+  const { cols, rows } = ANGEL_GRIDS[tier];
+  const rooms = cols * rows;
+  // Both odd: the boss validator (and the renderer's centring) want it so.
+  const width = odd(cols * ANGEL_CELL_W + 2);
+  const height = odd(rows * ANGEL_CELL_H + 1);
+  return {
+    cols,
+    rows,
+    width,
+    height,
+    minAngels: Math.floor(rooms * ANGEL_DENSITY.min),
+    maxAngels: Math.floor(rooms * ANGEL_DENSITY.max),
+    stepMs: ANGEL_STEP_MS - ANGEL_STEP_TIER * tier,
+  };
+}
+
+const odd = (n: number): number => (n % 2 === 0 ? n + 1 : n);
 
 // ---------------------------------------------------------------------------
 // Hero

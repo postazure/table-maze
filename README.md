@@ -104,9 +104,13 @@ Play it at **https://postazure.github.io/table-maze/**
   central chamber while raising skeletons — smash all five crystals down his corridors
   before the spell finishes, and you can't hurt him directly. **The Minotaur** is a slow
   but unkillable hunter in a braided maze — just find the stairs. **The Weeping Angels**
-  haunt a grid of rooms and march in step with you — every step you take, each awake
-  angel takes one too, and if you stop to think they still creep closer, slowly and
-  without end. Plan a route to the stairs before they close in. Win and one of your magic items gains a level (or
+  haunt a grid of rooms and lay siege — they are much slower than you, but they always
+  know where you are and take the shortest way round, so they walk into the doorways of
+  whatever room you are in and wait there, just out of reach. Block every way out of a
+  room and they finally move in; three touches turn you to stone. Keep moving, and never
+  let them have the last door. Deeper angel floors are a bigger grid of rooms with more
+  statues in them — a longer walk with more of them awake behind you — rather than faster
+  angels. Win and one of your magic items gains a level (or
   you gain a heart if you're wearing nothing), and your hearts refill. Lose in a boss
   chamber and the run ends there — no waking up nearby this time — and a stats screen
   shows how far you got, your level, kills, bosses beaten, gold, and time played before

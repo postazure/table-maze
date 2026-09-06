@@ -53,6 +53,8 @@ const RING_RETURNING = '#f5d451';
 // Boss-only rings/auras.
 const RING_NECROMANCER = '#b56cff';
 const RING_ANGEL_IDLE = '#5a5a66';
+/** An awake angel that is still only taking doorways, not moving in. */
+const RING_ANGEL_SIEGE = '#d08a2c';
 const CRYSTAL_GLOW_COLOR = '#c13fe0';
 const NECRO_SPARK_COLORS = ['#b56cff', '#ff8ce8', '#e8d9ff'] as const;
 const SPELL_BAR_COLOR = '#b56cff';
@@ -1080,9 +1082,11 @@ export class Renderer implements TileMapper {
     }
     if (m.kind === 'minotaur') return { color: RING_CHASING, pulse: true }; // always hunting
     if (m.kind === 'angel') {
-      // Weeping = dim grey. Awake = red: it answers every step you take.
+      // Weeping = dim grey. Awake and circling for the doors = amber. Red and
+      // pulsing = the ring has shut and it is coming for you.
       if (m.state === 'idle') return { color: RING_ANGEL_IDLE, pulse: false };
-      return { color: RING_CHASING, pulse: true };
+      if (m.state === 'closing') return { color: RING_CHASING, pulse: true };
+      return { color: RING_ANGEL_SIEGE, pulse: true, pulseDivisor: 220 };
     }
     if (m.state === 'chasing') return { color: RING_CHASING, pulse: true };
     if (m.state === 'returning') return { color: RING_RETURNING, pulse: false };
