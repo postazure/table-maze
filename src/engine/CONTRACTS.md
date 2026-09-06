@@ -67,6 +67,9 @@ export function gateGuards(level: LevelData): Monster[];
 export const ROUTE_MONSTER_CAP: number;      // most monsters the route and its branches carry
 export const WARREN_MONSTER_CAP: number;     // ...per warren, on top of that
 export const WARREN_MONSTER_BUDGET: number;  // ...and across all of a floor's warrens
+export const PASSAGE_MONSTER_CAP: number;    // ...and per hidden passage
+/** Every tile of every hidden passage on the floor, flattened. */
+export function passageTilesOf(level: LevelData): Vec[];
 ```
 Requirements:
 - Perfect maze (recursive backtracker or similar) on the tile grid from
@@ -131,12 +134,75 @@ Requirements:
   a floor than either needs. Kinds come off a shuffle of `SHRINE_KINDS`, so a
   floor rarely rolls the same one twice. Never generated on boss or shop floors.
   Recorded in `LevelData.shrines`.
+- Hidden passages are dug outside the maze too, in the same margin as the
+  warrens and before them, but they hug it: a **shortcut** runs one course of
+  brick behind the outer wall from one perimeter tile to another further along
+  the same side, and a **vault** (third floor of a themed set only) runs a neck
+  out to a small chamber with a chest in a niche at the back. Same `canDig`
+  rule as a warren — the whole shape and everything it touches must be rock,
+  except the one or two anchors it hangs off — so a passage touches the maze
+  only at its mouths, never another passage, and never a warren. Recorded in
+  `LevelData.passages`; every tile of one is `Tile.Floor` and every tile of one
+  is hidden (see `lens.ts`).
+  A shortcut is only dug when the walk it replaces is at least 10 tiles longer
+  than the passage itself, so it is always worth the detour. Everything else on
+  the floor is then planned as if the passages were still rock: the route, the
+  doors, the keys, the shrines and the ordinary monsters all come off a BFS
+  with the passage tiles blocked, and `gateGuards` blocks them too. Validation
+  runs both worlds — with the passages sealed the stairs, every key and every
+  shrine must still be reachable, and with them open every passage tile must
+  be. A lens is a saving and never a requirement.
+  Stock a passage with patrols and the odd guard, never a lurker and never on
+  a mouth: a passage has no room to bait a hunter, and one following the hero
+  out of a wall would give the whole thing away. Put one Lens of Truth in an
+  ordinary (never hidden) chest on the first two floors of each set, and a
+  magic item in each vault's chest — with a chest key of its own, like any
+  other chest.
 - No unwinnable gate. Guards never move and heal back to full between attempts,
   so a guard on the only way to the stairs must be beatable or the run is dead.
   After placing monsters, re-roll every guard `gateGuards` reports at the
   floor's own level (`makeMonster(..., { gate: true })`), and reject any level
   where one still sits above it. Floor 1 carries no lurkers.
 - Must be deterministic for a given (depth, runSeed).
+
+## lens.ts
+```ts
+export function floorSet(depth: number): number;    // floors 1-3 are set 0, 4-6 set 1, ...
+export function floorOfSet(depth: number): 1 | 2 | 3;
+export function lensFloor(depth: number): boolean;  // a chest here holds a lens
+export function vaultFloor(depth: number): boolean; // a passage here ends in a vault
+export function lensActive(hero: Hero, depth: number): boolean;
+export const LENS_NAME: string;
+
+export function passageTiles(level: LevelData): Set<string>;   // cached per level
+export function passageMouths(level: LevelData): Set<string>;  // cached per level
+export function hiddenAt(level: LevelData, p: Vec): boolean;
+export function mouthAt(level: LevelData, p: Vec): boolean;
+export function passageAt(level: LevelData, p: Vec): Passage | null;
+
+export const LENS_CORE: number;    // tiles revealed at full strength
+export const LENS_RADIUS: number;  // ...and where the reveal has faded to nothing
+export const LENS_ALPHA: number;   // how see-through the brick ever gets (< 1)
+export function lensRevealAt(dist: number): number;
+export function lensLit(level: LevelData, hero: Hero, depth: number): boolean;
+```
+Requirements:
+- The one place that answers "is this tile hidden?" and "can this hero see it?".
+  `maze.ts`, `game.ts`, `monsters.ts`, `combat.ts` and the renderer all go
+  through it; nothing else may decide either question for itself.
+- Hidden ground is real floor in `LevelData.tiles`, so pathfinding, monster AI
+  and level validation all work on it unchanged. What makes it hidden is that
+  the renderer paints it as wall and `game.ts` refuses to walk the hero onto it
+  (`isWalkable`, `isTarget` and `stepOnce` all re-ask, so a stale queued path
+  cannot smuggle the hero through a wall).
+- A lens is bound to the three-floor themed set it was found in
+  (`Hero.lens.set`), works nowhere else, and is dropped by `dismissModal` when
+  the `lensShatter` popup closes on the way out of that set's shop.
+- `lensLit` is true only while the hero stands on hidden ground or one tile
+  from a mouth. Walking a corridor that happens to run alongside a passage
+  shows nothing; the mouth seams are the only thing visible from further off.
+- `passageTiles`/`passageMouths` cache per `LevelData` in a `WeakMap`: they are
+  asked once per BFS node while monsters path.
 
 ## combat.ts
 ```ts
@@ -180,6 +246,13 @@ straight back in still re-aggros it — then walks back to `chaseFrom` (where it
 was standing when this chase began, set on the idle -> chasing transition and
 kept through any returning -> chasing re-aggro). Arriving settles it to `idle`
 and clears `chaseFrom`.
+
+### Passages and monsters (monsters.ts)
+A monster stays in the world it was spawned into: `moveBlocked` and
+`sightBlocked` both refuse any tile whose hidden-ness differs from the
+monster's own `home`. So a passage's patrols pace it and never come out, the
+maze's own monsters never walk in, and no lurker can see or chase the hero
+through a wall in either direction.
 
 ## angels.ts
 ```ts
@@ -271,6 +344,29 @@ HP bars above damaged monsters and the hero. `hitFlash` = white overlay.
 `lunge` = offset draw. Effects: floating text rising and fading, flash, screen shake.
 Respect devicePixelRatio. Never scroll the page.
 
+### Hidden passages (see engine/lens.ts)
+The renderer paints the level **twice** on a floor with passages: once with
+them as unbroken brick (`staticCanvas`) and once with them as corridor
+(`revealCanvas`), plus a one-bit `hiddenMask` marking their tiles. The brick
+pattern is a function of the tile coordinates alone, so the sealed picture has
+no seam anywhere for a player to read. Per frame:
+1. blit the sealed level;
+2. if the lens is lit, blit the reveal, clipped to the mask and then to a
+   radial gradient centred on the hero (`LENS_ALPHA` out to `LENS_CORE`, down
+   to 0 at `LENS_RADIUS`), with a faint cold tint over what is left;
+3. draw the trail, the drag line, the loot and the monsters as usual;
+4. blit the sealed level **again**, clipped to the mask with the same gradient
+   subtracted out of it, so the brick lands back in front of everything with a
+   soft hole where the hero is looking;
+5. draw the hero, effects and buff pips over the top, and the mouth seams last.
+Doing the brick as one veil rather than per-sprite is what keeps a monster
+standing in a passage exactly as visible as the floor under it, and stops the
+trail or a queued drag from tracing out a corridor the hero has not walked.
+Steps 2 and 4 are skipped entirely when no hidden tile is in view, which is
+almost every frame. The reveal eases in and out (`lensGlow`) so stepping into
+a passage is a light coming up, not a switch. A mouth seam is drawn only while
+the hero holds a lens, and fades out as the reveal opens the same tile.
+
 # Sound and music (added later)
 
 Shared types: `SfxId`, `VARIED_SFX`, `GameState.sfx`. See types.ts.
@@ -288,8 +384,8 @@ backlog.
   down. Never give one of these a melody: a tune heard a thousand times a run
   is a tune the player turns off.
 - Everything else means exactly one thing (`chestOpen`, `levelUp`, `stairs`,
-  `crystal`, `bossWin`...) and must sound identical every time, so it can be
-  learnt by ear.
+  `crystal`, `lens`, `lensBreak`, `bossWin`...) and must sound identical every
+  time, so it can be learnt by ear.
 
 Nothing in `src/audio/` may import from `src/ui/`, and only `rng.ts` and
 `types.ts` come the other way. All of it is synthesised at runtime: there are
@@ -577,6 +673,15 @@ Maze depth 1, 2, 3 -> **boss (depth 3)** -> shop (depth 3) -> maze 4, 5, 6 ->
 boss (6) -> shop (6) -> ... `state.depth` still counts maze floors only. The
 boss for a depth comes from `bossKindForDepth(depth, runSeed)`: every block of
 three bosses contains each kind once, seed-shuffled.
+
+Those three maze floors plus their boss and shop are one **themed set**
+(`floorSet` in lens.ts, the same grouping `themeForDepth` uses), and the Lens
+of Truth is scoped to it: found in a chest on the first or second floor, useful
+on all three, and shattered on the way out of the set's shop. Stepping onto the
+shop's stairs with a lens in hand sets `modal = { kind:'lensShatter' }` next to
+the usual descend timer — the popup freezes the world, so the stairs wait —
+and `dismissModal` drops the lens and lets the descent finish. It is the one
+popup with no button: the UI closes it when the animation ends.
 
 ## engine/boss.ts (generation + factory; the per-tick rules live in game.ts)
 ```ts

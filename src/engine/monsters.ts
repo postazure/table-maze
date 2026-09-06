@@ -10,6 +10,7 @@ import { GREEN, chestAt, closedDoorAt, damageMonster, keyAt, liveMonsterAt, mons
 import type { ItemStats } from './items';
 import { heroStats } from './items';
 import { lurkerSightRange } from './balance';
+import { hiddenAt } from './lens';
 import { timeBubble } from './shrines';
 
 /** Render position catch-up speed, tiles per second. */
@@ -163,10 +164,25 @@ function lerpRpos(m: Monster, dt: number): void {
 // Blocking predicates
 // ---------------------------------------------------------------------------
 
+/**
+ * The wall between the maze and its hidden passages, from a monster's side.
+ *
+ * A monster stays in the world it was spawned into: the ones stocking a
+ * passage pace it and never come out, and nothing in the maze proper walks
+ * into one. That is what keeps a passage a place rather than a corridor the
+ * floor's own traffic uses — and it means a lurker can never follow the hero
+ * into the wall, or come out of it.
+ */
+function crossesPassageWall(level: LevelData, m: Monster, p: Vec): boolean {
+  if (!level.passages?.length) return false;
+  return hiddenAt(level, p) !== hiddenAt(level, m.home);
+}
+
 /** Tiles a monster refuses to step on (walls handled by the BFS itself). */
 function moveBlocked(state: GameState, m: Monster): (p: Vec) => boolean {
   const level = state.level;
   return (p: Vec): boolean => {
+    if (crossesPassageWall(level, m, p)) return true;
     if (closedDoorAt(level, p)) return true;
     if (occupiedByOther(level, m, p)) return true;
     if (eq(p, state.hero.pos)) return true;
@@ -186,10 +202,15 @@ function moveBlockedTo(state: GameState, m: Monster, target: Vec): (p: Vec) => b
   return (p: Vec): boolean => (eq(p, target) ? false : base(p));
 }
 
-/** Line-of-sight blocking: closed doors and other monsters only. */
+/**
+ * Line-of-sight blocking: closed doors, other monsters, and the brick between
+ * the maze and a hidden passage — a lurker cannot see the hero through a wall
+ * it does not know is hollow, and one stationed inside cannot see out.
+ */
 function sightBlocked(state: GameState, m: Monster): (p: Vec) => boolean {
   const level = state.level;
   return (p: Vec): boolean => {
+    if (crossesPassageWall(level, m, p)) return true;
     if (closedDoorAt(level, p)) return true;
     if (occupiedByOther(level, m, p)) return true;
     return false;

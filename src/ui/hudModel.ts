@@ -1,5 +1,6 @@
 import type { GameState, ItemSlot, MagicItem, Modal, ShrineKind } from '../engine/types';
 import { buffAtk, buffDef, buffPhase, type BuffPhase } from '../engine/shrines';
+import { lensActive } from '../engine/lens';
 
 /**
  * One running shrine effect, as the HUD shows it: a glyph, how much of it is
@@ -56,6 +57,11 @@ export interface HudModel {
   buffs: HudBuff[];
   /** One magic item per slot, or null if empty. */
   gear: Record<ItemSlot, MagicItem | null>;
+  /**
+   * Carrying a Lens of Truth that still works down here. It has no numbers to
+   * show and no clock to run down, so the HUD only ever says yes or no.
+   */
+  lens: boolean;
   /** The kind of level the hero is currently on (drives the depth badge). */
   levelKind: 'maze' | 'shop' | 'boss';
   /** Current popup, compared by reference. */
@@ -102,6 +108,7 @@ export function deriveHudModel(state: GameState): HudModel {
     tempHpMax: hero.tempHpMax ?? 0,
     buffs,
     gear: hero.gear,
+    lens: lensActive(hero, state.depth),
     levelKind: state.level.kind,
     modal: state.modal,
     log: state.log.map((m) => m.text),
@@ -139,6 +146,7 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     a.tempHp !== b.tempHp ||
     a.tempHpMax !== b.tempHpMax ||
     a.buffs.length !== b.buffs.length ||
+    a.lens !== b.lens ||
     a.levelKind !== b.levelKind ||
     a.modal !== b.modal ||
     a.log.length !== b.log.length ||

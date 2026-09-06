@@ -11,7 +11,10 @@
  * 6. Shrines in dead-end alcoves, the ones hanging off the route first.
  * 7. Monsters: guards on chokepoints, patrols on corridor runs, lurkers on
  *    side branches next to the main path.
- * 8. Validate solvability; retry with a re-mixed seed, relax as a last resort.
+ * 8. Hidden passages behind the outer wall: shortcuts that rejoin the maze
+ *    somewhere else, and (on the third floor of a themed set) vaults ending
+ *    at a chest with a magic item. Only a hero with a lens can walk them.
+ * 9. Validate solvability; retry with a re-mixed seed, relax as a last resort.
  */
 import { Tile, key, parseKey, eq, manhattan } from './types';
 import type {
@@ -20,6 +23,7 @@ import type {
   KeyItem,
   LevelData,
   Monster,
+  Passage,
   Rect,
   RosterKind,
   Rng,
@@ -28,10 +32,11 @@ import type {
   Vec,
   Warren,
 } from './types';
-import { SHRINE_KINDS } from './types';
+import { ITEM_KINDS, SHRINE_KINDS } from './types';
 import { hashSeed, makeRng } from './rng';
 import { levelDims, makeMonster, rollChestLoot } from './balance';
 import type { MonsterOpts } from './balance';
+import { lensFloor, vaultFloor } from './lens';
 import { themeForDepth } from './themes';
 import { bfsDistances, bfsPath, floorNeighbors, isFloor } from './pathfind';
 
@@ -213,6 +218,12 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
   level.start = pickStart(level, coreRect, rng);
   level.exit = pickExit(level, bfsDistances(level, level.start), rng);
 
+  // Hidden passages go in first: they hug the outer wall, so they want the
+  // shallow margin a warren would otherwise sprawl across. Warrens are dug
+  // after and simply skip any anchor a passage has already claimed.
+  const passages = digPassages(level, coreRect, depth, rng, opts.chests);
+  level.passages = passages;
+
   // Warrens are dug into the margin before anything is placed on the floor.
   // They hang off the maze at one tile each and lead nowhere, so the route to
   // the stairs is exactly what it was before they existed.
@@ -220,12 +231,21 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
   level.warrens = warrens;
   trimToUsed(level);
 
-  const distFromStart = bfsDistances(level, level.start);
-  const mainPath = bfsPath(level, level.start, level.exit) ?? [];
+  // Everything below plans the floor the way a hero without a lens sees it:
+  // the passages are floor in `tiles`, but the route, the doors, the shrines
+  // and the ordinary monsters are all laid out as if they were still rock.
+  // That is what keeps a passage a shortcut rather than a requirement.
+  const hidden = new Set(passageTilesOf(level).map(key));
+  const inPassage = (p: Vec): boolean => hidden.has(key(p));
+  const distFromStart = bfsDistances(level, level.start, { blocked: inPassage });
+  // ...and this is the floor as a hero *with* one sees it, which is what the
+  // passages' own contents are placed against.
+  const distWithLens = hidden.size ? bfsDistances(level, level.start) : distFromStart;
+  const mainPath = bfsPath(level, level.start, level.exit, { blocked: inPassage }) ?? [];
   const fullPath: Vec[] = [level.start, ...mainPath];
   const onMain = new Set(fullPath.map(key));
 
-  const used = new Set<string>([key(level.start), key(level.exit)]);
+  const used = new Set<string>([key(level.start), key(level.exit), ...hidden]);
   let keyCount = 0;
 
   if (opts.doors) {
@@ -256,6 +276,10 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
   for (const sh of level.shrines) used.add(key(sh.pos));
 
   if (opts.chests) {
+    // The vaults go in first so that if the floor runs out of room for chest
+    // keys, it is an ordinary chest that gets dropped and never the one thing
+    // worth walking a passage for.
+    stockVaults(level, depth, passages, rng);
     const chestCount = Math.min(8, 3 + Math.floor(depth / 2));
     const chestSpots = pickChestSpots(level, used, onMain, chestCount, rng);
     for (const pos of chestSpots) {
@@ -269,6 +293,8 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
       used.add(key(pos));
     }
     // One chest key per chest, anywhere free (all doors eventually open).
+    // Vault chests are counted here too: a gold key opens any chest, and a
+    // vault would be a cruel place to learn otherwise.
     for (let n = 0; n < level.chests.length; n++) {
       const spot = pickFreeTile(level, used, distFromStart, 2, rng);
       if (!spot) break;
@@ -280,10 +306,12 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
       const dropped = level.chests.pop();
       if (dropped) used.delete(key(dropped.pos));
     }
+    placeLens(level, depth, hidden, rng);
   }
 
   placeMonsters(level, depth, fullPath, onMain, used, distFromStart, warrens, rng, spawnOpts(opts));
   stockWarrens(level, depth, warrens, used, distFromStart, rng, spawnOpts(opts));
+  stockPassages(level, depth, passages, used, distWithLens, rng, spawnOpts(opts));
   easeGates(level, depth, rng);
   return level;
 }
@@ -795,7 +823,7 @@ function digWarrens(level: LevelData, core: Rect, depth: number, rng: Rng): Warr
     const wide = rng.int(WARREN_MIN_WIDE, WARREN_MAX_WIDE) | 1;
     const rows = rng.int(WARREN_MIN_ROWS, WARREN_MAX_ROWS);
     const shape = warrenShape(at, out, wide, rows);
-    if (!canDig(level, shape, at)) continue;
+    if (!canDig(level, shape, [at])) continue;
     for (const t of shape) level.tiles[t.y][t.x] = Tile.Floor;
     warrens.push({ mouth: { x: at.x + out.x, y: at.y + out.y }, tiles: shape });
   }
@@ -859,11 +887,13 @@ function warrenShape(at: Vec, out: Vec, wide: number, rows: number): Vec[] {
 
 /**
  * Can this shape be dug? Every tile of it must be rock, and every tile it
- * touches must be rock too, or part of the shape, or the anchor it hangs off.
- * That last clause is the one way in.
+ * touches must be rock too, or part of the shape, or one of the `anchors` it
+ * hangs off. That last clause is what fixes how many ways in there are: one
+ * anchor for a warren or a vault, two for a shortcut, and never a third.
  */
-function canDig(level: LevelData, shape: Vec[], at: Vec): boolean {
+function canDig(level: LevelData, shape: Vec[], anchors: Vec[]): boolean {
   const inShape = new Set(shape.map(key));
+  const isAnchor = new Set(anchors.map(key));
   for (const t of shape) {
     if (t.x < 1 || t.y < 1 || t.x >= level.width - 1 || t.y >= level.height - 1) return false;
     if (level.tiles[t.y][t.x] !== Tile.Wall) return false;
@@ -875,7 +905,7 @@ function canDig(level: LevelData, shape: Vec[], at: Vec): boolean {
       { x: t.x, y: t.y + 1 },
       { x: t.x, y: t.y - 1 },
     ]) {
-      if (inShape.has(key(nb)) || eq(nb, at)) continue;
+      if (inShape.has(key(nb)) || isAnchor.has(key(nb))) continue;
       if (isFloor(level, nb)) return false; // it would open onto something already dug
     }
   }
@@ -936,6 +966,10 @@ function trimToUsed(level: LevelData): void {
     shift(warren.mouth);
     for (const t of warren.tiles) shift(t);
   }
+  for (const passage of level.passages ?? []) {
+    for (const t of passage.tiles) shift(t);
+    for (const m of passage.mouths) shift(m);
+  }
 }
 
 function oddAtLeast(n: number): number {
@@ -943,9 +977,13 @@ function oddAtLeast(n: number): number {
 }
 
 
-/** A patrol beat that stays inside the warren, so the loop is what it walks. */
-function warrenBeat(level: LevelData, from: Vec, inWarren: Set<string>, rng: Rng): Vec[] | null {
-  const blocked = (p: Vec) => !inWarren.has(key(p));
+/**
+ * A patrol beat that never leaves the pocket it starts in — a warren's loop or
+ * a passage's run — so the monster paces what the player came to walk rather
+ * than wandering out into the maze.
+ */
+function pocketBeat(level: LevelData, from: Vec, pocket: Set<string>, rng: Rng): Vec[] | null {
+  const blocked = (p: Vec) => !pocket.has(key(p));
   const local = bfsDistances(level, from, { blocked, maxDist: 9 });
   const ends: Vec[] = [];
   for (const [k, d] of local) if (d >= 3) ends.push(parseKey(k));
@@ -997,7 +1035,7 @@ function stockWarrens(
       const kind: RosterKind = roll < 0.45 ? 'guard' : roll < 0.9 || !lurkers ? 'patrol' : 'lurker';
       const m = makeMonster(kind, depth, rng, spot, `w${++n}`, spawn);
       if (kind === 'patrol') {
-        const beat = warrenBeat(level, spot, inWarren, rng);
+        const beat = pocketBeat(level, spot, inWarren, rng);
         if (!beat) continue; // nowhere to walk: leave the tile empty
         m.patrolPath = beat;
         m.patrolIndex = 0;
@@ -1006,6 +1044,294 @@ function stockWarrens(
       used.add(key(spot));
       level.monsters.push(m);
       budget--;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hidden passages
+// ---------------------------------------------------------------------------
+
+/** Every tile of every passage on the floor, flattened. */
+export function passageTilesOf(level: LevelData): Vec[] {
+  return (level.passages ?? []).flatMap((p) => p.tiles);
+}
+
+/** How far out from the maze wall a shortcut runs: one course of brick behind it. */
+const SHORTCUT_DEPTH = 2;
+/** How far apart along the wall a shortcut's two mouths may be, in tiles. */
+const SHORTCUT_MIN_SPAN = 6;
+const SHORTCUT_MAX_SPAN = 16;
+/**
+ * A shortcut has to earn the name: the walk it replaces must be this many
+ * tiles longer than the passage itself. Anything less is just a second door
+ * onto the same corner of the maze.
+ */
+const SHORTCUT_MIN_SAVING = 10;
+/** Most shortcuts one floor can carry. */
+const SHORTCUT_MAX = 3;
+/** Depth of a vault's neck, then the chamber, then the niche the chest sits in. */
+const VAULT_NECK = 3;
+/**
+ * One extra monster per this many passage tiles. Deliberately thinner than a
+ * warren's: a passage is a way through, and a player who paid for the lens by
+ * finding it should be spending the walk on getting somewhere rather than on
+ * another three fights.
+ */
+const PASSAGE_TILES_PER_MONSTER = 7;
+/** ...and never more than this many in one passage. */
+export const PASSAGE_MONSTER_CAP = 3;
+
+/**
+ * Dig this floor's hidden passages.
+ *
+ * They live in the same margin the warrens do, but they hug it: a shortcut
+ * runs one course of brick behind the maze's outer wall, from one perimeter
+ * tile to another further along the same side. That is the whole trick — the
+ * maze between those two tiles may wind for thirty tiles, and the passage is
+ * a dozen.
+ *
+ * Two shapes:
+ *  - **shortcut**: two mouths, a real second route between two parts of the
+ *    floor. Never the only route: `validate` walls every passage off and
+ *    checks the stairs are still reachable, so a hero with no lens loses time
+ *    and nothing else.
+ *  - **vault**: one mouth, a neck, a small chamber, and a chest in a niche at
+ *    the back holding a magic item. Third floor of a themed set only — by
+ *    then a player who found a lens on floor one or two has had it long
+ *    enough to know what the seams in the wall mean.
+ */
+function digPassages(
+  level: LevelData,
+  core: Rect,
+  depth: number,
+  rng: Rng,
+  vaults: boolean,
+): Passage[] {
+  const out: Passage[] = [];
+  const wantShortcuts = Math.min(SHORTCUT_MAX, 1 + Math.floor(depth / 5));
+  const anchors = perimeterAnchors(level, core, rng);
+  // The maze as it stands, with nothing dug: this is the walk a shortcut has
+  // to beat, and it never changes as we dig (passages are all in the margin).
+  const dug = new Set<string>();
+  const mazeDist = new Map<string, Map<string, number>>();
+  const distFrom = (p: Vec): Map<string, number> => {
+    let d = mazeDist.get(key(p));
+    if (!d) {
+      // Passages already dug are blocked, so a second shortcut is never
+      // measured against a walk the first one had already shortened.
+      d = bfsDistances(level, p, { blocked: (q) => dug.has(key(q)) });
+      mazeDist.set(key(p), d);
+    }
+    return d;
+  };
+
+  // Shortcuts: pairs of anchors on the same side of the maze.
+  for (const a of anchors) {
+    if (out.length >= wantShortcuts) break;
+    const partner = anchors.find((b) => pairsWith(a, b, distFrom));
+    if (!partner) continue;
+    const shape = shortcutShape(a.at, partner.at, a.out);
+    if (!shape || !canDig(level, shape, [a.at, partner.at])) continue;
+    for (const t of shape) {
+      level.tiles[t.y][t.x] = Tile.Floor;
+      dug.add(key(t));
+    }
+    mazeDist.clear();
+    out.push({
+      id: `pg${out.length + 1}`,
+      kind: 'shortcut',
+      tiles: shape,
+      mouths: [step(a.at, a.out), step(partner.at, partner.out)],
+    });
+  }
+
+  // Vaults: one per third-of-a-set floor, two once the dungeon is deep. Never
+  // on a floor generating without chests (the relaxed last-resort build): a
+  // vault with nothing at the back of it is a walk for no reason.
+  if (vaults && vaultFloor(depth)) {
+    const wantVaults = depth >= 9 ? 2 : 1;
+    let made = 0;
+    for (const a of anchors) {
+      if (made >= wantVaults) break;
+      const shape = vaultShape(a.at, a.out);
+      if (!canDig(level, shape, [a.at])) continue;
+      for (const t of shape) {
+        level.tiles[t.y][t.x] = Tile.Floor;
+        dug.add(key(t));
+      }
+      out.push({ id: `pg${out.length + 1}`, kind: 'vault', tiles: shape, mouths: [step(a.at, a.out)] });
+      made++;
+    }
+  }
+  return out;
+}
+
+function step(p: Vec, dir: Vec, n = 1): Vec {
+  return { x: p.x + dir.x * n, y: p.y + dir.y * n };
+}
+
+/**
+ * Would these two perimeter tiles make a shortcut worth digging? Same side of
+ * the maze, far enough apart along the wall to be two different places, and
+ * a walk between them through the maze long enough that going behind the wall
+ * actually saves the player something.
+ */
+function pairsWith(
+  a: { at: Vec; out: Vec },
+  b: { at: Vec; out: Vec },
+  distFrom: (p: Vec) => Map<string, number>,
+): boolean {
+  if (a === b) return false;
+  if (a.out.x !== b.out.x || a.out.y !== b.out.y) return false;
+  const span = manhattan(a.at, b.at);
+  if (span < SHORTCUT_MIN_SPAN || span > SHORTCUT_MAX_SPAN) return false;
+  const through = distFrom(a.at).get(key(b.at));
+  if (through === undefined) return false;
+  // The passage itself is the two necks plus the run behind the wall.
+  const passageLen = span + 2 * SHORTCUT_DEPTH - 1;
+  return through - passageLen >= SHORTCUT_MIN_SAVING;
+}
+
+/**
+ * The tiles of a shortcut: out through the wall at each end, and a straight
+ * run between the two, `SHORTCUT_DEPTH` tiles out — close enough that a single
+ * course of brick is all that separates it from the corridors it is cheating.
+ * Returns null if the two anchors do not line up on one side.
+ */
+function shortcutShape(a: Vec, b: Vec, out: Vec): Vec[] | null {
+  const side = { x: out.y, y: out.x }; // ninety degrees to the way in
+  const along = (p: Vec): number => p.x * side.x + p.y * side.y;
+  const from = along(a);
+  const to = along(b);
+  if (from === to) return null;
+  const dir = to > from ? 1 : -1;
+  const tiles: Vec[] = [];
+  for (let d = 1; d <= SHORTCUT_DEPTH; d++) tiles.push(step(a, out, d));
+  const runStart = step(a, out, SHORTCUT_DEPTH);
+  for (let i = 1; i <= Math.abs(to - from); i++) {
+    tiles.push({ x: runStart.x + side.x * dir * i, y: runStart.y + side.y * dir * i });
+  }
+  for (let d = SHORTCUT_DEPTH - 1; d >= 1; d--) tiles.push(step(b, out, d));
+  // The run's far end and b's neck meet at depth SHORTCUT_DEPTH; drop the
+  // duplicate so `tiles` stays a set.
+  const seen = new Set<string>();
+  return tiles.filter((t) => {
+    const k = key(t);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/**
+ * The tiles of a vault: a neck through the wall, a chamber three tiles wide
+ * and two deep, and a one-tile niche off the back of it. The niche is where
+ * the chest goes — chests are solid, so they may only ever sit in a dead end.
+ */
+function vaultShape(at: Vec, out: Vec): Vec[] {
+  const side = { x: out.y, y: out.x };
+  const tiles: Vec[] = [];
+  for (let d = 1; d <= VAULT_NECK; d++) tiles.push(step(at, out, d));
+  for (let d = VAULT_NECK + 1; d <= VAULT_NECK + 2; d++) {
+    const centre = step(at, out, d);
+    for (const a of [-1, 0, 1]) tiles.push({ x: centre.x + side.x * a, y: centre.y + side.y * a });
+  }
+  tiles.push(step(at, out, VAULT_NECK + 3));
+  return tiles;
+}
+
+/** The niche at the very back of a vault: its one tile with a single way out. */
+function vaultNiche(level: LevelData, passage: Passage): Vec | null {
+  for (const t of passage.tiles) {
+    if (floorNeighbors(level, t).length === 1 && !passage.mouths.some((m) => eq(m, t))) return t;
+  }
+  return null;
+}
+
+/**
+ * A chest at the back of every vault, holding a magic item of this floor's
+ * level — the same thing the shop sells, for the price of finding the seam in
+ * the wall instead of gold.
+ */
+function stockVaults(level: LevelData, depth: number, passages: Passage[], rng: Rng): void {
+  for (const passage of passages) {
+    if (passage.kind !== 'vault') continue;
+    const pos = vaultNiche(level, passage);
+    if (!pos) continue;
+    const magic = { kind: rng.pick(ITEM_KINDS), level: depth };
+    level.chests.push({
+      id: `v${level.chests.length + 1}`,
+      pos,
+      opened: false,
+      loot: { gold: rng.int(10, 20) * depth, xp: 5 * depth, magic },
+    });
+  }
+}
+
+/**
+ * Put a lens in one of this floor's ordinary chests.
+ *
+ * Only the first two floors of a themed set carry one, and only a chest out in
+ * the open — a lens locked behind a vault would be a lens nobody can reach.
+ * Which chest is never marked: finding it is the point, and there are always
+ * several to open.
+ */
+function placeLens(level: LevelData, depth: number, hidden: Set<string>, rng: Rng): void {
+  if (!lensFloor(depth)) return;
+  const open = level.chests.filter((c) => !hidden.has(key(c.pos)));
+  if (!open.length) return;
+  rng.pick(open).loot.lens = true;
+}
+
+/**
+ * Monsters for the passages: trash, mostly.
+ *
+ * A passage is dark, one tile wide and full of somebody else's air; what it is
+ * not is a second dungeon. Patrols shuffle up and down it and the odd guard
+ * sits at a corner, so walking one costs a few swings rather than a fight you
+ * have to prepare for. Never a lurker: a passage has no room to bait one in,
+ * and a hunter that followed the hero out of the wall would give the whole
+ * thing away.
+ */
+function stockPassages(
+  level: LevelData,
+  depth: number,
+  passages: Passage[],
+  used: Set<string>,
+  dist: Map<string, number>,
+  rng: Rng,
+  spawn: MonsterOpts,
+): void {
+  let n = level.monsters.length;
+  for (const passage of passages) {
+    const inside = new Set(passage.tiles.map(key));
+    const want = Math.min(PASSAGE_MONSTER_CAP, Math.floor(passage.tiles.length / PASSAGE_TILES_PER_MONSTER));
+    if (want <= 0) continue;
+    // Never a mouth: a guard rooted in the doorway would seal the passage off
+    // from the outside, and the hero would never know why the seam went cold.
+    const spots = passage.tiles.filter((p) => {
+      if (passage.mouths.some((m) => eq(m, p))) return false;
+      if (level.chests.some((c) => eq(c.pos, p))) return false;
+      return (dist.get(key(p)) ?? 0) >= MONSTER_MIN_DIST;
+    });
+    rng.shuffle(spots);
+    const claimed = new Set<string>();
+    for (let i = 0; i < want && i < spots.length; i++) {
+      const spot = spots[i];
+      if (claimed.has(key(spot))) continue;
+      const kind: RosterKind = rng.chance(0.75) ? 'patrol' : 'guard';
+      const m = makeMonster(kind, depth, rng, spot, `pm${++n}`, spawn);
+      if (kind === 'patrol') {
+        const beat = pocketBeat(level, spot, inside, rng);
+        if (!beat) continue; // nowhere to pace: leave the tile empty
+        m.patrolPath = beat;
+        m.patrolIndex = 0;
+        m.patrolDir = 1;
+      }
+      claimed.add(key(spot));
+      used.add(key(spot));
+      level.monsters.push(m);
     }
   }
 }
@@ -1023,7 +1349,11 @@ function stockWarrens(
 export function gateGuards(level: LevelData): Monster[] {
   const guards = new Map<string, Monster>();
   for (const m of level.monsters) if (m.alive && m.kind === 'guard') guards.set(key(m.pos), m);
-  const solid = new Set(level.chests.map((c) => key(c.pos)));
+  // Hidden passages count as rock here. A gate is the guard a hero with no
+  // lens cannot walk around; that a lens might open a way past one is the
+  // whole point of carrying it, not a reason to leave the guard at full
+  // strength for everybody else.
+  const solid = new Set([...level.chests.map((c) => key(c.pos)), ...passageTilesOf(level).map(key)]);
 
   // 0-1 BFS: stepping onto a guard costs one, every other floor tile is free.
   const cost = new Map<string, number>();
@@ -1105,15 +1435,25 @@ function validate(level: LevelData): boolean {
   // Doors sit in corridors.
   for (const d of level.doors) if (!isCorridor(level, d.pos)) return false;
 
-  // Reachability with all doors open. Chests are solid, so they count as
-  // walls here; each must still be reachable via a neighbouring tile.
+  // Reachability with all doors open, twice over: `plain` is the floor as a
+  // hero with no lens walks it (every passage is rock), `lensed` is the same
+  // floor with the passages open. Chests are solid in both, so they count as
+  // walls; each must still be reachable via a neighbouring tile.
   const chestTiles = new Set(level.chests.map((c) => key(c.pos)));
-  const open = bfsDistances(level, start, { blocked: (p) => chestTiles.has(key(p)) });
+  const hidden = new Set(passageTilesOf(level).map(key));
+  const lensed = bfsDistances(level, start, { blocked: (p) => chestTiles.has(key(p)) });
+  const open = hidden.size
+    ? bfsDistances(level, start, { blocked: (p) => chestTiles.has(key(p)) || hidden.has(key(p)) })
+    : lensed;
+  // The stairs are reachable without setting foot in a passage: a lens is
+  // always a saving and never a requirement.
   if (!open.has(key(exit))) return false;
   for (const c of level.chests) {
     if (floorNeighbors(level, c.pos).length !== 1) return false; // dead end only
-    if (!floorNeighbors(level, c.pos).some((nb) => open.has(key(nb)))) return false;
+    if (!floorNeighbors(level, c.pos).some((nb) => lensed.has(key(nb)))) return false;
   }
+  // Keys and shrines never hide in a passage: everything a floor *needs* is
+  // out in the maze where a hero with no lens can reach it.
   for (const k of level.keys) if (!open.has(key(k.pos))) return false;
   // Shrines are floor, not furniture: the hero has to be able to stand on one.
   for (const sh of level.shrines ?? []) if (!open.has(key(sh.pos))) return false;
@@ -1132,6 +1472,24 @@ function validate(level: LevelData): boolean {
     }
   }
 
+  // Passages: every tile of one is hidden ground, every one of them is
+  // walkable once the hero has a lens, and each touches the maze exactly at
+  // its mouths — no passage brushes another, and none of them opens a third
+  // way in behind the renderer's back.
+  for (const passage of level.passages ?? []) {
+    const inside = new Set(passage.tiles.map(key));
+    if (!passage.mouths.length) return false;
+    for (const m of passage.mouths) if (!inside.has(key(m))) return false;
+    if (passage.kind === 'vault' && passage.mouths.length !== 1) return false;
+    if (passage.kind === 'shortcut' && passage.mouths.length !== 2) return false;
+    for (const t of passage.tiles) {
+      if (!isFloor(level, t)) return false;
+      if (!lensed.has(key(t)) && !chestTiles.has(key(t))) return false;
+      const outside = floorNeighbors(level, t).filter((nb) => !inside.has(key(nb)));
+      if (outside.length && !passage.mouths.some((m) => eq(m, t))) return false;
+    }
+  }
+
   // Warrens are detours, never the route: wall every one of them off and the
   // stairs must still be reachable, or a warren has become a way past a gate.
   const warrenTiles = new Set(warrenTilesOf(level).map(key));
@@ -1146,10 +1504,12 @@ function validate(level: LevelData): boolean {
   // so the way down is never barred by a fight the hero cannot win.
   for (const g of gateGuards(level)) if (g.level > level.depth) return false;
 
-  // Monsters: enough of them, none lurking on the doorstep.
+  // Monsters: enough of them, none lurking on the doorstep. A passage's own
+  // monsters are only reachable through it, so they are measured with the
+  // lens on.
   if (level.monsters.length < 3) return false;
   for (const m of level.monsters) {
-    const d = open.get(key(m.pos));
+    const d = lensed.get(key(m.pos));
     if (d === undefined || d < MONSTER_MIN_DIST) return false;
     if (m.kind === 'patrol' && m.patrolPath) {
       for (const t of m.patrolPath) if (!isFloor(level, t)) return false;

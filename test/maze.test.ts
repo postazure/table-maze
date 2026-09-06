@@ -7,8 +7,10 @@ import {
   WARREN_MARGIN,
   WARREN_MONSTER_CAP,
   WARREN_MONSTER_BUDGET,
+  PASSAGE_MONSTER_CAP,
   gateGuards,
   generateLevel,
+  passageTilesOf,
   warrenTilesOf,
 } from '../src/engine/maze';
 import { bfsDistances, bfsPath, floorNeighbors, isFloor } from '../src/engine/pathfind';
@@ -145,8 +147,10 @@ test('generateLevel: structure, entities and solvability', () => {
       assert.equal(chestKeys.length, lv.chests.length, `${where}: one key per chest`);
       for (const k of lv.keys) assert.equal(k.taken, false, where);
 
-      // chests: solid tiles, so only ever in dead ends
-      assert.ok(lv.chests.length <= 8, where);
+      // chests: solid tiles, so only ever in dead ends. Eight out in the maze,
+      // plus one at the back of each vault passage.
+      const vaults = (lv.passages ?? []).filter((pg) => pg.kind === 'vault').length;
+      assert.ok(lv.chests.length <= 8 + vaults, where);
       for (const c of lv.chests) {
         assert.equal(c.opened, false, where);
         assert.ok(c.loot.gold > 0 && c.loot.xp > 0, where);
@@ -156,9 +160,10 @@ test('generateLevel: structure, entities and solvability', () => {
       // monsters
       assert.ok(lv.monsters.length >= 3, `${where}: at least 3 monsters`);
       const warrenMonsters = Math.min(WARREN_MONSTER_BUDGET, (lv.warrens?.length ?? 0) * WARREN_MONSTER_CAP);
+      const passageMonsters = (lv.passages?.length ?? 0) * PASSAGE_MONSTER_CAP;
       assert.ok(
-        lv.monsters.length <= ROUTE_MONSTER_CAP + warrenMonsters,
-        `${where}: ${lv.monsters.length} monsters is more than the route and warren caps allow`,
+        lv.monsters.length <= ROUTE_MONSTER_CAP + warrenMonsters + passageMonsters,
+        `${where}: ${lv.monsters.length} monsters is more than the route, warren and passage caps allow`,
       );
       const open = bfsDistances(lv, lv.start);
       for (const m of lv.monsters) {
@@ -502,11 +507,20 @@ function playedTo(depth: number, seed: number): Hero {
   const owned = new Set<string>();
   for (let d = 1; d <= depth; d++) {
     const level = generateLevel(d, seed);
+    // Hidden passages are left out on purpose. Everything else on a floor is
+    // there for anyone who walks it; a passage needs a lens the hero may
+    // simply not have found yet, so the hero modelled here is the one who
+    // never did. That is the bottom of the range the roles have to read
+    // against — a hero who found a lens is ahead of this one, which is the
+    // whole point of the item.
+    const hidden = new Set(passageTilesOf(level).map(key));
     let xp = 0;
     for (const m of level.monsters) {
+      if (hidden.has(key(m.pos))) continue;
       if (m.kind !== 'lurker') xp += m.xp * xpShare(hero.level, m.level);
     }
     for (const c of level.chests) {
+      if (hidden.has(key(c.pos))) continue;
       xp += c.loot.xp;
       const item = c.loot.item;
       if (!item || owned.has(item.name)) continue;

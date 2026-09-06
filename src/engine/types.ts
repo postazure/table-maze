@@ -73,6 +73,18 @@ export interface Loot {
   gold: number;
   xp: number;
   item?: LootItem;
+  /**
+   * A Lens of Truth (see engine/lens.ts). Chests on the first two floors of a
+   * themed set carry one. A hero who already holds a lens melts a second one
+   * down for coins, the same way a duplicate trinket goes.
+   */
+  lens?: boolean;
+  /**
+   * A magic item, the kind the shop sells. Only ever found at the back of a
+   * vault passage on the third floor of a set — the payoff for having gone
+   * looking with the lens.
+   */
+  magic?: MagicItem;
 }
 
 export interface Chest {
@@ -261,6 +273,33 @@ export interface Warren {
   tiles: Vec[];
 }
 
+/**
+ * A passage the floor keeps to itself.
+ *
+ * Every tile of one is real floor in `tiles` — pathfinding, monsters and the
+ * renderer all treat it as ground — but it is drawn as unbroken brick and the
+ * hero is refused entry unless they carry a lens (see engine/lens.ts).
+ *
+ * Unlike a warren, a passage is allowed to rejoin the maze somewhere else:
+ *  - 'shortcut' has two mouths and cuts across a long way round;
+ *  - 'vault' has one, and ends at a chest holding a magic item.
+ *
+ * They never *have* to be walked: `validate` in maze.ts wall them all off and
+ * checks the stairs are still reachable, so a hero without a lens is never
+ * stuck — only slower.
+ */
+export interface Passage {
+  id: string;
+  kind: 'shortcut' | 'vault';
+  /** Every tile of the passage, mouths included. All hidden. */
+  tiles: Vec[];
+  /**
+   * The tiles where the passage touches the maze: two for a shortcut, one for
+   * a vault. These are the seams a lens lights up from outside.
+   */
+  mouths: Vec[];
+}
+
 export interface LevelData {
   depth: number; // 1-based dungeon depth
   seed: number;
@@ -289,6 +328,11 @@ export interface LevelData {
    * floors, and on levels saved before warrens existed.
    */
   warrens?: Warren[];
+  /**
+   * The floor's hidden passages (see maze.ts and lens.ts). Optional: maze
+   * floors only, and absent on levels saved before passages existed.
+   */
+  passages?: Passage[];
   /**
    * The floor's shrine alcoves (see maze.ts). Optional: maze floors only, and
    * absent on boss and shop floors.
@@ -499,6 +543,18 @@ export interface Shop {
 // Hero / progression
 // ---------------------------------------------------------------------------
 
+/**
+ * The Lens of Truth the hero is carrying, or null. Found in a chest, bound to
+ * the three-floor themed set it was found in, and shattered on the way out of
+ * that set's shop. See engine/lens.ts.
+ */
+export interface Lens {
+  /** The depth the chest that held it was on. */
+  depth: number;
+  /** The themed set it works in: floors `set * 3 + 1` through `set * 3 + 3`. */
+  set: number;
+}
+
 export interface Hero {
   pos: Vec; // current tile
   rpos: Vec; // render position, lerped by the game
@@ -557,6 +613,11 @@ export interface Hero {
   tempHpMax: number;
   /** Shrine effects still running, newest last. See `engine/shrines.ts`. */
   buffs: Buff[];
+  /**
+   * The Lens of Truth, or null. Nothing in a fight reads it: all it does is
+   * open this set's hidden passages and light the way a few tiles at a time.
+   */
+  lens: Lens | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -622,6 +683,8 @@ export type SfxId =
   | 'immune'
   | 'shrine'
   | 'wardBreak'
+  | 'lens'
+  | 'lensBreak'
   | 'angel'
   | 'bossWin'
   | 'gameOver';
@@ -667,6 +730,12 @@ export type Modal =
   | { kind: 'item'; item: MagicItem; replaced: MagicItem | null }
   /** The help screen: current gear explained in words. Opened from the HUD. */
   | { kind: 'help' }
+  /**
+   * The hero is walking out of the shop with a lens still in their pocket.
+   * Everything stops while it shatters; dismissing it drops the lens and lets
+   * the stairs finish. Closed by the animation itself, not by a button.
+   */
+  | { kind: 'lensShatter' }
   /**
    * Entering a boss chamber: what the boss is and what the hero must do.
    * Dismissed by its button only (never by tapping the backdrop). The
@@ -767,7 +836,7 @@ export interface Rng {
   chance(p: number): boolean;
 }
 
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 /** Health is measured in quarter-hearts. One heart = 4 hp. */
 export const HEART = 4;

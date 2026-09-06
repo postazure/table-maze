@@ -315,6 +315,28 @@ const SFX: Record<SfxId, Voice> = {
     tone(ctx, dest, { type: 'sine', freq: hz(88), dur: 0.8, gain: 0.07, at: 0.22, attack: 0.12 });
   },
 
+  /**
+   * Finding the Lens of Truth: a thin glass ring that opens out instead of
+   * landing, so it sounds like something being let in rather than picked up.
+   */
+  lens(ctx, dest) {
+    arpeggio(ctx, dest, [hz(84), hz(89), hz(96)], { step: 0.06, dur: 0.35, gain: 0.09, type: 'sine' });
+    tone(ctx, dest, { type: 'sine', freq: hz(101), dur: 0.9, gain: 0.06, at: 0.18, attack: 0.2 });
+    noise(ctx, dest, { filter: 'highpass', freq: 5000, to: 9000, dur: 0.35, gain: 0.035, q: 0.4 });
+  },
+
+  /**
+   * The lens shattering on the way out of the shop. The one sound in the game
+   * that is glass breaking and nothing else: a hard crack, a spray of shards,
+   * and the ring of the pickup sound running backwards underneath it.
+   */
+  lensBreak(ctx, dest) {
+    noise(ctx, dest, { filter: 'highpass', freq: 2000, to: 9000, dur: 0.12, gain: 0.16, q: 0.4 });
+    noise(ctx, dest, { filter: 'highpass', freq: 6000, to: 3000, dur: 0.55, gain: 0.08, q: 0.5, at: 0.08 });
+    tone(ctx, dest, { type: 'sine', freq: hz(96), to: hz(72), dur: 0.5, gain: 0.09 });
+    tone(ctx, dest, { type: 'triangle', freq: hz(60), dur: 0.7, gain: 0.07, at: 0.1 });
+  },
+
   /** The last temporary heart going: the same shape as the shrine, downward. */
   wardBreak(ctx, dest) {
     tone(ctx, dest, { type: 'sine', freq: hz(81), to: hz(69), dur: 0.3, gain: 0.11 });
