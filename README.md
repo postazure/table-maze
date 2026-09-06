@@ -108,7 +108,9 @@ Play it at **https://postazure.github.io/table-maze/**
   know where you are and take the shortest way round, so they walk into the doorways of
   whatever room you are in and wait there, just out of reach. Block every way out of a
   room and they finally move in; three touches turn you to stone. Keep moving, and never
-  let them have the last door. Win and one of your magic items gains a level (or
+  let them have the last door. Deeper angel floors are a bigger grid of rooms with more
+  statues in them — a longer walk with more of them awake behind you — rather than faster
+  angels. Win and one of your magic items gains a level (or
   you gain a heart if you're wearing nothing), and your hearts refill. Lose in a boss
   chamber and the run ends there — no waking up nearby this time — and a stats screen
   shows how far you got, your level, kills, bosses beaten, gold, and time played before

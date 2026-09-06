@@ -18,12 +18,12 @@ import type {
   Shrine,
   Vec,
 } from './types';
-import { ANGEL_STEP_MS, HEART, ITEM_SLOT, SAVE_VERSION, eq, key, manhattan } from './types';
+import { HEART, ITEM_SLOT, SAVE_VERSION, eq, key, manhattan } from './types';
 import { hashSeed, makeRng } from './rng';
 import { bfsDistances, bfsPath } from './pathfind';
 import { generateLevel } from './maze';
 import { themeForDepth } from './themes';
-import { applyLevelUp, newHero, trinketGold } from './balance';
+import { angelPlan, applyLevelUp, newHero, trinketGold } from './balance';
 import { updateMonsters } from './monsters';
 import { angelsAct } from './angels';
 import {
@@ -984,10 +984,10 @@ export class Game {
   }
 
   /**
-   * The angels' clock. Every `ANGEL_STEP_MS`, while at least one of them is
-   * awake, they all act at once: take a doorway, hold their distance, or —
-   * with the hero boxed in — move in and touch them (angels.ts). Hero steps
-   * neither hurry it nor reset it, so running buys ground, never time.
+   * The angels' clock. Every `angelPlan(depth).stepMs`, while at least one of
+   * them is awake, they all act at once: take a doorway, hold their distance,
+   * or — with the hero boxed in — move in and touch them (angels.ts). Hero
+   * steps neither hurry it nor reset it, so running buys ground, never time.
    */
   private stepAngels(dt: number): void {
     const st = this.state;
@@ -997,11 +997,12 @@ export class Game {
       this.angelTimer = 0;
       return;
     }
+    const stepMs = angelPlan(st.level.depth).stepMs;
     this.angelTimer += dt;
     let guard = 0;
-    while (this.angelTimer >= ANGEL_STEP_MS && guard < 4) {
+    while (this.angelTimer >= stepMs && guard < 4) {
       guard += 1;
-      this.angelTimer -= ANGEL_STEP_MS;
+      this.angelTimer -= stepMs;
       angelsAct(st, this.rng);
       this.dirty = true;
       if (st.modal || st.over) break;

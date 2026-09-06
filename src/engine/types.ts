@@ -341,7 +341,8 @@ export const BOSS_HIT_FRACTION = 1 / 3;
  * Angel pacing and nerve (angels.ts). One step every `ANGEL_STEP_MS` — over
  * four times slower than the hero — but they walk the whole floor straight
  * at their goal, so a shorter way round through another room still gets them
- * there first.
+ * there first. This is the clock on the first angel floors; deeper ones shave
+ * a little off it (`angelPlan`, balance.ts).
  */
 export const ANGEL_STEP_MS = 600;
 /**

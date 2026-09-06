@@ -47,7 +47,17 @@ export function rollChestLoot(depth: number, rng: Rng): Loot; // item, if any, i
 export function trinketGold(depth: number): number;  // coins a duplicate chest trinket melts down for (a potion trinket is exempt: see openChest in game.ts)
 export function xpShare(heroLevel: number, monsterLevel: number): number; // share of a kill's xp banked, from the level difference: >1 when the hero is behind (capped at 3), <1 when ahead (floored at 0.05). Gold is never scaled.
 export function damage(attackerAtk: number, defenderDef: number, rng: Rng): number; // >= 1
+export function bossRetryCost(depth: number, retriesSoFar: number): number; // gold to buy back into a lost boss fight
+export function angelPlan(depth: number): AngelPlan; // the weeping angels' floor by depth: { cols, rows, width, height, minAngels, maxAngels, stepMs }
 ```
+`angelPlan` is the angels' whole difficulty curve, and it scales by ground
+rather than by speed. Grid tiers: 3x4 rooms to depth 9, 3x5 to 18, 4x5 to 27,
+4x6 after that; a cell is 9x10 tiles, so `width = odd(cols·9 + 2)` and
+`height = rows·10 + 1` (both odd, biggest 39x61 — no wider than a deep maze
+floor). Statues are 0.35 to 0.5 per room (12 rooms -> 4-6, 24 rooms -> 8-12),
+so a bigger floor is never a barer one. `stepMs` is `ANGEL_STEP_MS` less 30 per
+tier (600 down to 510): it must stay several times the hero's own step, or the
+siege turns back into a footrace.
 
 ## maze.ts
 ```ts
@@ -583,15 +593,20 @@ doors / chests, deterministic for (depth, runSeed)):
   among the BFS-farthest tiles from start, the single `minotaur` monster
   (id `minotaur`) placed at least 12 BFS tiles from start, roughly between
   start and exit. `boss = { kind:'minotaur', defeated:false }`.
-- **angels**: a grid of rooms (3 columns x 4 rows, each room 4x4 to 7x6 of
-  floor, in a level around 29x41) joined by winding 1-wide corridors between
-  neighbouring rooms so the whole level is connected with loops (every room
-  has at least two corridors where possible). `boss.rooms` lists every room
-  rectangle (floor only). `start` in a room in the top row, `exit` in a room
-  in the bottom row far from start. 4-6 `angel` monsters (ids `angel1..n`),
-  each inside a room with `roomId` set to that room's index, never in the
-  start room, never in the exit room, at most one per room, at least 8 BFS
-  tiles from start. `boss = { kind:'angels', defeated:false, rooms }`.
+- **angels**: a grid of rooms sized by `angelPlan(depth)` (balance.ts) — its
+  `cols` x `rows`, in a level of exactly its `width` x `height`, each room 4x4
+  to 7x6 of floor — joined by winding 1-wide corridors between neighbouring
+  rooms so the whole level is connected with loops (every room has at least
+  two corridors where possible). `boss.rooms` lists every room rectangle
+  (floor only). `start` in a room in the top row, `exit` in a room in the
+  bottom row far from start. `plan.minAngels`..`plan.maxAngels` `angel`
+  monsters (ids `angel1..n`), each inside a room with `roomId` set to that
+  room's index, never in the start room, never in the exit room, at most one
+  per room, at least 8 BFS tiles from start. Rooms are filled in this order:
+  the ones the shortest start->exit walk passes through first (a bigger floor
+  has to be a busier walk, and the grid's loops are the way round), then the
+  rest one row at a time, top to bottom, before any row takes a second statue.
+  `boss = { kind:'angels', defeated:false, rooms }`.
 - Every level: `bfsPath(start, exit)` exists once the blocking monsters are
   ignored, every monster on a unique floor tile, no monster within 2 tiles of
   start, `level.theme = themeForDepth(depth).id`.
@@ -612,8 +627,9 @@ doors / chests, deterministic for (depth, runSeed)):
   `roomId` equals it wakes (`state = 'chasing'`, never goes back to idle).
   Angels have no lock-step with the hero at all: while at least one is awake,
   a step clock (`angelTimer += dt`, in `tickBoss`) calls `angelsAct(state,
-  rng)` (angels.ts) once every `ANGEL_STEP_MS` (600), and every awake angel
-  acts in that one call. Hero steps neither hurry the clock nor reset it; it
+  rng)` (angels.ts) once every `angelPlan(level.depth).stepMs` (600 on the
+  first angel floors, 510 on the deepest), and every awake angel acts in that
+  one call. Hero steps neither hurry the clock nor reset it; it
   resets to 0 while every angel is idle. At most 4 steps per tick, then the
   remainder is dropped (a hidden tab is not a massacre). `updateMonsters`
   itself does nothing for angels.
@@ -710,7 +726,7 @@ doors / chests, deterministic for (depth, runSeed)):
   (normal `moveBlocked`), attack when adjacent. Never returns/idles.
 - `minotaur`: same as minion, never stops. Attack when adjacent.
 - `angel`: skipped entirely by `updateMonsters` (no cooldowns of its own).
-  The siege lives in **angels.ts** (`angelsAct`, one call per `ANGEL_STEP_MS`,
+  The siege lives in **angels.ts** (`angelsAct`, one call per step clock,
   all awake angels acting together, `idle` ones never). Every call first asks
   whether the hero is boxed in and sets every awake angel's `state` to
   `closing` or back to `chasing`:

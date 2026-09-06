@@ -11,6 +11,8 @@ import {
   makeBossMonster,
   roomAt,
 } from '../src/engine/boss';
+import { angelPlan } from '../src/engine/balance';
+import { DEFAULT_MOVE_MS } from '../src/engine/items';
 import { bfsDistances, bfsPath, floorNeighbors, isFloor } from '../src/engine/pathfind';
 import { themeForDepth } from '../src/engine/themes';
 
@@ -261,6 +263,45 @@ test('minotaur: a braided maze with one distant hunter', () => {
   }
 });
 
+test('angels: deeper floors add rooms and statues, not speed', () => {
+  const tiers = [3, 12, 21, 30].map((d) => ({ d, plan: angelPlan(d) }));
+
+  // The shipped first floor is exactly what it always was.
+  assert.deepEqual(
+    { ...tiers[0].plan },
+    { cols: 3, rows: 4, width: 29, height: 41, minAngels: 4, maxAngels: 6, stepMs: 600 },
+  );
+
+  for (let i = 1; i < tiers.length; i++) {
+    const prev = tiers[i - 1].plan;
+    const now = tiers[i].plan;
+    const where = `depth ${tiers[i].d}`;
+    assert.ok(now.cols * now.rows > prev.cols * prev.rows, `${where}: more rooms`);
+    assert.ok(now.minAngels > prev.minAngels, `${where}: more statues`);
+    assert.ok(now.maxAngels > prev.maxAngels, `${where}: more statues`);
+    assert.ok(now.width >= prev.width && now.height >= prev.height, `${where}: more ground`);
+    // Never emptier than the floor before it.
+    assert.ok(
+      now.minAngels / (now.cols * now.rows) >= prev.minAngels / (prev.cols * prev.rows) - 0.02,
+      `${where}: statues per room must not thin out`,
+    );
+  }
+
+  for (const { d, plan } of tiers) {
+    const where = `depth ${d}`;
+    assert.equal(plan.width % 2, 1, `${where}: odd width`);
+    assert.equal(plan.height % 2, 1, `${where}: odd height`);
+    assert.ok(plan.maxAngels <= plan.cols * plan.rows - 2, `${where}: a room each, minus start and exit`);
+    // A cell has to hold a 7x6 room with a wall margin all round.
+    assert.ok(Math.floor((plan.width - 2) / plan.cols) >= 9, `${where}: cells wide enough`);
+    assert.ok(Math.floor((plan.height - 2) / plan.rows) >= 9, `${where}: cells tall enough`);
+    // Still a siege, never a footrace: the hero steps every 140ms.
+    assert.ok(plan.stepMs >= 3 * DEFAULT_MOVE_MS, `${where}: ${plan.stepMs}ms is too quick`);
+  }
+  assert.ok(angelPlan(30).stepMs < angelPlan(3).stepMs, 'the clock does tighten a little');
+  assert.deepEqual(angelPlan(999), angelPlan(30), 'and then it stops: the last tier is the last');
+});
+
 test('angels: a grid of rooms with statues in the side rooms', () => {
   const levels = levelsOf('angels');
   assert.ok(levels.length >= 5, 'the matrix should contain angel levels');
@@ -268,8 +309,11 @@ test('angels: a grid of rooms with statues in the side rooms', () => {
     const boss = lv.boss;
     assert.ok(boss && boss.kind === 'angels', where);
     if (!boss || boss.kind !== 'angels') continue;
+    const plan = angelPlan(lv.depth);
     const rooms = boss.rooms;
-    assert.equal(rooms.length, 12, `${where}: 3 columns x 4 rows`);
+    assert.equal(rooms.length, plan.cols * plan.rows, `${where}: ${plan.cols} columns x ${plan.rows} rows`);
+    assert.equal(lv.width, plan.width, where);
+    assert.equal(lv.height, plan.height, where);
 
     // rooms: floor all through, the right size, never overlapping
     const claimed = new Set<string>();
@@ -287,8 +331,11 @@ test('angels: a grid of rooms with statues in the side rooms', () => {
 
     const startRoom = roomAt(rooms, lv.start);
     const exitRoom = roomAt(rooms, lv.exit);
-    assert.ok(startRoom >= 0 && startRoom < 3, `${where}: start room ${startRoom} not top row`);
-    assert.ok(exitRoom >= 9 && exitRoom < 12, `${where}: exit room ${exitRoom} not bottom row`);
+    assert.ok(startRoom >= 0 && startRoom < plan.cols, `${where}: start room ${startRoom} not top row`);
+    assert.ok(
+      exitRoom >= rooms.length - plan.cols && exitRoom < rooms.length,
+      `${where}: exit room ${exitRoom} not bottom row`,
+    );
 
     // every room is part of the level, not walled off
     const dist = bfsDistances(lv, lv.start);
@@ -297,7 +344,10 @@ test('angels: a grid of rooms with statues in the side rooms', () => {
     }
 
     const angels = lv.monsters;
-    assert.ok(angels.length >= 4 && angels.length <= 6, `${where}: ${angels.length} angels`);
+    assert.ok(
+      angels.length >= plan.minAngels && angels.length <= plan.maxAngels,
+      `${where}: ${angels.length} angels, wanted ${plan.minAngels}-${plan.maxAngels}`,
+    );
     const used = new Set<number>();
     for (const [i, a] of angels.entries()) {
       assert.equal(a.kind, 'angel', where);
