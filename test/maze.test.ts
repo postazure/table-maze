@@ -552,15 +552,21 @@ test('the three roles still read the same against a hero who keeps pace', () => 
     if (depth >= 5) {
       assert.ok(guard.spent > 0.15, `${where}: a guard costs real hearts (${guard.spent.toFixed(2)})`);
     }
-    // A lurker is never a cheap fight. Deep in the run a well-kitted hero can
-    // take one, but it costs most of their hearts to do it.
+    // A lurker is never a cheap fight. From partway through the run a hero
+    // who kept pace gets a real, if costly, shot at one.
     const lurker = cost('lurker');
     assert.ok(
       lurker.spent > 0.5,
       `${where}: a lurker should cost most of the hero's hearts (${lurker.spent.toFixed(2)})`,
     );
     if (depth <= 6) {
-      assert.ok(lurker.winRate < 0.5, `${where}: a lurker is not a fight to pick`);
+      assert.ok(lurker.winRate < 0.5, `${where}: a lurker is not a fight to pick early on`);
+    }
+    if (depth >= 10 && depth <= 16) {
+      assert.ok(
+        lurker.winRate > 0.3,
+        `${where}: a hero who kept pace should have a real shot at a lurker (${lurker.winRate.toFixed(2)})`,
+      );
     }
   }
 });
