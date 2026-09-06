@@ -89,7 +89,7 @@ test('makeBossMonster: rooted furniture, unkillable bosses, live minions', () =>
   const angel = makeBossMonster('angel', 6, { x: 1, y: 1 }, 'angel1');
   assert.equal(minotaur.state, 'chasing');
   assert.equal(angel.state, 'idle', 'angels wait until the hero enters their room');
-  assert.ok(angel.moveInterval > 1e6 && angel.attackInterval > 1e6, 'angels have no clock: they move with the hero');
+  assert.ok(angel.moveInterval > 1e6 && angel.attackInterval > 1e6, 'angels have no clock of their own: they act on the siege clock');
   const deep = makeBossMonster('crystal', 20, { x: 1, y: 1 }, 'c');
   assert.ok(deep.hp > crystal.hp, 'stats scale with depth');
 });

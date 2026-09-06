@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ANGEL_CREEP_MS, HEART, ITEM_SLOT, Tile, key, manhattan } from '../src/engine/types';
+import { ANGEL_STEP_MS, HEART, ITEM_SLOT, Tile, key, manhattan } from '../src/engine/types';
 import type {
   BossData,
   GameState,
@@ -1928,118 +1928,153 @@ test('a health potion also saves the hero in a boss chamber', () => {
   assert.equal(st.over, false, 'the run goes on');
 });
 
-test('an angel only moves when the hero moves', () => {
-  const g = Game.forTest(13);
-  const level = mkBossLevel(LONG_CORRIDOR, { kind: 'angels', defeated: false, rooms: [] });
-  const angel = makeBossMonster('angel', 3, { x: 9, y: 1 }, 'angel1');
-  angel.state = 'chasing';
-  level.monsters.push(angel);
-  install(g, level, { x: 5, y: 1 });
-  const st = g.state;
-  const hero = st.hero;
-  hero.maxHp = 12;
-  hero.hp = 12;
+/**
+ * A room (x 2..4, y 3..5) with exactly two ways out, north through (3,2) and
+ * south through (3,6), each opening onto a corridor. Everything the angels do
+ * hangs off those two doorways.
+ */
+const ANGEL_ROOMS = [
+  '###########',
+  '###.......#',
+  '###.#######',
+  '##...######',
+  '##...######',
+  '##...######',
+  '###.#######',
+  '###.......#',
+  '###########',
+];
+const ANGEL_ROOM: Rect = { x: 2, y: 3, w: 3, h: 3 };
 
-  // Stand still (short of a creep tick): nothing happens, whichever way you face.
-  hero.facing = 'W';
-  for (let i = 0; i < 2; i++) g.tick(200); // well short of a creep tick
-  assert.deepEqual(angel.pos, { x: 9, y: 1 }, 'a still hero is left alone for a while');
-  assert.equal(hero.hp, 12);
+/** The two-door room, the hero in the middle of it, and no angels yet. */
+function angelGame(seed = 13): { g: Game; level: LevelData } {
+  const g = Game.forTest(seed);
+  const level = mkBossLevel(ANGEL_ROOMS, {
+    kind: 'angels',
+    defeated: false,
+    rooms: [ANGEL_ROOM],
+  });
+  install(g, level, { x: 3, y: 4 });
+  g.state.depth = 3;
+  g.state.hero.maxHp = 12;
+  g.state.hero.hp = 12;
+  return { g, level };
+}
 
-  // One step west: the angel answers with one step of its own.
-  g.pointerAt({ x: 4, y: 1 });
-  g.tick(heroMoveMs(hero));
-  assert.deepEqual(hero.pos, { x: 4, y: 1 });
-  assert.deepEqual(angel.pos, { x: 8, y: 1 }, 'one hero step, one angel step');
-  g.pointerAt(null);
-  for (let i = 0; i < 2; i++) g.tick(200); // well short of a creep tick
-  assert.deepEqual(angel.pos, { x: 8, y: 1 }, 'and then it waits again');
+/** Drop an awake angel on `pos`. */
+function awakeAngel(level: LevelData, pos: Vec, id: string): Monster {
+  const m = makeBossMonster('angel', 3, pos, id);
+  m.state = 'chasing';
+  level.monsters.push(m);
+  return m;
+}
 
-  // Walk toward it: it closes one tile per tile until it is at your side.
-  g.pointerAt({ x: 5, y: 1 });
-  g.tick(heroMoveMs(hero));
-  assert.deepEqual(hero.pos, { x: 5, y: 1 });
-  assert.deepEqual(angel.pos, { x: 7, y: 1 });
-  g.pointerAt({ x: 6, y: 1 });
-  g.tick(heroMoveMs(hero));
-  assert.deepEqual(angel.pos, { x: 7, y: 1 }, 'already adjacent after your step: it stays put');
-  assert.equal(hero.hp, 8, 'and its touch takes a third of the hearts');
-  assert.ok(st.fx.some((f) => f.kind === 'flash'), 'and greys the tile');
-  assert.deepEqual(hero.pos, { x: 5, y: 1 }, 'the touch shoves you back');
-  g.pointerAt(null);
-  for (let i = 0; i < 2; i++) g.tick(200); // well short of a creep tick
-  assert.ok(hero.hp >= 8, 'a shove is not a step, and it does not strike again at once');
-  assert.deepEqual(angel.pos, { x: 7, y: 1 });
+test('an awake angel walks to a doorway of the hero\'s room and holds it', () => {
+  const { g, level } = angelGame();
+  const angel = awakeAngel(level, { x: 9, y: 1 }, 'angel1');
+  const hero = g.state.hero;
+
+  // The north door is seven steps away, the south one eleven: it takes the
+  // near one, one tile per step clock, never in a hurry.
+  g.tick(ANGEL_STEP_MS);
+  assert.deepEqual(angel.pos, { x: 8, y: 1 }, 'one tile per step clock');
+  for (let i = 0; i < 6; i++) g.tick(ANGEL_STEP_MS);
+  assert.deepEqual(angel.pos, { x: 3, y: 2 }, 'straight to the near doorway');
+
+  // And there it stays: a door held is the whole point.
+  for (let i = 0; i < 5; i++) g.tick(ANGEL_STEP_MS);
+  assert.deepEqual(angel.pos, { x: 3, y: 2 });
+  assert.equal(angel.state, 'chasing', 'still only laying siege');
+  assert.equal(hero.hp, 12, 'and it never lays a finger on you');
+
+  // Walk right up to it: while a way out is open, it will not touch you.
+  hero.pos = { x: 3, y: 3 };
+  hero.rpos = { x: 3, y: 3 };
+  for (let i = 0; i < 3; i++) g.tick(ANGEL_STEP_MS);
+  assert.equal(hero.hp, 12, 'stone keeps its distance until you are cornered');
+  assert.equal(g.state.over, false);
 });
 
-test('awake angels creep closer on their own, slowly, and a lingering hero is touched', () => {
-  const g = Game.forTest(31);
-  const level = mkBossLevel(LONG_CORRIDOR, { kind: 'angels', defeated: false, rooms: [] });
-  const angel = makeBossMonster('angel', 3, { x: 9, y: 1 }, 'angel1');
-  level.monsters.push(angel);
-  install(g, level, { x: 5, y: 1 });
-  const st = g.state;
-  const hero = st.hero;
-  hero.maxHp = 12;
-  hero.hp = 12;
+test('angels keep to their own clock, however fast the hero runs', () => {
+  const { g, level } = angelGame(5);
+  const angel = awakeAngel(level, { x: 9, y: 1 }, 'angel1');
+  const hero = g.state.hero;
+  hero.pos = { x: 3, y: 7 };
+  hero.rpos = { x: 3, y: 7 };
 
-  // A weeping angel has nothing to creep toward.
-  g.tick(ANGEL_CREEP_MS * 3);
-  assert.deepEqual(angel.pos, { x: 9, y: 1 }, 'statues do not creep');
+  // Four hero steps inside one angel step: the hero is over four times quicker.
+  g.pointerAt({ x: 7, y: 7 });
+  for (let i = 0; i < 4; i++) g.tick(heroMoveMs(hero));
+  assert.deepEqual(hero.pos, { x: 7, y: 7 }, 'the hero covers four tiles');
+  assert.deepEqual(angel.pos, { x: 9, y: 1 }, 'and the angel has not stirred');
+  g.pointerAt(null);
+  g.state.path.length = 0;
+});
 
-  angel.state = 'chasing';
-  g.tick(ANGEL_CREEP_MS - 1);
-  assert.deepEqual(angel.pos, { x: 9, y: 1 }, 'not yet');
-  g.tick(1);
-  assert.deepEqual(angel.pos, { x: 8, y: 1 }, 'one tile per creep, hero standing still');
-  g.tick(ANGEL_CREEP_MS);
-  assert.deepEqual(angel.pos, { x: 7, y: 1 });
-  g.tick(ANGEL_CREEP_MS);
-  assert.deepEqual(angel.pos, { x: 6, y: 1 }, 'now at your side');
-  assert.equal(hero.hp, 12, 'arriving is not a touch');
+test('with every door held the angels close in, and a touch turns you to stone', () => {
+  const { g, level } = angelGame(29);
+  const north = awakeAngel(level, { x: 3, y: 2 }, 'angel1');
+  const south = awakeAngel(level, { x: 9, y: 7 }, 'angel2');
+  const hero = g.state.hero;
 
-  g.tick(ANGEL_CREEP_MS);
-  assert.equal(hero.hp, 8, 'linger beside it and the next creep is a touch');
-  assert.deepEqual(hero.pos, { x: 4, y: 1 }, 'with the usual shove');
+  // The south angel walks its seven tiles to the other door. Until it lands,
+  // the hero still has a way out and nobody is touched.
+  for (let i = 0; i < 6; i++) g.tick(ANGEL_STEP_MS);
+  assert.deepEqual(south.pos, { x: 3, y: 7 }, 'one step short of the doorway');
+  assert.equal(hero.hp, 12, 'a door still open is a hero still safe');
 
-  // A hidden tab coming back with a huge dt is capped, not a massacre.
-  hero.hp = 12;
-  hero.pos = { x: 1, y: 1 };
-  hero.rpos = { x: 1, y: 1 };
-  angel.pos = { x: 12, y: 1 };
-  angel.rpos = { x: 12, y: 1 };
-  g.tick(ANGEL_CREEP_MS * 40);
-  assert.deepEqual(angel.pos, { x: 8, y: 1 }, 'at most four creep steps in one tick');
+  g.tick(ANGEL_STEP_MS);
+  assert.deepEqual(south.pos, { x: 3, y: 6 }, 'and now the room is sealed');
+  assert.equal(hero.hp, 12, 'sealing it is not yet the kill');
+
+  // Sealed: both of them come in off the doors.
+  g.tick(ANGEL_STEP_MS);
+  assert.equal(north.state, 'closing');
+  assert.equal(south.state, 'closing');
+  assert.deepEqual(north.pos, { x: 3, y: 3 }, 'in off the north door');
+  assert.deepEqual(south.pos, { x: 3, y: 5 }, 'in off the south door');
+  assert.equal(hero.hp, 12, 'still just short of reach');
+
+  g.tick(ANGEL_STEP_MS);
+  assert.ok(hero.hp < 12, 'and then the touching starts');
+  assert.ok(g.state.fx.some((f) => f.kind === 'flash'), 'the tile greys over');
+
+  for (let i = 0; i < 6; i++) g.tick(ANGEL_STEP_MS);
+  assert.equal(g.state.over, true, 'three touches is a run');
+  const modal = g.state.modal as { kind: string; cause: string } | null;
+  assert.equal(modal?.kind, 'gameOver');
+  assert.equal(modal?.cause, 'You were turned to stone.');
+});
+
+test('break away from the ring and the angels go back to the doors', () => {
+  const { g, level } = angelGame(31);
+  const north = awakeAngel(level, { x: 3, y: 2 }, 'angel1');
+  const south = awakeAngel(level, { x: 3, y: 6 }, 'angel2');
+  const hero = g.state.hero;
+
+  g.tick(ANGEL_STEP_MS);
+  assert.equal(north.state, 'closing', 'sealed in from the first step');
+  assert.equal(south.state, 'closing');
+
+  // Out of the room and away down the south corridor, well clear of both.
+  hero.pos = { x: 9, y: 7 };
+  hero.rpos = { x: 9, y: 7 };
+  g.tick(ANGEL_STEP_MS);
+  assert.equal(north.state, 'chasing', 'lose them and the siege starts over');
+  assert.equal(south.state, 'chasing');
   assert.equal(hero.hp, 12);
 });
 
-test('stepping away from an angel at your side is safe, stepping past it is not', () => {
-  const g = Game.forTest(29);
-  const level = mkBossLevel(LONG_CORRIDOR, { kind: 'angels', defeated: false, rooms: [] });
-  const angel = makeBossMonster('angel', 3, { x: 7, y: 1 }, 'angel1');
-  angel.state = 'chasing';
-  level.monsters.push(angel);
-  install(g, level, { x: 6, y: 1 });
+test('nobody walks through an angel, and nobody hurts one', () => {
+  const { g, level } = angelGame(17);
+  awakeAngel(level, { x: 3, y: 3 }, 'angel1');
   const st = g.state;
   const hero = st.hero;
-  hero.maxHp = 12;
-  hero.hp = 12;
 
-  // Adjacent, and walking away: it follows, one tile behind, never touching.
-  g.pointerAt({ x: 3, y: 1 });
-  for (let i = 0; i < 3; i++) g.tick(heroMoveMs(hero));
-  assert.deepEqual(hero.pos, { x: 3, y: 1 });
-  assert.deepEqual(angel.pos, { x: 4, y: 1 }, 'right on your heels');
-  assert.equal(hero.hp, 12, 'but a step away is always out of reach');
-
-  // Turn and try to walk into it: the hero swings instead of stepping, so
-  // no step is taken and the angel does not act at all.
-  g.pointerAt({ x: 4, y: 1 });
+  g.pointerAt({ x: 3, y: 3 });
   g.tick(heroMoveMs(hero));
-  assert.deepEqual(hero.pos, { x: 3, y: 1 }, 'nobody walks through an angel');
-  assert.deepEqual(angel.pos, { x: 4, y: 1 });
-  assert.equal(hero.hp, 12, 'a swing is not a step');
-  assert.ok(st.fx.some((f) => f.kind === 'text' && f.text === 'Immune'), 'and it cannot be hurt');
+  assert.deepEqual(hero.pos, { x: 3, y: 4 }, 'the hero swings instead of stepping');
+  assert.ok(st.fx.some((f) => f.kind === 'text' && f.text === 'Immune'), 'and cannot hurt it');
   g.pointerAt(null);
   st.path.length = 0;
 });

@@ -168,15 +168,20 @@ export type RosterKind = 'guard' | 'patrol' | 'lurker';
  *  - minotaur:   `invulnerable`, chases the hero anywhere, slowly, forever.
  *                Every hit takes a third of the hero's max hp.
  *  - angel:      `invulnerable`. Idle (weeping) until the hero enters its room
- *                (`roomId`), then it hunts the hero anywhere, forever, but
- *                mostly in lock-step with the hero: one hero step, one angel
- *                step, plus a slow creep of one tile every `ANGEL_CREEP_MS`
- *                so waiting only delays it. A touch (attack) takes a third
- *                of max hp.
+ *                (`roomId`), then it lays siege: one step every
+ *                `ANGEL_STEP_MS` (far slower than the hero) straight toward
+ *                the doorways of whatever room the hero is in, keeping out
+ *                of arm's reach until the hero has nowhere left to run.
+ *                Then every angel closes in, and a touch (attack) takes a
+ *                third of max hp. See angels.ts.
  */
 export type BossMonsterKind = 'minion' | 'crystal' | 'boss' | 'minotaur' | 'angel';
 export type MonsterKind = RosterKind | BossMonsterKind;
-export type MonsterState = 'idle' | 'chasing' | 'returning';
+/**
+ * `closing` is the angels' own: the ring has shut and they are moving in for
+ * the kill (angels.ts). Every other kind only ever uses the first three.
+ */
+export type MonsterState = 'idle' | 'chasing' | 'returning' | 'closing';
 
 export interface Monster {
   id: string;
@@ -333,11 +338,29 @@ export const inRect = (r: Rect, p: Vec): boolean =>
 export const BOSS_HIT_FRACTION = 1 / 3;
 
 /**
- * Awake angels answer every hero step with one of their own, and on top of
- * that creep one tile closer every this many ms whether the hero moves or
- * not. Slow enough to plan around, but standing still never saves you.
+ * Angel pacing and nerve (angels.ts). One step every `ANGEL_STEP_MS` — over
+ * four times slower than the hero — but they walk the whole floor straight
+ * at their goal, so a shorter way round through another room still gets them
+ * there first.
  */
-export const ANGEL_CREEP_MS = 2200;
+export const ANGEL_STEP_MS = 600;
+/**
+ * While the hero still has a way out, angels never step onto a tile this
+ * close to them: they take the doors instead, and touch nobody.
+ */
+export const ANGEL_REACH = 1;
+/** How close a spare angel (no door left to hold) creeps before it waits. */
+export const ANGEL_RING = 3;
+/**
+ * Runaway guard on the "is there still a way out?" search: a space this big
+ * is not one anybody is sealing, so the angels hold off.
+ */
+export const ANGEL_TRAP_AREA = 200;
+/**
+ * Once they close in they stay committed until the hero is this far (walking
+ * distance) from every last one of them.
+ */
+export const ANGEL_BREAK = 7;
 
 // ---------------------------------------------------------------------------
 // Magic items (bought in shops, one per slot, all passive)

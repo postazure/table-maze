@@ -161,6 +161,17 @@ Monsters never walk onto: walls, closed doors, other monsters, the hero, keys,
 chests, the exit. Monsters heal 1 hp every ~1.5s once out of combat for 4s. They attack when 4-adjacent to the hero and attackCooldown <= 0.
 Lerp each monster's `rpos` toward `pos` (fast, ~14 tiles/s), decrement hitFlash/lungeT.
 
+## angels.ts
+```ts
+/** One act for every awake angel: take a doorway, hold off, or close in and touch. */
+export function angelsAct(state: GameState, rng: Rng): void;
+/** The floor tiles just outside `room` that touch it: every way in or out of it. */
+export function doorsOf(level: LevelData, room: Rect): Vec[];
+```
+The weeping angels' whole AI, driven by game.ts's step clock and by nothing
+else (`updateMonsters` skips them). Depends on `types.ts`, `pathfind.ts`,
+`combat.ts` and `boss.ts` (`roomAt`). The rules are under "Movement AI".
+
 ## input.ts
 ```ts
 export function attachInput(canvas: HTMLElement, mapper: TileMapper, game: Game): () => void; // returns detach fn
@@ -528,6 +539,8 @@ export const PODIUM_NICHE: { x: number; y: number; size: number };              
 
 Shared types: `RosterKind` (the three maze roles) vs `BossMonsterKind`
 (`minion | crystal | boss | minotaur | angel`); `MonsterKind` is the union.
+`MonsterState` is `idle | chasing | returning | closing`; `closing` is the
+angels' own (the ring has shut, see angels.ts).
 `Monster.invulnerable`, `Monster.roomId`, `LevelData.kind: 'boss'`,
 `LevelData.boss: BossData` (a union keyed on `BossKind`), `Rect`, `inRect`,
 `BOSS_HIT_FRACTION`, `Modal` kinds `bossIntro | bossWon | gameOver`,
@@ -597,16 +610,13 @@ doors / chests, deterministic for (depth, runSeed)):
   true`, reward + `bossWon` modal, then the normal descent.
 - **angels**: each tick, `roomAt(rooms, hero.pos)`; every idle angel whose
   `roomId` equals it wakes (`state = 'chasing'`, never goes back to idle).
-  Angels move in lock-step with the hero: right after every step the hero
-  actually takes (a real tile change from `stepOnce`, not a knockback shove)
-  `angelsFollow(state, rng)` runs once, before the wake check, so an angel
-  woken by that step does not move until the next one. On top of that, while
-  any angel is `chasing`, a creep clock (`creepTimer += dt`, in `tickBoss`)
-  calls `angelsFollow` once every `ANGEL_CREEP_MS` (2200) whether or not the
-  hero moved; hero steps do not reset it, and it resets to 0 while every
-  angel is idle. At most 4 creep steps per tick, then the remainder is
-  dropped (a hidden tab is not a massacre). `updateMonsters` itself does
-  nothing for angels.
+  Angels have no lock-step with the hero at all: while at least one is awake,
+  a step clock (`angelTimer += dt`, in `tickBoss`) calls `angelsAct(state,
+  rng)` (angels.ts) once every `ANGEL_STEP_MS` (600), and every awake angel
+  acts in that one call. Hero steps neither hurry the clock nor reset it; it
+  resets to 0 while every angel is idle. At most 4 steps per tick, then the
+  remainder is dropped (a hidden tab is not a massacre). `updateMonsters`
+  itself does nothing for angels.
 - Reward: `upgradeRandomItem(hero, rng)` (items.ts): pick one of the filled
   gear slots at random, bump `level` by one and re-apply its constant bonuses
   (same maths as `equip`, timers untouched). Returns the item, or null when
@@ -671,7 +681,7 @@ doors / chests, deterministic for (depth, runSeed)):
     `hero.def + buffDef(hero)`.
 - `Monster.frozenMs` is a full stop, not the frost blade's half speed: while it
   is above 0 the monster takes no step and makes no swing (`updateMonsters`
-  `continue`s past it, `angelsFollow` skips it). Its thaw clock, poison and
+  `continue`s past it, `angelsAct` skips its act). Its thaw clock, poison and
   regen all keep running, so a frozen monster can still be finished off.
 - Ward: `monsterAttack` spends `hero.tempHp` before `hero.hp`, with a blue ring
   per hit and a bigger ring + the `wardBreak` sound on the one that empties it
@@ -700,13 +710,32 @@ doors / chests, deterministic for (depth, runSeed)):
   (normal `moveBlocked`), attack when adjacent. Never returns/idles.
 - `minotaur`: same as minion, never stops. Attack when adjacent.
 - `angel`: skipped entirely by `updateMonsters` (no cooldowns of its own).
-  `angelsFollow`, once per hero step and once per creep tick: idle =
-  nothing. `chasing`: if adjacent
-  to the hero (manhattan 1) it attacks; otherwise one BFS step toward the
-  hero with no limit (normal `moveBlocked`). So an adjacent angel only lands
-  a touch when the hero's step keeps them within reach, or when the hero
-  lingers beside it until the next creep; stepping away means it merely
-  follows. Stops early once `state.over`.
+  The siege lives in **angels.ts** (`angelsAct`, one call per `ANGEL_STEP_MS`,
+  all awake angels acting together, `idle` ones never). Every call first asks
+  whether the hero is boxed in and sets every awake angel's `state` to
+  `closing` or back to `chasing`:
+  - **boxed in** (`boxedIn`): flood-fill from the hero over floor, awake
+    angels counting as walls, stopping at `ANGEL_TRAP_AREA` (200) tiles.
+    Reaching any tile outside the hero's own space — the room from
+    `roomAt(rooms, hero.pos)`, or the whole run of corridor when that is -1 —
+    means there is still a way out. Sealed only counts when at least one
+    angel (not just wall) is on the pocket's edge.
+  - **hysteresis**: once `closing`, they stay `closing` until the hero is
+    more than `ANGEL_BREAK` (7) tiles from every one of them (`brokeAway`),
+    so the first step of the kill re-opening a doorway does not send them
+    straight back to it.
+  - `closing`: attack when within `ANGEL_REACH` (1), else one BFS step toward
+    the hero, no distance limit.
+  - `chasing` (siege): the mouths of the hero's room (`doorsOf`: floor tiles
+    just outside the rect that touch it) are handed out closest-pair-first,
+    one angel per door, over BFS distances that treat other monsters, the
+    hero and the stairs as blocked. An angel on its door holds it. Otherwise
+    it steps toward it, never onto a tile within `ANGEL_REACH` of the hero
+    (so a hero standing in a doorway keeps it open). Angels with no door left
+    — and every angel while the hero is out in the corridors — close to
+    `ANGEL_RING` (3) tiles and wait there. Nobody attacks in this state at
+    all. Stops early once `state.over`; frozen angels skip their act but
+    still count as walls.
 - `crystal`, `boss`: never move, never attack.
 - Nothing about sleeping heroes matters here (no sleeping in boss levels).
 

@@ -5,11 +5,12 @@
  *  - necromancer: smash five crystals before the spell completes.
  *  - minotaur:    find the stairs while an unkillable hunter follows.
  *  - angels:      find the stairs through rooms haunted by weeping angels
- *                 that only move while the hero's back is turned.
+ *                 that slowly take the doorways behind you.
  *
  * This module is generation + the monster factory + tiny pure helpers. The
  * per-tick rules (spell clock, skeleton spawns, angel wake-ups, win / lose)
- * live in game.ts; the movement AI lives in monsters.ts.
+ * live in game.ts; the movement AI lives in monsters.ts (angels.ts for the
+ * angels' siege).
  *
  * Generation follows the same shape as maze.ts: draw a seed from
  * `hashSeed(runSeed, depth, BOSS_SALT[, attempt])`, build one candidate,
@@ -147,9 +148,8 @@ export function makeBossMonster(kind: BossMonsterKind, depth: number, pos: Vec, 
       base.state = 'chasing';
       break;
     case 'angel':
-      // Not on the monster clock: it moves once per hero step and on the
-      // creep clock (game.ts / `angelsFollow`), so NEVER for both intervals.
-      // Touch = a third of max hp.
+      // Not on the monster clock: it acts on the siege clock (game.ts /
+      // `angelsAct`), so NEVER on either interval. Touch = a third of max hp.
       base.name = 'Angel';
       base.glyph = '🗿';
       base.level = d + 3;

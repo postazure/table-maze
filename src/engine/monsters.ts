@@ -43,8 +43,8 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
     // Poison and the thaw clock above still run, so it can be finished off.
     if (m.frozenMs > 0) continue;
 
-    // Angels do not run on dt here: they act once per hero step and on the
-    // slow creep clock, both via `angelsFollow` (game.ts drives it).
+    // Angels do not run on dt here: they lay siege on their own slow clock
+    // (angels.ts, driven by game.ts).
     if (m.kind === 'angel') continue;
 
     const heroPos = state.hero.pos;
@@ -88,34 +88,12 @@ function cooldownFor(state: GameState, m: Monster, stats: ItemStats, base: numbe
 }
 
 /**
- * One move for every awake angel. game.ts calls this once per hero step
- * (never for a shove) and once per creep tick (`ANGEL_CREEP_MS`) while any
- * angel is awake. Every awake angel already touching the hero grabs them;
- * every other awake angel takes one tile along its route. So an angel at
- * your side lands a touch only if your step keeps you within its reach, or
- * if you linger there until the next creep — step away and it merely follows.
- */
-export function angelsFollow(state: GameState, rng: Rng): void {
-  for (const m of state.level.monsters) {
-    if (!m.alive || m.kind !== 'angel' || m.state !== 'chasing') continue;
-    if (state.over) return;
-    if (m.frozenMs > 0) continue;
-    if (manhattan(m.pos, state.hero.pos) === 1) {
-      monsterAttack(state, m, rng);
-      continue;
-    }
-    const step = stepToward(state, m, state.hero.pos, HUNT_MAX_LEN);
-    if (step) m.pos = { x: step.x, y: step.y };
-  }
-}
-
-/**
  * Guards are furniture until you poke them: they only swing at an adjacent
  * hero while the fight they were dragged into is still fresh. Patrols and
  * lurkers always attack whoever stands next to them.
  *
  * In a boss chamber: crystals and the necromancer never lift a finger.
- * Angels never reach this: they act from `angelsFollow` instead.
+ * Angels never reach this: they act from `angelsAct` (angels.ts) instead.
  */
 function willFight(state: GameState, m: Monster): boolean {
   switch (m.kind) {
@@ -259,7 +237,7 @@ function chooseStep(state: GameState, m: Monster, stats: ItemStats): Vec | null 
     case 'minion':
     case 'minotaur':
       return hunterStep(state, m);
-    case 'angel': // lock-step with the hero, see angelsFollow
+    case 'angel': // sieges on its own clock, see angels.ts
     case 'crystal':
     case 'boss':
       return null;
