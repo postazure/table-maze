@@ -134,11 +134,13 @@ export const LENS_CORE = 2.5;
 /** ...and by this many it has faded back to solid brick. */
 export const LENS_RADIUS = 6.5;
 /**
- * Even at the hero's feet the brick never goes fully. A passage is meant to
- * stay a passage: you read the next few tiles of it, not the shape of the
- * whole thing the way you read the rest of the floor.
+ * How see-through the brick gets at the hero's feet. Nearly all the way: what
+ * keeps a passage feeling like a passage is the radius, not the haze — you
+ * read the next few tiles of one and no more, however clearly you read them.
+ * The last sliver of brick is left in deliberately so the ground still says
+ * "you are inside the wall" rather than reading as ordinary floor.
  */
-export const LENS_ALPHA = 0.88;
+export const LENS_ALPHA = 0.97;
 
 /** How much of the brick is see-through this far (in tiles) from the hero. */
 export function lensRevealAt(dist: number): number {

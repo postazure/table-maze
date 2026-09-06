@@ -111,9 +111,10 @@ const CLIP_SPAN = 2;
  * passage is only a slightly darker patch of wall — every theme's floor is
  * close to its brick — and the player is left squinting. With it the light
  * reads as light: cold, glassy, and plainly not the way the rest of the map
- * looks.
+ * looks. Kept faint: it is there to say "this is lens-light", not to stand in
+ * for the brick the lens is busy clearing away.
  */
-const LENS_TINT = 'rgba(143, 227, 255, 0.13)';
+const LENS_TINT = 'rgba(143, 227, 255, 0.07)';
 
 // Shop podium / price tag.
 const PEDESTAL_DIM_ALPHA = 0.35;

@@ -135,17 +135,27 @@ Requirements:
   floor rarely rolls the same one twice. Never generated on boss or shop floors.
   Recorded in `LevelData.shrines`.
 - Hidden passages are dug outside the maze too, in the same margin as the
-  warrens and before them, but they hug it: a **shortcut** runs one course of
-  brick behind the outer wall from one perimeter tile to another further along
-  the same side, and a **vault** (third floor of a themed set only) runs a neck
-  out to a small chamber with a chest in a niche at the back. Same `canDig`
-  rule as a warren — the whole shape and everything it touches must be rock,
-  except the one or two anchors it hangs off — so a passage touches the maze
-  only at its mouths, never another passage, and never a warren. Recorded in
-  `LevelData.passages`; every tile of one is `Tile.Floor` and every tile of one
-  is hidden (see `lens.ts`).
-  A shortcut is only dug when the walk it replaces is at least 10 tiles longer
-  than the passage itself, so it is always worth the detour. Everything else on
+  warrens and before them, but they hug it. Two shapes: a **network**
+  (`kind: 'shortcut'`) is a trunk of corridor at depth 2 behind the maze's
+  outer wall, a second trunk at depth 4, cross-links between them every
+  `LINK_EVERY` tiles so the pair loops, and a neck at every second perimeter
+  cell along it — three to eight mouths, thirty to forty tiles, one per side
+  and at most `NETWORK_MAX` a floor. A **vault** (third floor of a themed set
+  only) runs a neck out to a chamber five tiles across and three deep with a
+  chest in a one-tile niche at the back; that niche is the only dead end the
+  shape has, which is what lets a chest sit there at all. Same `canDig` rule as
+  a warren — the whole shape and everything it touches must be rock, except the
+  anchors it hangs off — so a passage touches the maze only at its mouths,
+  never another passage, and never a warren. Recorded in `LevelData.passages`;
+  every tile of one is `Tile.Floor` and every tile of one is hidden (see
+  `lens.ts`).
+  Dig the vaults first (a vault needs one exact pocket, where a network can
+  slide along a wall until it finds room), then take the *widest* window of
+  anchors each side will accept and narrow only when it will not fit —
+  widest-first is what makes the passages expansive rather than merely
+  numerous, since a floor will otherwise fill up with three-mouth stubs. A
+  window is only dug when the maze walk between its two furthest mouths beats
+  the walk behind the wall by `SHORTCUT_MIN_SAVING`. Everything else on
   the floor is then planned as if the passages were still rock: the route, the
   doors, the keys, the shrines and the ordinary monsters all come off a BFS
   with the passage tiles blocked, and `gateGuards` blocks them too. Validation

@@ -100,16 +100,8 @@ function HeroTab({ model }: { model: HudModel }) {
             <div className="help-gear-text">
               <div className="help-gear-title">
                 <span className="help-gear-name">{LENS_NAME}</span>
-                <span className="help-gear-level">This set of floors</span>
               </div>
-              <p className="help-gear-desc">
-                Passages are dug behind the walls of every floor. Carrying this, the wall opens as you walk
-                past a way in — and nothing tells you where one is from further off, so walking the floor is
-                how you find them. Inside, only the few tiles around you come clear. Some passages cut across
-                the map; on the last floor of a set one ends at a chest with a magic item in it. The lens
-                breaks as you leave the shop, so it is worth finding again every time the dungeon changes
-                theme.
-              </p>
+              <p className="help-gear-desc">See the unseen.</p>
             </div>
           </div>
         </div>
@@ -169,13 +161,7 @@ function GuideTab() {
         one in reserve and it kicks in on its own for half your hearts back, instead of a knockdown. They refill
         at the start of every floor.
       </li>
-      <li>
-        Chests on the first two floors of a theme can hold a {LENS_NAME}. With it, the wall opens as you walk
-        past a passage, and a few tiles around you stay clear once you are inside one. Nothing else marks them,
-        so walk the floor if you want to find them. Some are shortcuts; on the third floor one ends at a chest
-        with a magic item. It shatters as you leave that theme's shop.
-      </li>
-      <li>Without the lens a passage is solid wall, and nothing on a floor ever needs one to finish it.</li>
+      <li>A chest may hold a {LENS_NAME}. See the unseen.</li>
       <li>Glowing alcoves are shrines. Step on one for a gift that runs out; a dark one is already spent. The pips above your head are what you have running.</li>
       <li>Spirit makes every shrine go further: the timed ones last longer, the ward hands out more hearts. It creeps up as you level, and anything in your spirit slot adds to it.</li>
       <li>Every third floor has a shop. Walk into a podium to see what the item does, then buy it or walk away.</li>
