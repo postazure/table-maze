@@ -36,6 +36,7 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
     tickPoison(state, m, dt, rng);
     if (m.slowMs > 0) m.slowMs = Math.max(0, m.slowMs - dt);
     if (m.frozenMs > 0) m.frozenMs = Math.max(0, m.frozenMs - dt);
+    if (m.giveUpMs && m.giveUpMs > 0) m.giveUpMs = Math.max(0, m.giveUpMs - dt);
     if (!m.alive) continue; // poison finished it off
 
     if (state.descending > 0) continue;
@@ -313,36 +314,58 @@ function patrolStep(state: GameState, m: Monster, stats: ItemStats): Vec | null 
   return target;
 }
 
+/** How long a `returning` lurker holds its give-up spot before it actually
+ *  starts walking back to `chaseFrom` — a last window to bait it again. */
+const LURKER_RETURN_DELAY_MS = 3000;
+
 function lurkerStep(state: GameState, m: Monster, stats: ItemStats): Vec | null {
   const sight = sightOf(state, m, stats);
   if (m.state === 'idle') {
     const d = distToHero(state, m, m.pos, sight);
-    if (d !== null) m.state = 'chasing';
+    if (d !== null) {
+      m.state = 'chasing';
+      m.chaseFrom = { x: m.pos.x, y: m.pos.y };
+    }
   } else if (m.state === 'returning') {
     // Slightly tighter re-aggro so baiting still works, but not trivially.
     const d = distToHero(state, m, m.pos, Math.max(0, sight - 1));
-    if (d !== null) m.state = 'chasing';
+    if (d !== null) m.state = 'chasing'; // chaseFrom is untouched: same chase
   }
 
   if (m.state === 'chasing') {
     // Lose the hero (a little hysteresis so it does not flicker), or run out
-    // of leash, and the lurker gives up and holds its ground.
+    // of leash, and the lurker gives up and holds its ground for a while.
     const toHero = distToHero(state, m, m.pos, sight + 1);
     const fromHome = toHero === null ? null : distToHero(state, m, m.home, m.leash);
     if (fromHome === null) {
       m.state = 'returning';
+      m.giveUpMs = LURKER_RETURN_DELAY_MS;
     } else {
       const step = stepToward(state, m, state.hero.pos, m.leash * 2 + 4);
       if (step) return step;
       const reachable = distToHero(state, m, m.pos, m.leash * 2 + 4);
-      if (reachable === null) m.state = 'returning';
+      if (reachable === null) {
+        m.state = 'returning';
+        m.giveUpMs = LURKER_RETURN_DELAY_MS;
+      }
       return null;
     }
   }
 
-  // Disengaged: hold this spot rather than walking back to `home`. The
-  // re-aggro check above (tighter than idle's) still watches for the hero
-  // coming back within range of wherever it stopped.
+  if (m.state === 'returning') {
+    const origin = m.chaseFrom;
+    if (!origin || eq(m.pos, origin)) {
+      // Home (or wherever the chase started) already: settle down, ready for
+      // a fresh chase (and a fresh chaseFrom) next time.
+      m.state = 'idle';
+      m.chaseFrom = undefined;
+      m.giveUpMs = 0;
+      return null;
+    }
+    if ((m.giveUpMs ?? 0) > 0) return null; // still in the bait window
+    return stepToward(state, m, origin, m.leash * 2 + 4);
+  }
+
   return null;
 }
 

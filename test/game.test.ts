@@ -1653,6 +1653,86 @@ test('a lurker gives up once the hero is out of aggro range', () => {
   assert.deepEqual(lurk.pos, { x: 9, y: 1 }, 'and it stays right where it gave up');
 });
 
+test('a lurker eventually walks back to where it started chasing, once it gives up', () => {
+  const level = mkLevel(LONG_CORRIDOR);
+  const g = Game.forTest(99);
+  install(g, level, { x: 8, y: 1 });
+
+  const lurk = mkMonster({
+    id: 'l1',
+    kind: 'lurker',
+    pos: { x: 10, y: 1 },
+    home: { x: 10, y: 1 },
+    sightRange: 3,
+    leash: 20,
+    moveInterval: 200,
+    attackInterval: 99999,
+  });
+  level.monsters.push(lurk);
+  const rng = makeRng(11);
+
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 16, rng); // aggroes, steps to (9,1); chaseFrom = (10,1)
+  g.state.hero.pos = { x: 1, y: 1 };
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 16, rng); // gives up, holds at (9,1)
+  assert.equal(lurk.state, 'returning');
+
+  // Well within the hold window: it does not budge yet — a hero who only
+  // peeks back and forth briefly should not find it already walking off.
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 1000, rng);
+  assert.equal(lurk.state, 'returning');
+  assert.deepEqual(lurk.pos, { x: 9, y: 1 }, 'still holding its give-up spot');
+
+  // The hold window runs out: it commits to walking back to where the chase
+  // began (its home, in this case) instead of camping there forever.
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 2500, rng);
+  assert.equal(lurk.state, 'returning');
+  assert.deepEqual(lurk.pos, { x: 10, y: 1 }, 'stepped back toward chaseFrom');
+
+  // And once it actually arrives, it settles back to idle, ready for a fresh
+  // chase (and a fresh chaseFrom) next time.
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 16, rng);
+  assert.equal(lurk.state, 'idle');
+});
+
+test('a lurker can still be re-baited while it holds its give-up spot', () => {
+  const level = mkLevel(LONG_CORRIDOR);
+  const g = Game.forTest(99);
+  install(g, level, { x: 8, y: 1 });
+
+  const lurk = mkMonster({
+    id: 'l1',
+    kind: 'lurker',
+    pos: { x: 10, y: 1 },
+    home: { x: 10, y: 1 },
+    sightRange: 3,
+    leash: 20,
+    moveInterval: 200,
+    attackInterval: 99999,
+  });
+  level.monsters.push(lurk);
+  const rng = makeRng(11);
+
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 16, rng); // aggroes, steps to (9,1)
+  g.state.hero.pos = { x: 1, y: 1 };
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 16, rng); // gives up, holds at (9,1)
+  assert.equal(lurk.state, 'returning');
+
+  // The hero ducks back within range before the hold window runs out: it
+  // re-aggroes and chases from wherever it is, instead of walking home.
+  g.state.hero.pos = { x: 7, y: 1 };
+  lurk.moveCooldown = 0;
+  updateMonsters(g.state, 500, rng);
+  assert.equal(lurk.state, 'chasing', 're-baited before it committed to leaving');
+  assert.deepEqual(lurk.pos, { x: 8, y: 1 }, 'chases the hero instead of walking home');
+});
+
 test('a patrol never chases the hero off its route', () => {
   const level = mkLevel(LONG_CORRIDOR);
   const g = Game.forTest(7);

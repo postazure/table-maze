@@ -150,7 +150,12 @@ export interface Buff {
  *            back out. Once the hero is further than
  *            `sightRange + 1`, or further than `leash` tiles from the
  *            lurker's home, it gives up (`returning`) and holds its ground
- *            right there instead of walking back to `home`.
+ *            right there for a few seconds — long enough that ducking out of
+ *            sight and straight back in still baits it — before it walks
+ *            back to `chaseFrom`, the tile it was standing on when this chase
+ *            started (not necessarily `home`: a lurker can be re-baited
+ *            mid-walk-back, from wherever it had gotten to). Getting there
+ *            settles it back to `idle`.
  *            This is the monster you bait: pull it away from the corridor it
  *            guards, then loop around it (levels contain a few loops).
  */
@@ -209,6 +214,14 @@ export interface Monster {
   patrolDir?: 1 | -1; // patrol only
   sightRange: number; // lurker/patrol: BFS tiles
   leash: number; // lurker: BFS tiles from home before giving up
+  /** Lurker only: where it stood when the current chase began. Set on the
+   *  idle -> chasing transition, kept through any returning -> chasing
+   *  re-aggro, cleared once it walks all the way back and settles to idle. */
+  chaseFrom?: Vec;
+  /** Lurker only: ms left before a `returning` lurker starts walking back to
+   *  `chaseFrom`. Holds it in place at the give-up spot for a grace window
+   *  first, so ducking out of sight and back still re-aggros it. */
+  giveUpMs?: number;
   alive: boolean;
   /** ms since this monster last dealt or took damage; drives its self-heal. */
   sinceCombat: number;

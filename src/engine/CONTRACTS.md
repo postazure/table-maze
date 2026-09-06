@@ -174,6 +174,12 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void;
 Monsters never walk onto: walls, closed doors, other monsters, the hero, keys,
 chests, the exit. Monsters heal 1 hp every ~1.5s once out of combat for 4s. They attack when 4-adjacent to the hero and attackCooldown <= 0.
 Lerp each monster's `rpos` toward `pos` (fast, ~14 tiles/s), decrement hitFlash/lungeT.
+A lurker that gives up the chase (`returning`) holds its give-up spot for
+`LURKER_RETURN_DELAY_MS` (3000ms) — long enough that ducking out of sight and
+straight back in still re-aggros it — then walks back to `chaseFrom` (where it
+was standing when this chase began, set on the idle -> chasing transition and
+kept through any returning -> chasing re-aggro). Arriving settles it to `idle`
+and clears `chaseFrom`.
 
 ## angels.ts
 ```ts
