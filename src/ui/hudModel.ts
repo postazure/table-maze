@@ -69,7 +69,7 @@ export interface HudModel {
   trophies: BossKind[];
   boons: Boon[];
   /** The kind of level the hero is currently on (drives the depth badge). */
-  levelKind: 'maze' | 'shop' | 'boss';
+  levelKind: 'maze' | 'shop' | 'boss' | 'world';
   /** Current popup, compared by reference. */
   modal: Modal | null;
 }

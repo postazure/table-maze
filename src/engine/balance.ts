@@ -199,6 +199,8 @@ export function newHero(): Hero {
     carrying: null,
     relics: [],
     trophies: [],
+    brass: 0,
+    crystals: [],
     lungeT: 0,
     sinceCombat: 99999,
   };

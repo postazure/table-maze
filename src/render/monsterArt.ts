@@ -1,4 +1,4 @@
-import { THEMES } from '../engine/themes';
+import { THEMES, WORLD_THEMES } from '../engine/themes';
 
 // ---------------------------------------------------------------------------
 // Procedural creature sprites: a symmetric "blob" half-width profile (or an
@@ -757,6 +757,13 @@ MONSTER_CFGS.mimic = {
 
 export const MONSTER_KEYWORDS = [
   'mimic',
+  // The boss worlds' own (sprites in render/worlds, merged into MONSTER_CFGS).
+  'medusa',
+  'siren',
+  'cerberus',
+  'cultist',
+  'ghoul',
+  'shade',
   'rat',
   'bat',
   'spider',
@@ -816,7 +823,7 @@ export function monsterSpriteKey(name: string): string {
 // caught immediately instead of silently rendering the fallback blob.
 // ---------------------------------------------------------------------------
 
-for (const theme of THEMES) {
+for (const theme of [...THEMES, ...WORLD_THEMES]) {
   for (const looks of Object.values(theme.roster)) {
     for (const look of looks) {
       const key = monsterSpriteKey(look.name);
@@ -839,7 +846,7 @@ for (const theme of THEMES) {
 // ---------------------------------------------------------------------------
 
 const roleForSpriteKey = new Map<string, string>();
-for (const theme of THEMES) {
+for (const theme of [...THEMES, ...WORLD_THEMES]) {
   for (const [role, looks] of Object.entries(theme.roster)) {
     for (const look of looks) {
       const key = monsterSpriteKey(look.name);

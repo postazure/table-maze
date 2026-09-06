@@ -295,7 +295,15 @@ export type BossMonsterKind = 'minion' | 'crystal' | 'boss' | 'minotaur' | 'ange
  * Theme-independent: every dungeon has the same one.
  */
 export type WingMonsterKind = 'mimic';
-export type MonsterKind = RosterKind | BossMonsterKind | WingMonsterKind;
+/**
+ * The boss worlds' own monsters (see engine/worlds). Their AI lives in the
+ * world module that spawned them (`WorldModule.step` / `fights`); monsters.ts
+ * only routes to it. Hazards more than fights: a medusa's gaze, a siren's
+ * song, Cerberus at the river, a cultist with a knife, the ghouls and shades
+ * of the crypts.
+ */
+export type WorldMonsterKind = 'medusa' | 'siren' | 'cerberus' | 'cultist' | 'ghoul' | 'shade';
+export type MonsterKind = RosterKind | BossMonsterKind | WingMonsterKind | WorldMonsterKind;
 /**
  * `closing` is the angels' own: the ring has shut and they are moving in for
  * the kill (angels.ts). Every other kind only ever uses the first three.
@@ -404,14 +412,76 @@ export interface Passage {
   treasure: number;
 }
 
+/**
+ * A prop: one interactive thing a boss world (engine/worlds) puts on its
+ * floor — a god's statue, a symbol of power, a crypt door, a ship's helm, the
+ * portal home. The engine knows only that it stands on `pos`, whether it is
+ * solid (walked into, like a chest) or ground (walked onto, like a shrine),
+ * what art to draw it with, and whether the hero may pick it up and carry it
+ * (`hero.carrying` = its id, exactly as an orb). Everything else — what
+ * bumping or entering it does — is the world module's business, keyed by
+ * `kind` and whatever it keeps in `data`.
+ */
+export interface Prop {
+  id: string;
+  pos: Vec;
+  /** World-defined, e.g. 'statue:zeus', 'symbol:bolt', 'crypt', 'helm', 'portal-home'. */
+  kind: string;
+  /** Walked into (solid) or walked onto (ground)? */
+  solid: boolean;
+  /** Key into the world's prop art table (render/worlds); `state` picks a variant when the table has `art:state`. */
+  art: string;
+  state?: string;
+  /** The hero can pick this up by walking onto it; it is then in their arms until set down. */
+  carriable?: boolean;
+  /** Not drawn and not on the floor: carried, consumed, or not yet revealed. */
+  hidden?: boolean;
+  /** Free-form, JSON-serialisable, the world module's own. */
+  data?: Record<string, unknown>;
+}
+
+/** A boss world: which one, which of its floors this is, and its own state. */
+export type WorldKind = BossKind;
+
+export interface WorldData {
+  kind: WorldKind;
+  /** Which floor of the world this is; the module decides what each number means. */
+  stage: number;
+  /**
+   * The module's own state, carried from stage to stage and saved with the
+   * run. JSON-serialisable. The engine never reads it.
+   */
+  data: Record<string, unknown>;
+  /** Set once the world's collectible has been won; the stairs/portal home is live. */
+  won: boolean;
+}
+
 export interface LevelData {
   depth: number; // 1-based dungeon depth
   seed: number;
   /**
    * 'maze' is a normal floor. 'boss' is the boss chamber that follows every
-   * third floor, and 'shop' the small room that follows the boss.
+   * third floor, 'shop' the small room that follows the boss, and 'world' a
+   * floor of one of the boss worlds reached through the portal (see
+   * engine/worlds).
    */
-  kind: 'maze' | 'shop' | 'boss';
+  kind: 'maze' | 'shop' | 'boss' | 'world';
+  /** Only on world levels. */
+  world?: WorldData;
+  /** A world's interactive things. Only on world levels. */
+  props?: Prop[];
+  /**
+   * Bumped by a world module whenever it changes `tiles` after generation (a
+   * maze that shifts): the renderer rebuilds its level picture when it sees
+   * a new value. Absent or 0 on every other level.
+   */
+  rev?: number;
+  /** The jeweller's bench, on shop levels only, on hidden ground (see engine/crafting.ts). */
+  bench?: { pos: Vec };
+  /** The carving shrine, on some maze floors, walkable (see engine/crafting.ts). */
+  carver?: { pos: Vec; used: boolean };
+  /** The portal to the boss worlds: floor one's wing only (see engine/crafting.ts). */
+  portal?: { pos: Vec };
   /** Visual theme id (see engine/themes.ts); changes every three floors. */
   theme: string;
   /** Only on shop levels. */
@@ -684,6 +754,18 @@ export interface Lens {
   depth: number;
   /** The themed set it works in: floors `set * 3 + 1` through `set * 3 + 3`. */
   set: number;
+  /**
+   * Set at the jeweller's bench with a brass lump: the lens works on every
+   * floor, never shatters, and no chest on any later floor of the run holds
+   * another. See engine/crafting.ts.
+   */
+  unbreakable?: boolean;
+  /**
+   * The lens the run after an unbreakable one starts with: the brass housing
+   * has cracked, so it is an ordinary lens for the first set again. The one
+   * way to stand on floor one with a lens, which is what the portal is for.
+   */
+  heirloom?: boolean;
 }
 
 export interface Hero {
@@ -756,8 +838,16 @@ export interface Hero {
   carrying: string | null;
   /** Relics picked up this run and not yet spent on a keystone seal. */
   relics: RelicKind[];
-  /** One trophy per boss beaten this run, until an altar takes it. */
+  /** One trophy per boss beaten this run, until an altar or the carving shrine takes it. */
   trophies: BossKind[];
+  /** Brass lumps: crafting material, nothing more is ever said about them. */
+  brass: number;
+  /**
+   * Carved crystals, one per boss whose trophy was laid on the carving
+   * shrine. They outlive the run (see save.ts): the portal that takes them is
+   * on floor one, and a crystal is only ever carved past the first boss.
+   */
+  crystals: BossKind[];
 }
 
 /**
@@ -851,7 +941,14 @@ export type SfxId =
   | 'relic'
   | 'mimic'
   | 'altar'
-  | 'forge';
+  | 'forge'
+  | 'craft'
+  | 'carve'
+  | 'portal'
+  | 'rumble'
+  | 'collect'
+  | 'gaze'
+  | 'song';
 
 /** The `SfxId`s that get per-play variation. Everything else is fixed. */
 export const VARIED_SFX: readonly SfxId[] = [
@@ -942,7 +1039,17 @@ export type Modal =
    * moment of death) buys back into the same boss fight via
    * `Game.retryBoss()`; dismissing the modal instead starts a new run.
    */
-  | { kind: 'gameOver'; cause: string; boss: BossKind; stats: RunStats; retryCost: number };
+  | { kind: 'gameOver'; cause: string; boss: BossKind; stats: RunStats; retryCost: number; world?: WorldKind }
+  /** At the jeweller's bench: the lens and the brass, and the one thing they make. */
+  | { kind: 'craft'; canCraft: boolean; reason: string }
+  /** On the carving shrine: which trophy to carve into a crystal. */
+  | { kind: 'carve'; trophies: BossKind[] }
+  /** At the portal: which crystal to spend, and so which world to enter. */
+  | { kind: 'portal'; crystals: BossKind[] }
+  /** Arriving on a world floor: what this place is and what to do. Button-dismissed. */
+  | { kind: 'worldIntro'; world: WorldKind; stage: number }
+  /** The world is won: its collectible, kept for good. Button-dismissed; the way home is open after. */
+  | { kind: 'worldWon'; world: WorldKind; collectible: string };
 
 /** Everything the game-over screen shows about the run that just ended. */
 export interface RunStats {
@@ -1002,6 +1109,23 @@ export interface GameState {
    * themselves were applied to the hero when the run began.
    */
   boons: Boon[];
+  /**
+   * The main floor the hero stepped through the portal from, kept while they
+   * are in a boss world and restored when they come back. Null otherwise.
+   */
+  stash: { level: LevelData; trail: string[]; depth: number } | null;
+  /**
+   * A cutscene: the world holds still — nobody steps, nobody swings, no
+   * clock runs — for this many ms while effects play (a maze shifting). 0
+   * outside one. Unlike a modal it needs no dismissing.
+   */
+  freeze: number;
+  /**
+   * The permanent collection: every world collectible ever won, by id. Lives
+   * in its own storage slot (see save.ts) and outlives every run; mirrored
+   * here for the help screen.
+   */
+  collection: string[];
 }
 
 /** JSON-serialisable form of GameState (Set -> array). */

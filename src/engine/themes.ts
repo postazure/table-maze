@@ -15,9 +15,29 @@ export type ThemeId =
   | 'forest'
   | 'library'
   | 'hive'
-  | 'abyss';
+  | 'abyss'
+  // The boss worlds' themes (engine/worlds). Never in the depth cycle: a
+  // world floor sets one of these by name.
+  | 'olympus'
+  | 'aegean'
+  | 'styx'
+  | 'arkham'
+  | 'cemetery'
+  | 'crypts';
+
+/**
+ * How the renderer paints a theme's tiles. 'brick' is the dungeon: brick
+ * walls, dark speckled floor. The others belong to the boss worlds and draw
+ * the same two tile kinds as something else entirely: 'cloud' is sky (wall)
+ * and cloud (floor), 'water' is open sea (wall) and deck or shore (floor),
+ * 'street' is building (wall) and cobbles (floor), 'hedge' is hedge (wall)
+ * and grass (floor), 'stone' is rough rock (wall) and flagstone (floor).
+ */
+export type PaintStyle = 'brick' | 'cloud' | 'water' | 'street' | 'hedge' | 'stone';
 
 export interface ThemePalette {
+  /** How the two tile kinds are drawn; absent means 'brick'. */
+  style?: PaintStyle;
   /** Two alternating brick shades, a highlight row and the mortar lines. */
   wallA: string;
   wallB: string;
@@ -135,6 +155,77 @@ export const THEMES: readonly Theme[] = [
   },
 ];
 
+/**
+ * The boss worlds' themes. Not in `THEMES`, so `themeForDepth` never deals
+ * one; a world floor names one. Rosters reuse creatures the dungeon already
+ * draws, in the roles they already hold (monsterArt's startup check reads
+ * these too); a world's own monsters (medusa, sirens, cultists...) are
+ * `WorldMonsterKind`s the module spawns itself, with sprites in
+ * render/worlds.
+ */
+export const WORLD_THEMES: readonly Theme[] = [
+  {
+    id: 'olympus',
+    name: 'The Sky Realm',
+    palette: { style: 'cloud', wallA: '#5aa9ff', wallB: '#4d94e6', wallHi: '#7fbfff', mortar: '#3c78c2', floor: '#f0f4ff', speckLight: '#ffffff', speckDark: '#c9d6f2', trail: 'rgba(245,196,81,0.18)' },
+    roster: {
+      guard: [{ name: 'Golem', glyph: '🗿' }],
+      patrol: [{ name: 'Boar', glyph: '🐗' }],
+      lurker: [{ name: 'Bat', glyph: '🦇' }],
+    },
+  },
+  {
+    id: 'aegean',
+    name: 'The Wine-Dark Sea',
+    palette: { style: 'water', wallA: '#1f4e7a', wallB: '#1a4268', wallHi: '#2f6a9e', mortar: '#143352', floor: '#8b5a2b', speckLight: '#a8743c', speckDark: '#5e3a18', trail: 'rgba(245,196,81,0.18)' },
+    roster: {
+      guard: [{ name: 'Crab', glyph: '🦀' }],
+      patrol: [{ name: 'Leech', glyph: '🪱' }],
+      lurker: [{ name: 'Snake', glyph: '🐍' }],
+    },
+  },
+  {
+    id: 'styx',
+    name: 'The Underworld',
+    palette: { style: 'stone', wallA: '#2a1a24', wallB: '#20141c', wallHi: '#3d2433', mortar: '#0d070b', floor: '#1a1420', speckLight: '#3a2a40', speckDark: '#0a0610', trail: 'rgba(143,227,255,0.16)' },
+    roster: {
+      guard: [{ name: 'Skeleton', glyph: '💀' }],
+      patrol: [{ name: 'Zombie', glyph: '🧟' }],
+      lurker: [{ name: 'Wraith', glyph: '👻' }],
+    },
+  },
+  {
+    id: 'arkham',
+    name: 'The Boston Streets',
+    palette: { style: 'street', wallA: '#4a3f3a', wallB: '#3d3430', wallHi: '#5c4f49', mortar: '#1e1816', floor: '#2a2a30', speckLight: '#3c3c44', speckDark: '#181820', trail: 'rgba(200,160,255,0.15)' },
+    roster: {
+      guard: [{ name: 'Knight', glyph: '🛡️' }],
+      patrol: [{ name: 'Rat', glyph: '🐀' }],
+      lurker: [{ name: 'Ghost', glyph: '👻' }],
+    },
+  },
+  {
+    id: 'cemetery',
+    name: 'The Cemetery',
+    palette: { style: 'hedge', wallA: '#2f4a35', wallB: '#26402c', wallHi: '#3b5a41', mortar: '#152218', floor: '#1e2a1c', speckLight: '#33452e', speckDark: '#0f160e', trail: 'rgba(190,227,255,0.16)' },
+    roster: {
+      guard: [{ name: 'Skeleton', glyph: '💀' }],
+      patrol: [{ name: 'Zombie', glyph: '🧟' }],
+      lurker: [{ name: 'Ghost', glyph: '👻' }],
+    },
+  },
+  {
+    id: 'crypts',
+    name: 'The Crypts',
+    palette: { style: 'stone', wallA: '#34324a', wallB: '#2b2a3d', wallHi: '#403e5c', mortar: '#18172a', floor: '#100f1c', speckLight: '#241f38', speckDark: '#0a0912', trail: 'rgba(245,196,81,0.13)' },
+    roster: {
+      guard: [{ name: 'Skeleton', glyph: '💀' }],
+      patrol: [{ name: 'Zombie', glyph: '🧟' }],
+      lurker: [{ name: 'Wraith', glyph: '👻' }],
+    },
+  },
+];
+
 /** Floors 1-3 use theme 0, floors 4-6 theme 1, and so on, cycling. */
 export function themeForDepth(depth: number): Theme {
   const d = Math.max(1, Math.floor(depth));
@@ -142,5 +233,5 @@ export function themeForDepth(depth: number): Theme {
 }
 
 export function themeById(id: string | undefined): Theme {
-  return THEMES.find((t) => t.id === id) ?? THEMES[0];
+  return THEMES.find((t) => t.id === id) ?? WORLD_THEMES.find((t) => t.id === id) ?? THEMES[0];
 }

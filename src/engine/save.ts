@@ -45,6 +45,9 @@ export function saveGame(state: GameState): void {
       descending: 0,
       over: false,
       boons: state.boons ?? [],
+      stash: state.stash ?? null,
+      freeze: 0,
+      collection: state.collection ?? [],
     };
     ls.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
@@ -97,6 +100,8 @@ export function loadGame(): GameState | null {
     if (typeof hero.carrying !== 'string') hero.carrying = null;
     if (!Array.isArray(hero.relics)) hero.relics = [];
     if (!Array.isArray(hero.trophies)) hero.trophies = [];
+    if (typeof hero.brass !== 'number') hero.brass = 0;
+    if (!Array.isArray(hero.crystals)) hero.crystals = [];
     hero.stun = 0;
     if (typeof hero.sleeping !== 'boolean') hero.sleeping = false;
     hero.hitFlash = 0;
@@ -138,6 +143,9 @@ export function loadGame(): GameState | null {
       compass: null,
       over: false,
       boons: Array.isArray(d.boons) ? d.boons.filter(validBoon) : [],
+      stash: d.stash && typeof d.stash === 'object' && d.stash.level ? d.stash : null,
+      freeze: 0,
+      collection: Array.isArray(d.collection) ? d.collection.filter((c): c is string => typeof c === 'string') : [],
     };
     return state;
   } catch {

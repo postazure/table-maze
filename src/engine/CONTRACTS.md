@@ -1099,3 +1099,122 @@ doors / chests, deterministic for (depth, runSeed)):
   "New Game" button (`Game.dismissModal()`, always enabled: no confirm, there
   is nothing left to lose by starting over). HUD depth badge reads BOSS on
   boss levels.
+
+# The crafting chain and the boss worlds (added later)
+
+Shared types: `Prop`, `WorldKind`, `WorldData`, `LevelData.kind: 'world'`,
+`LevelData.world/props/rev/bench/carver/portal`, `Hero.brass/crystals`,
+`Lens.unbreakable/heirloom`, `WorldMonsterKind`, `GameState.stash/freeze/
+collection`, `Modal` kinds `craft | carve | portal | worldIntro | worldWon`
+and `gameOver.world`, `ThemePalette.style` + `WORLD_THEMES` (themes.ts),
+new `SfxId`s `craft carve portal rumble collect gaze song`. See types.ts and
+`engine/worlds/world.ts`, which is the interface every world module keeps.
+
+## The chain, in play order
+1. **Brass lump**: a chest trinket (`Loot.brass`), one chest per themed set
+   on its second or third floor, never the first floor of the run. The only
+   words for it anywhere — chest popup, help screen — are "Crafting
+   material." `hero.brass` counts them.
+2. **Jeweller's bench** (`LevelData.bench`): on every shop level, in a
+   two-tile alcove off the room's side wall that is *hidden ground*
+   (`level.passages` with one mouth, kind 'wing', one room) — visible and
+   walkable only with a lens active on the shop's depth. Solid, like a
+   podium; bumping it opens `modal.craft`. With a lens in hand and a brass
+   lump, `Game.craftLens()` sets `lens.unbreakable`, spends the lump, plays
+   `craft`, and writes the **heirloom** flag to storage (`saveHeirloom`).
+3. **Unbreakable lens**: `lensActive` is true on every depth; the shop's
+   stairs never shatter it; `generateLevel` is told (`opts.noLens`) and puts
+   no lens in any chest for the rest of the run.
+4. **Heirloom**: `startRun` reads and clears the heirloom flag and, when it
+   was set, starts the hero with `lens = { depth: 1, set: 0, heirloom: true }`
+   — an ordinary lens for the first set, "the brass housing has cracked".
+   `lensFloor(1)` is false: no chest on floor one ever holds a lens, so the
+   heirloom is the only lens floor one ever sees. (The angels' boon no longer
+   grants a lens: `sight` became `grace`, spirit and a potion.)
+5. **Carving shrine** (`LevelData.carver`): one on some maze floors from
+   depth 4, in a dead end out in the maze (never hidden), walkable like a
+   shrine. Stepping on it with any trophy opens `modal.carve`;
+   `Game.carveTrophy(boss)` spends that trophy for a crystal of its boss
+   (`hero.crystals`), plays `carve`, marks the shrine used. Crystals
+   **outlive the run**: `saveCrystals`/`loadCrystals` (storage key
+   `table-maze:crystals`), loaded into the hero at `startRun`, written on
+   every change. An altar and the carving shrine compete for the same
+   trophies; that is the decision.
+6. **Portal** (`LevelData.portal`): floor one's wing only, in a non-treasure
+   room, solid. Bumping it with no crystal says so in the log; with one or
+   more, `modal.portal` lists them and `Game.enterWorld(boss)` spends that
+   crystal, stashes the main floor (`state.stash`), generates the world's
+   stage 0 and shows `worldIntro`.
+7. **Worlds**: below. Winning one adds the module's `collectible.id` to the
+   permanent collection (`saveCollection`, key `table-maze:collection`,
+   mirrored in `state.collection`, listed on the help screen's Hero tab
+   under "Collection") and plays `collect`. The way home is the module's
+   `portal-home` prop → `ctx.returnHome()`: the stash is restored, the hero
+   stands beside the portal, the run carries on.
+
+## Worlds: the engine's side (game.ts, monsters.ts, renderer, UI)
+- `enterWorld`, `goto`, `returnHome`, `finish` and world game overs all go
+  through `resetToLevel` with a world-specific salt. World floors keep
+  `state.depth` as it was (the main floor's); `stats.deepest` never moves.
+- Every tick on a world floor, after `updateMonsters`, the module's `tick`
+  runs with a fresh `WorldCtx`. `onEnter` fires from `Game.onEnter` after
+  keys/shrines/pickups; `onBump` from `stepOnce` when the next tile holds a
+  solid prop. Solid props block like chests everywhere (`isWalkable`,
+  `heroCanStand`, `moveBlocked`), ground props block nothing.
+- Carriable props: walking onto one picks it up (`hero.carrying = prop.id`,
+  `prop.hidden = true`); the hero sets it down to swing exactly as an orb
+  (`dropOrb` handles both), it drops on a knockdown, and the renderer draws
+  the carried prop's art at the hero's shoulder. `carriedProp(state)` in
+  combat.ts beside `carriedOrb`.
+- `WorldMonsterKind`s are routed by `chooseStep` to `module.step`, and
+  `willFight` to `module.fights` (default true). They take the ordinary
+  attack rule when adjacent. Roster kinds on a world floor behave as
+  anywhere.
+- `state.freeze > 0`: `tick` counts it down, ages nothing but fx and the
+  camera shake, and returns — no hero step, no monster, no buff clock, no
+  world tick. Not a modal: nothing to dismiss.
+- `level.rev`: the renderer keeps the last value it painted and rebuilds
+  its static canvases (and hidden mask) when it changes.
+- Paint styles (`ThemePalette.style`): `paintLevel` draws walls and floors
+  per style — 'brick' as today; 'cloud' sky/cloud; 'water' sea/deck;
+  'street' building/cobbles; 'hedge' hedge/grass; 'stone' rock/flagstone.
+  Each style is a function of the tile coordinates alone, like the brick.
+- `gameOver` on a world floor sets `modal.gameOver.world` and the module's
+  `defeat(stage, cause)` sentence; `GameOverModal` shows the world's
+  `DEFEAT_ART` (render/worlds) instead of the boss art. `retryBoss` on a
+  world regenerates the current stage at the same price rule.
+- HUD depth badge shows the world's `name` on world floors; the help
+  screen's How-to-play grows the chain in a few lines.
+- Save/load: `stash`, `freeze` (always 0 on load) and `collection` ride in
+  `SaveData`; a world floor reloaded mid-stage shows `worldIntro` again, as a
+  boss chamber does.
+
+## Worlds: the modules (engine/worlds/*.ts, render/worlds/*Art.ts)
+One file per world, one art file per world, registered in
+`engine/worlds/index.ts` and `render/worlds/index.ts`; `WorldModule` in
+`engine/worlds/world.ts` is the whole contract. Each module: its stage
+graph, its props and monsters, its puzzles, its words, its art, and its own
+test file (`test/world-<name>.test.ts`) driving the module through a fake
+`WorldCtx` and the real `Game` where the engine side exists.
+- **minotaur → Olympus** (`greece.ts`, themes `olympus`/`aegean`/`styx`): a
+  hub of three gods' statues and three realms; each realm yields that god's
+  symbol of power, carried back to the right statue. Sky: cloud paths, a
+  medusa whose gaze along a straight line of sight petrifies (game over)
+  unless the hero is behind cover or facing away. Sea: a ship's deck and
+  islands, sirens whose song pulls the hero a tile toward them on a beat
+  unless ears are stopped (beeswax prop). Underworld: the Styx crossed by
+  ferry for a coin (obol prop), Cerberus asleep only while a honey-cake is
+  laid down. Collectible: The Olive Crown.
+- **necromancer → Boston** (`arkham.ts`, theme `arkham`): a grid of streets
+  and blocks, cultists (patrol-like, a knife's reach) and cult houses
+  (props) to search; notes in houses narrow down which house holds the
+  tablet before the ritual clock runs out; recover the tablet, break the
+  circle. Collectible: The Silver Key.
+- **angels → The Cemetery** (`cemetery.ts`, themes `cemetery`/`crypts`): a
+  surface of graves, fences and hedge mazes with weeping angels that follow
+  but hold their distance until five are within the screen of the hero
+  (then all close in; a touch is a game over), crypts (props) that open onto
+  crypt stages — shifting mazes of ghouls and skeletons (a rumble, then the
+  walls slide while the world is frozen) with a relic piece at the end —
+  and a central contraption that takes the pieces and, complete, opens the
+  way home. Collectible: The Tear in Glass.

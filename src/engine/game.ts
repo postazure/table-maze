@@ -396,6 +396,9 @@ export class Game {
       compass: null,
       over: false,
       boons: spent.active,
+      stash: null,
+      freeze: 0,
+      collection: [],
     };
     this.rng = makeRng(hashSeed(seed, depth, RNG_SALT));
     this.minionSeq = 0;
@@ -1984,6 +1987,11 @@ function reviveState(saved: GameState): GameState {
   if (!Array.isArray(hero.relics)) hero.relics = [];
   if (!Array.isArray(hero.trophies)) hero.trophies = [];
   if (!Array.isArray(s.boons)) s.boons = [];
+  if (s.stash === undefined) s.stash = null;
+  if (typeof s.freeze !== 'number') s.freeze = 0;
+  if (!Array.isArray(s.collection)) s.collection = [];
+  if (typeof hero.brass !== 'number') hero.brass = 0;
+  if (!Array.isArray(hero.crystals)) hero.crystals = [];
   hero.stun = 0;
   if (typeof hero.sleeping !== 'boolean') hero.sleeping = false;
   hero.hitFlash = 0;
