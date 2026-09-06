@@ -106,8 +106,8 @@ function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound, onOpenVolu
             LV <b>{model.level}</b>
           </span>
           {model.lens && (
-            <span className="hud-badge hud-badge-lens" title="Lens of Truth: hidden passages open to you until you leave this set of floors">
-              <PixelIcon name="lens" size={12} title="Lens of Truth" />
+            <span className="hud-badge hud-badge-lens" title="Cracked Lens: hidden passages open to you until you leave this set of floors">
+              <PixelIcon name="lens" size={12} title="Cracked Lens" />
             </span>
           )}
         </div>

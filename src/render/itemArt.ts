@@ -211,26 +211,35 @@ export const ALCOVE_ART: ArtSpec = {
 };
 
 // ---------------------------------------------------------------------------
-// The Lens of Truth — the one thing in the game that is not a stat.
+// The Cracked Lens — the one thing in the game that is not a stat.
 // ---------------------------------------------------------------------------
 
 /**
- * A round glass lens in a bright rim, with a gold tab to hold it by. Pale and
- * cold on purpose: it belongs with the seams it lights up, not with the gold
- * of the keys and chests it turns up beside.
+ * A round glass lens in a bright rim, with a gold tab to hold it by, and a
+ * hairline fracture running across it. Pale and cold on purpose: it belongs
+ * with the light it throws, not with the gold of the keys and chests it turns
+ * up beside.
+ *
+ * The crack is the whole name, and it is doing a job: nobody should be
+ * surprised when the thing finally comes apart on the stairs out of the shop.
  */
 export const LENS_ART: ArtSpec = {
   rows: [
     '..RRRR..',
     '.RGGGGR.',
-    'RGWWGGGR',
-    'RGWGGGGR',
-    'RGGGGGGR',
-    'RGGGGGGR',
-    '.RGGGGR.',
+    'RGWWGGCR',
+    'RGWGGGCR',
+    'RGGGGCGR',
+    'RGGGCGGR',
+    '.RGCGGR.',
     '..RRHH..',
   ],
-  palette: { R: '#8fe3ff', G: '#2f6f8f', W: '#eafcff', H: '#f5c451' },
+  // The crack runs rim to rim in a steady diagonal down the right of the
+  // glass, and the glint sits in the far corner from it with two or three dark
+  // pixels between them the whole way. That gap is the whole trick: bring the
+  // two any closer and at popup size the eye joins them into one squiggle
+  // rather than reading a fracture and a highlight.
+  palette: { R: '#8fe3ff', G: '#2f6f8f', W: '#eafcff', C: '#cfefff', H: '#f5c451' },
 };
 
 /** Where the shrine glyph goes inside `ALCOVE_ART`, as fractions of the tile. */

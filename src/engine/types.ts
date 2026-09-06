@@ -74,7 +74,7 @@ export interface Loot {
   xp: number;
   item?: LootItem;
   /**
-   * A Lens of Truth (see engine/lens.ts). Chests on the first two floors of a
+   * A Cracked Lens (see engine/lens.ts). Chests on the first two floors of a
    * themed set carry one. A hero who already holds a lens melts a second one
    * down for coins, the same way a duplicate trinket goes.
    */
@@ -544,7 +544,7 @@ export interface Shop {
 // ---------------------------------------------------------------------------
 
 /**
- * The Lens of Truth the hero is carrying, or null. Found in a chest, bound to
+ * The Cracked Lens the hero is carrying, or null. Found in a chest, bound to
  * the three-floor themed set it was found in, and shattered on the way out of
  * that set's shop. See engine/lens.ts.
  */
@@ -614,7 +614,7 @@ export interface Hero {
   /** Shrine effects still running, newest last. See `engine/shrines.ts`. */
   buffs: Buff[];
   /**
-   * The Lens of Truth, or null. Nothing in a fight reads it: all it does is
+   * The Cracked Lens, or null. Nothing in a fight reads it: all it does is
    * open this set's hidden passages and light the way a few tiles at a time.
    */
   lens: Lens | null;

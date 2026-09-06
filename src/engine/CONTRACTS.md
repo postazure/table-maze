@@ -154,7 +154,7 @@ Requirements:
   be. A lens is a saving and never a requirement.
   Stock a passage with patrols and the odd guard, never a lurker and never on
   a mouth: a passage has no room to bait a hunter, and one following the hero
-  out of a wall would give the whole thing away. Put one Lens of Truth in an
+  out of a wall would give the whole thing away. Put one Cracked Lens in an
   ordinary (never hidden) chest on the first two floors of each set, and a
   magic item in each vault's chest — with a chest key of its own, like any
   other chest.

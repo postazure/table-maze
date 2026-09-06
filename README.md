@@ -71,9 +71,11 @@ Play it at **https://postazure.github.io/table-maze/**
     patrols and guards while you learn the controls.
 - Behind the walls of every maze floor are **hidden passages**: real corridors,
   with monsters in them, that the floor draws as unbroken brick. You cannot see
-  one, and you cannot walk into one, without a **Lens of Truth**. That turns up
+  one, and you cannot walk into one, without a **Cracked Lens**. That turns up
   in a chest on the first or second floor of each three-floor theme — no chest
-  is marked, so finding it means opening them. Carry it and the wall opens as
+  is marked, so finding it means opening them. It comes out of the chest with a
+  fracture already running across the glass, which is your notice that it is
+  not going to last. Carry it and the wall opens as
   you walk past a way in: the brick goes thin at your feet and back to solid a
   few paces off. That is the only sign you ever get. Nothing marks a passage
   from across the room, so the way to find one is to walk the floor, and a

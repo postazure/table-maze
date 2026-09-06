@@ -58,7 +58,7 @@ export interface HudModel {
   /** One magic item per slot, or null if empty. */
   gear: Record<ItemSlot, MagicItem | null>;
   /**
-   * Carrying a Lens of Truth that still works down here. It has no numbers to
+   * Carrying a Cracked Lens that still works down here. It has no numbers to
    * show and no clock to run down, so the HUD only ever says yes or no.
    */
   lens: boolean;

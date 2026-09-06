@@ -1,5 +1,5 @@
 /**
- * The Lens of Truth and the hidden passages it is for.
+ * The Cracked Lens and the hidden passages it is for.
  *
  * A maze floor carries a few **passages**: real corridors dug into the rock,
  * with monsters and sometimes a vault at the end, that the floor does not
@@ -7,7 +7,9 @@
  * into, so a hero without the lens never knows they are there.
  *
  * The **lens** is found in a chest on the first or second floor of a themed
- * set (see `themeForDepth`). Carrying it does exactly one thing: standing on
+ * set (see `themeForDepth`). It comes out of the chest already cracked, which
+ * is where its name comes from and why nobody is surprised when it finally
+ * gives out. Carrying it does exactly one thing: standing on
  * the doorstep of a passage, or inside one, lights a radius around the hero,
  * the brick fading back to solid at the edge.
  *
@@ -53,7 +55,7 @@ export function lensActive(hero: Hero, depth: number): boolean {
 }
 
 /** The lens' display name. One item, one name, everywhere. */
-export const LENS_NAME = 'Lens of Truth';
+export const LENS_NAME = 'Cracked Lens';
 
 // ---------------------------------------------------------------------------
 // Hidden ground

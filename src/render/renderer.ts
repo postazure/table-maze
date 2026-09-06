@@ -95,7 +95,7 @@ const SHRINE_SPENT_ALPHA = 0.45;
  */
 const ALCOVE_SCALE = 0.88;
 
-// Lens of Truth.
+// Cracked Lens.
 /** How fast the reveal opens and closes when the hero steps in or out, per second. */
 const LENS_FADE_PER_S = 3.5;
 /** Below this the reveal is not worth a full-viewport composite. */
