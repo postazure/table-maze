@@ -1,9 +1,13 @@
 import type { BossKind, RunStats } from '../engine/types';
+import { PixelIcon } from './icons';
 
 export interface GameOverModalProps {
   cause: string;
   boss: BossKind;
   stats: RunStats;
+  /** Gold to buy back into this same fight, fixed at the moment of death. */
+  retryCost: number;
+  onRetry: () => void;
   onClose: () => void;
 }
 
@@ -17,10 +21,12 @@ function formatPlayTime(ms: number): string {
 
 /**
  * The run is over. One plain-sentence cause, then a stats grid, then a
- * single button that starts a new run. Never window.confirm — there is
- * nothing left to lose, so nothing to confirm.
+ * button to buy back into this same fight (greyed out if the purse is
+ * short) and a button that starts a new run instead. Never window.confirm on
+ * "New Game" — there is nothing left to lose by starting over, so nothing to
+ * confirm.
  */
-export function GameOverModal({ cause, stats, onClose }: GameOverModalProps) {
+export function GameOverModal({ cause, stats, retryCost, onRetry, onClose }: GameOverModalProps) {
   const rows: [string, string | number][] = [
     ['Deepest floor', stats.deepest],
     ['Hero level', stats.heroLevel],
@@ -29,6 +35,8 @@ export function GameOverModal({ cause, stats, onClose }: GameOverModalProps) {
     ['Gold', stats.gold],
     ['Time played', formatPlayTime(stats.playMs)],
   ];
+  if (stats.retries > 0) rows.push(['Boss retries paid', stats.retries]);
+  const canRetry = stats.gold >= retryCost;
 
   return (
     <div className="modal-backdrop boss-backdrop" role="dialog" aria-label="Game over">
@@ -47,6 +55,22 @@ export function GameOverModal({ cause, stats, onClose }: GameOverModalProps) {
             ))}
           </div>
         </div>
+        <div className="shop-actions">
+          <button
+            type="button"
+            className="shop-btn shop-btn-buy"
+            onClick={onRetry}
+            disabled={!canRetry}
+            aria-label={`Pay ${retryCost} gold to retry this boss`}
+          >
+            <span className="shop-btn-label">Retry this fight</span>
+            <span className="shop-price">
+              <PixelIcon name="coin" size={14} />
+              {retryCost}
+            </span>
+          </button>
+        </div>
+        {!canRetry && <div className="shop-warn">Not enough gold to retry.</div>}
         <button type="button" className="hud-btn-newgame boss-btn-primary" onClick={onClose} aria-label="Start a new game">
           New Game
         </button>

@@ -119,6 +119,7 @@ export function loadGame(): GameState | null {
         deepest: d.stats?.deepest ?? d.depth,
         playMs: d.stats?.playMs ?? 0,
         bosses: d.stats?.bosses ?? 0,
+        bossRetries: d.stats?.bossRetries ?? 0,
       },
       descending: 0,
       modal: null,

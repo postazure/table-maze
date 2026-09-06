@@ -65,6 +65,7 @@ export function useGame() {
   const dismissModal = useCallback(() => game.dismissModal(), [game]);
   const openHelp = useCallback(() => game.openHelp(), [game]);
   const buyOffer = useCallback((offerId: string) => game.buyOffer(offerId), [game]);
+  const retryBoss = useCallback(() => game.retryBoss(), [game]);
 
-  return { game, hud, newGame, dismissModal, openHelp, buyOffer };
+  return { game, hud, newGame, dismissModal, openHelp, buyOffer, retryBoss };
 }

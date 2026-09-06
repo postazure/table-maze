@@ -11,6 +11,7 @@ import type {
   Dir,
   GameState,
   Hero,
+  LevelData,
   Monster,
   Rng,
   ShopOffer,
@@ -348,7 +349,7 @@ export class Game {
       fx: [],
       sfx: [],
       log: [],
-      stats: { kills: 0, deepest: depth, playMs: 0, bosses: 0 },
+      stats: { kills: 0, deepest: depth, playMs: 0, bosses: 0, bossRetries: 0 },
       descending: 0,
       modal: null,
       compass: null,
@@ -374,29 +375,88 @@ export class Game {
     const st = this.state;
     const hero = st.hero;
     const from = st.level.kind;
+    let level: LevelData;
     let salt = RNG_SALT;
     if (from === 'boss') {
-      st.level = generateShopLevel(st.depth, st.seed, hero);
+      level = generateShopLevel(st.depth, st.seed, hero);
       salt = RNG_SALT + 1;
     } else if (from === 'maze' && st.depth % BOSS_EVERY === 0) {
-      st.level = generateBossLevel(st.depth, st.seed);
+      level = generateBossLevel(st.depth, st.seed);
       salt = RNG_SALT + 2;
     } else {
       st.depth += 1;
       st.stats.deepest = Math.max(st.stats.deepest, st.depth);
-      st.level = generateLevel(st.depth, st.seed, hero.level);
+      level = generateLevel(st.depth, st.seed, hero.level);
     }
-    hero.pos = { x: st.level.start.x, y: st.level.start.y };
-    hero.rpos = { x: st.level.start.x, y: st.level.start.y };
+    this.resetToLevel(level, salt, 0.5);
+    const boss = st.level.boss;
+    if (st.level.kind === 'boss' && boss) {
+      // Nothing runs — the spell clock included — until the player has read
+      // who is down here and what to do about them.
+      st.modal = { kind: 'bossIntro', boss: boss.kind };
+      pushLog(st, bossName(boss.kind));
+    } else {
+      pushLog(st, st.level.kind === 'shop' ? 'Shop' : `Depth ${st.depth}`);
+    }
+    this.dirty = true;
+    this.emit();
+  }
+
+  /**
+   * Pay `retryCost` (fixed at the moment of death, see `gameOver` in
+   * combat.ts) to step back into the boss chamber the hero just lost,
+   * instead of ending the run. Only valid from the game-over modal, and only
+   * once the hero can actually afford it — the modal's own button already
+   * greys itself out otherwise, so this is belt and braces.
+   */
+  retryBoss(): void {
+    const st = this.state;
+    if (!st.modal || st.modal.kind !== 'gameOver') return;
+    const hero = st.hero;
+    const cost = st.modal.retryCost;
+    if (hero.gold < cost) return;
+    hero.gold -= cost;
+    st.stats.bossRetries += 1;
+    st.over = false;
+    const level = generateBossLevel(st.depth, st.seed);
+    this.resetToLevel(level, RNG_SALT + 2 + st.stats.bossRetries, 1);
+    const boss = st.level.boss;
+    if (boss) {
+      st.modal = { kind: 'bossIntro', boss: boss.kind };
+      pushLog(st, `Paid ${cost} gold to retry ${bossName(boss.kind)}`);
+    } else {
+      st.modal = null;
+    }
+    this.dirty = true;
+    this.emit();
+  }
+
+  /**
+   * Common reset when the hero steps onto a freshly (re)generated level:
+   * position at its start, keys and potions refilled, hp topped up by
+   * `healFraction` of what is missing (0.5 for an ordinary floor transition,
+   * 1 for a paid boss retry — a fresh shot is meant to feel fresh), every
+   * transient (trail, queued path, fx/sfx, pointer, descend timer, compass)
+   * cleared, and this tick's rng reseeded from `salt` so a retry does not
+   * replay the exact same random events as the attempt it is repeating.
+   * Callers still own `state.modal` and the log line: what happens next
+   * differs (bossIntro vs. a plain depth line, or none at all).
+   */
+  private resetToLevel(level: LevelData, salt: number, healFraction: number): void {
+    const st = this.state;
+    const hero = st.hero;
+    st.level = level;
+    hero.pos = { x: level.start.x, y: level.start.y };
+    hero.rpos = { x: level.start.x, y: level.start.y };
     hero.keys = { door: 0, chest: 0 };
-    hero.hp = Math.min(hero.maxHp, hero.hp + Math.floor((hero.maxHp - hero.hp) / 2));
+    hero.hp = Math.min(hero.maxHp, hero.hp + Math.floor((hero.maxHp - hero.hp) * healFraction));
     hero.potions = hero.potionCapacity;
     hero.stun = 0;
     hero.sleeping = false;
     hero.hitFlash = 0;
     hero.lungeT = 0;
     hero.lunge = undefined;
-    st.trail = new Set<string>([key(st.level.start)]);
+    st.trail = new Set<string>([key(level.start)]);
     st.path = [];
     st.fx = [];
     st.sfx = [];
@@ -409,18 +469,7 @@ export class Game {
     this.engagedId = null;
     this.regenTimer = 0;
     this.compassTimer = COMPASS_MS;
-    this.minionSeq = st.level.monsters.length;
-    const boss = st.level.boss;
-    if (st.level.kind === 'boss' && boss) {
-      // Nothing runs — the spell clock included — until the player has read
-      // who is down here and what to do about them.
-      st.modal = { kind: 'bossIntro', boss: boss.kind };
-      pushLog(st, bossName(boss.kind));
-    } else {
-      pushLog(st, st.level.kind === 'shop' ? 'Shop' : `Depth ${st.depth}`);
-    }
-    this.dirty = true;
-    this.emit();
+    this.minionSeq = level.monsters.length;
   }
 
   /** Tiles the hero may walk *through* while path-finding a drag. */
@@ -1482,8 +1531,9 @@ function reviveState(saved: GameState): GameState {
   s.compass = null;
   s.over = false;
   if (typeof s.level.theme !== 'string') s.level.theme = themeForDepth(s.depth).id;
-  if (!s.stats) s.stats = { kills: 0, deepest: s.depth || 1, playMs: 0, bosses: 0 };
+  if (!s.stats) s.stats = { kills: 0, deepest: s.depth || 1, playMs: 0, bosses: 0, bossRetries: 0 };
   if (typeof s.stats.bosses !== 'number') s.stats.bosses = 0;
+  if (typeof s.stats.bossRetries !== 'number') s.stats.bossRetries = 0;
   // Dropped back into an unfinished boss chamber: show the briefing again, so
   // the spell clock is not running while the player works out where they are.
   if (s.level.kind === 'boss' && s.level.boss && !s.level.boss.defeated) {

@@ -396,6 +396,20 @@ export function trinketGold(depth: number): number {
   return 8 * Math.max(1, Math.floor(depth));
 }
 
+/**
+ * Gold to buy back into a boss fight the hero just lost, instead of ending
+ * the run. Scales with the floor's own depth (a deeper floor's gold economy
+ * is already bigger) and climbs further with every retry already bought
+ * this run, anywhere, so leaning on it over and over gets expensive fast
+ * rather than turning every boss into a coin-operated checkpoint.
+ */
+export function bossRetryCost(depth: number, retriesSoFar: number): number {
+  const d = Math.max(1, Math.floor(depth));
+  const n = Math.max(0, Math.floor(retriesSoFar));
+  const raw = (20 + 10 * d) * (1 + 0.6 * n);
+  return Math.max(10, Math.round(raw / 5) * 5);
+}
+
 export function rollChestLoot(depth: number, rng: Rng): Loot {
   const d = Math.max(1, Math.floor(depth));
   const tier = tierOf(d);

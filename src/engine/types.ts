@@ -644,9 +644,11 @@ export type Modal =
   | { kind: 'bossWon'; boss: BossKind; upgraded: MagicItem | null; heart: boolean }
   /**
    * The run is over (only ever in a boss chamber). `cause` is one plain
-   * sentence ("The Minotaur caught you."). Dismissing it starts a new run.
+   * sentence ("The Minotaur caught you."). `retryCost` (gold, fixed at the
+   * moment of death) buys back into the same boss fight via
+   * `Game.retryBoss()`; dismissing the modal instead starts a new run.
    */
-  | { kind: 'gameOver'; cause: string; boss: BossKind; stats: RunStats };
+  | { kind: 'gameOver'; cause: string; boss: BossKind; stats: RunStats; retryCost: number };
 
 /** Everything the game-over screen shows about the run that just ended. */
 export interface RunStats {
@@ -656,6 +658,8 @@ export interface RunStats {
   bosses: number;
   gold: number;
   playMs: number;
+  /** Boss retries paid so far this run. */
+  retries: number;
 }
 
 export interface GameState {
@@ -684,6 +688,8 @@ export interface GameState {
     playMs: number;
     /** Bosses beaten this run. */
     bosses: number;
+    /** Times the hero has paid to retry a lost boss fight this run. */
+    bossRetries: number;
   };
   /** true once the hero steps on the exit; game handles the transition. */
   descending: number; // ms remaining of the descend animation, 0 when not descending
