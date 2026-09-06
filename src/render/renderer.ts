@@ -36,10 +36,8 @@ import {
   LENS_CORE,
   LENS_RADIUS,
   hiddenAt,
-  lensActive,
   lensLit,
   lensRevealAt,
-  passageMouths,
   passageTiles,
 } from '../engine/lens';
 import { themeById } from '../engine/themes';
@@ -98,8 +96,6 @@ const SHRINE_SPENT_ALPHA = 0.45;
 const ALCOVE_SCALE = 0.88;
 
 // Lens of Truth.
-/** The cold glass colour of the lens. Used for the seams over a passage mouth. */
-const LENS_COLOR = '#8fe3ff';
 /** How fast the reveal opens and closes when the hero steps in or out, per second. */
 const LENS_FADE_PER_S = 3.5;
 /** Below this the reveal is not worth a full-viewport composite. */
@@ -110,8 +106,6 @@ const LENS_MIN = 0.02;
  * monster caught mid-step between two tiles.
  */
 const CLIP_SPAN = 2;
-/** A seam in the wall pulses on this period (ms) so it reads as magic, not masonry. */
-const SEAM_PULSE_MS = 1600;
 /**
  * A wash of the lens' own colour over the ground it opens. Without it a lit
  * passage is only a slightly darker patch of wall — every theme's floor is
@@ -478,8 +472,6 @@ export class Renderer implements TileMapper {
    * into a passage opens the light instead of popping it on.
    */
   private lensGlow = 0;
-  /** ms of wall-clock, only used to pulse the seams over the passage mouths. */
-  private clock = 0;
   /** This frame's shake offset in screen pixels, so the reveal buffer can match it. */
   private shake = { x: 0, y: 0 };
 
@@ -938,36 +930,6 @@ export class Renderer implements TileMapper {
     this.blitScratch(ctx);
   }
 
-  /**
-   * The seam over a passage mouth: the one thing a lens shows you from the
-   * outside. A thin diamond of light in the brick, breathing slowly, that
-   * fades out as the reveal itself opens over the same tile — by the time you
-   * can see the corridor you no longer need to be told it is there.
-   */
-  private drawSeam(ctx: CanvasRenderingContext2D, p: Vec, revealed: number, t: number): void {
-    const fade = 1 - Math.min(1, revealed);
-    if (fade <= 0.02) return;
-    const pulse = 0.55 + 0.45 * Math.sin((this.clock / SEAM_PULSE_MS) * Math.PI * 2);
-    const cx = p.x * t + t / 2;
-    const cy = p.y * t + t / 2;
-    const r = t * 0.3;
-    ctx.save();
-    ctx.globalAlpha = fade * (0.35 + 0.4 * pulse);
-    ctx.strokeStyle = LENS_COLOR;
-    ctx.lineWidth = Math.max(1, Math.round(t * 0.07));
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - r);
-    ctx.lineTo(cx + r * 0.55, cy);
-    ctx.lineTo(cx, cy + r);
-    ctx.lineTo(cx - r * 0.55, cy);
-    ctx.closePath();
-    ctx.stroke();
-    ctx.globalAlpha = fade * (0.18 + 0.22 * pulse);
-    ctx.fillStyle = LENS_COLOR;
-    ctx.fill();
-    ctx.restore();
-  }
-
   draw(state: GameState, dt: number): void {
     this.heroLevel = state.hero.level;
     this.necroSpellFrac =
@@ -975,14 +937,13 @@ export class Renderer implements TileMapper {
         ? state.level.boss.spellMs / state.level.boss.spellTotalMs
         : 1;
     // 1. Age & prune effects.
-    this.clock += dt;
     for (const fx of state.fx) fx.t += dt;
     state.fx = state.fx.filter((fx) => fx.t < fx.ttl);
 
-    // The lens: held (seams show) and lit (the reveal is open). The glow eases
-    // both ways so stepping in or out of a passage is a light coming up, not a
-    // switch being thrown.
-    const lensHeld = lensActive(state.hero, state.depth);
+    // The lens' light, eased both ways so walking past a mouth is a passage
+    // opening up rather than a switch being thrown. Nothing anywhere on screen
+    // says where a passage is: the light coming up as the hero walks by is the
+    // whole of how one is found, which is why the easing matters.
     const lensTarget = lensLit(state.level, state.hero, state.depth) ? 1 : 0;
     const lensStep = (LENS_FADE_PER_S * dt) / 1000;
     this.lensGlow =
@@ -1178,16 +1139,6 @@ export class Renderer implements TileMapper {
     // catches the trail, the drag line and the loot as well, none of which
     // should be traceable through a wall.
     if (hiddenBox) this.drawPassageVeil(ctx, state, hiddenBox);
-
-    // Seams last of the wall business: a mouth is a mark *on* the brick, so it
-    // goes over the veil, and fades out as the reveal opens the same tile.
-    if (lensHeld && state.level.passages?.length) {
-      for (const mk of passageMouths(state.level)) {
-        const p = parseKey(mk);
-        if (!this.inRange(p, startX, endX, startY, endY)) continue;
-        this.drawSeam(ctx, p, this.tileReveal(state, p), t);
-      }
-    }
 
     // Hero (always near the viewport center).
     this.drawHero(ctx, state.hero, t);

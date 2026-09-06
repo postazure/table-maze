@@ -7,13 +7,16 @@
  * into, so a hero without the lens never knows they are there.
  *
  * The **lens** is found in a chest on the first or second floor of a themed
- * set (see `themeForDepth`). Carrying it does two things and no more:
+ * set (see `themeForDepth`). Carrying it does exactly one thing: standing on
+ * the doorstep of a passage, or inside one, lights a radius around the hero,
+ * the brick fading back to solid at the edge.
  *
- *  1. the mouths of this floor's passages show themselves — a seam in the
- *     wall you can walk into;
- *  2. standing in one (or on its doorstep) lights a radius around the hero,
- *     brick fading back to solid at the edge. It is a lamp, not a map: you
- *     still walk a passage a few tiles at a time.
+ * Nothing marks a passage from further off — no seam, no glow, nothing on the
+ * map. You find one by walking past its mouth and seeing the wall open, which
+ * means the lens rewards covering ground rather than reading an indicator, and
+ * a floor still keeps most of its passages from a player who took the direct
+ * route. It is a lamp, not a map: even inside one you only ever see the next
+ * few tiles.
  *
  * It is bound to the three-floor set it was found in and shatters as the hero
  * leaves that set's shop, so a lens is something you go looking for again
