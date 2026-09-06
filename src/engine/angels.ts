@@ -125,7 +125,10 @@ function closeIn(state: GameState, angels: readonly Monster[], rng: Rng): void {
     if (state.over) return;
     if (m.frozenMs > 0) continue;
     if (manhattan(m.pos, state.hero.pos) <= ANGEL_REACH) {
-      monsterAttack(state, m, rng);
+      // A hit that just resolved a knockdown (potion/phoenix burst, or the
+      // run ending) means the hero is done taking hits for this tick — the
+      // other angels in the ring don't get a free follow-up.
+      if (monsterAttack(state, m, rng)) return;
       continue;
     }
     const step = routeStep(state, m, state.hero.pos, blockedFor(state, m));

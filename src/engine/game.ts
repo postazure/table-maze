@@ -290,13 +290,17 @@ export class Game {
     this.updateCompass(stats, dt, !eq(hero.pos, posBeforeStep));
 
     // --- monsters ----------------------------------------------------------
-    const hpBefore = hero.hp;
-    const posBefore = hero.pos;
-    updateMonsters(st, dt, this.rng);
-    if (hero.hp !== hpBefore || hero.pos !== posBefore) this.dirty = true;
+    // Knocked down and refilling hearts: the whole world holds still, same as
+    // a modal — no monster steps, swings, or boss clock while the hero naps.
+    if (!hero.sleeping) {
+      const hpBefore = hero.hp;
+      const posBefore = hero.pos;
+      updateMonsters(st, dt, this.rng);
+      if (hero.hp !== hpBefore || hero.pos !== posBefore) this.dirty = true;
 
-    // --- boss chamber -------------------------------------------------------
-    this.tickBoss(dt);
+      // --- boss chamber -----------------------------------------------------
+      this.tickBoss(dt);
+    }
     this.checkLevelUp();
     // A boss popup (won, or the run ending) freezes everything else at once.
     if (st.modal) {
