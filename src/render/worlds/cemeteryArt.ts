@@ -10,22 +10,80 @@ import type { CreatureCfg } from '../monsterArt';
 // Props
 // ---------------------------------------------------------------------------
 
-/** A shut crypt: nothing but an overgrown mound until it is bumped open. */
+// A crypt is a small mausoleum: a triangular pediment roof over an
+// overhanging cornice, two flanking pilasters framing a doorway, and a
+// plinth wider than the walls it carries. 16 wide x 24 tall (1 tile x 1.5
+// tiles) — like the dungeon door, it is drawn anchored to the BOTTOM of its
+// own tile (see Renderer.drawProp) so it stands taller than the tile it
+// occupies instead of being squeezed flat into it. Rows/palette kept as a
+// literal here since each is drawn once into an offscreen canvas.
+const CRYPT_ROOF = ['.......RR.......', '......RRRR......', '.....RRRRRR.....', '....RRRRRRRR....', '...RRRRRRRRRR...', '..RRRRRRRRRRRR..', '.RRRRRRRRRRRRRR.'];
+const CRYPT_CORNICE = ['WWWWWWWWWWWWWWWW', 'BBBBBBBBBBBBBBBB', '.WWWWWWWWWWWWWW.', '.WWWWWWWWWWWWWW.'];
+const CRYPT_BASE = ['.PPPPPPPPPPPPPP.', 'PPPPPPPPPPPPPPPP'];
+
+/** A shut crypt: a sealed mausoleum, its doorway choked with vines. */
 const CRYPT_SHUT: ArtSpec = {
-  rows: ['........', '..GGGG..', '.GMMMMG.', 'GMMMMMMG', 'GMMMMMMG', '.GMMMMG.', '..GGGG..', '........'],
-  palette: { G: '#2f4a35', M: '#3f5c3a' },
+  rows: [
+    '................',
+    '................',
+    ...CRYPT_ROOF,
+    ...CRYPT_CORNICE,
+    '.WWAAAVVVVAAAWW.',
+    '.WWAGAVVVVAGAWW.',
+    '.WWAAAVVVVAAAWW.',
+    '.GWAAAVVVVAAAWG.',
+    '.WWAAAVVVVAAAWW.',
+    '.WWAAAVVVVAAAWW.',
+    '.WWAGAVVVVAGAWW.',
+    '.WWAAAVVVVAAAWW.',
+    '.WWAAAVVVVAAAWW.',
+    ...CRYPT_BASE,
+  ],
+  palette: { R: '#3f3d58', W: '#6b6b7a', A: '#54546a', B: '#18172a', V: '#3f5c3a', G: '#2f4a35', P: '#4a4a5c' },
 };
 
-/** Opened: a stone archway over a dark doorway down. */
+/** Opened: the vines torn away, the doorway dark — a stair drops away into
+ *  it, its treads catching the light before fading into shadow. */
 const CRYPT_OPEN: ArtSpec = {
-  rows: ['..SSSS..', '.SSSSSS.', 'SSDDDDSS', 'SSDDDDSS', 'SSDDDDSS', 'SSDDDDSS', '.SSSSSS.', '........'],
-  palette: { S: '#6b6b7a', D: '#16162a' },
+  rows: [
+    '................',
+    '................',
+    ...CRYPT_ROOF,
+    ...CRYPT_CORNICE,
+    '.WWAAATTTTAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    '.WWAAAmmmmAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    '.WWAAAmmmmAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    '.WWAAAddddAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    ...CRYPT_BASE,
+  ],
+  palette: { R: '#3f3d58', W: '#6b6b7a', A: '#54546a', B: '#18172a', P: '#4a4a5c', T: '#9a97ad', m: '#5c5a70', d: '#332f45', D: '#0c0c16' },
 };
 
-/** Done: the same archway, looted — the door stands open on nothing. */
+/** Done: the same mausoleum, looted — the doorway a flat, spent dark, the
+ *  stone itself a shade duller than a crypt still worth entering. */
 const CRYPT_DONE: ArtSpec = {
-  rows: ['..SSSS..', '.SLLLLS.', 'SLDDDDLS', 'SLD..DLS', 'SLD..DLS', 'SLDDDDLS', '.SLLLLS.', '........'],
-  palette: { S: '#4a4a56', L: '#6b6b7a', D: '#0c0c16' },
+  rows: [
+    '................',
+    '................',
+    ...CRYPT_ROOF,
+    ...CRYPT_CORNICE,
+    '.WWAAADDDDAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    '.WWAAADDDDAAAWW.',
+    ...CRYPT_BASE,
+  ],
+  palette: { R: '#3f3d58', W: '#4a4a56', A: '#3c3c4a', B: '#18172a', P: '#4a4a5c', D: '#0c0c16' },
 };
 
 export const PROP_ART: Record<string, ArtSpec> = {
