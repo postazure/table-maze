@@ -10,6 +10,36 @@ import type { CreatureCfg } from '../monsterArt';
 const STONE = '#9a9aa4';
 const STONE_DARK = '#6b6b76';
 
+const BRAZIER_IRON = '#4a3a30';
+const BRAZIER_PIP = '#fff1c8';
+
+/**
+ * A brazier's bowl on its stand, the pips on the rim telling its place in
+ * the order (one pip, two, three), lit or not. Keyed `brazier:<n>` and
+ * `brazier:<n>:lit`, which is what greece.ts sets as the prop's art and
+ * state.
+ */
+function brazierArt(): Record<string, ArtSpec> {
+  const rims: Record<number, [string, string]> = {
+    1: ['.IIPPII.', '..IPPI..'],
+    2: ['.PIIIIP.', '.PIIIIP.'],
+    3: ['.PIPPIP.', '.PIPPIP.'],
+  };
+  const out: Record<string, ArtSpec> = {};
+  for (const n of [1, 2, 3]) {
+    const [rim, base] = rims[n];
+    out[`brazier:${n}`] = {
+      rows: ['........', '........', 'I......I', 'II....II', rim, base, '...II...', '..IIII..'],
+      palette: { I: BRAZIER_IRON, P: BRAZIER_PIP },
+    };
+    out[`brazier:${n}:lit`] = {
+      rows: ['..OY....', '.OOOY...', 'I.OOY..I', 'II.OY.II', rim, base, '...II...', '..IIII..'],
+      palette: { I: BRAZIER_IRON, P: BRAZIER_PIP, O: '#ff8a3d', Y: '#ffcf5c' },
+    };
+  }
+  return out;
+}
+
 export const PROP_ART: Record<string, ArtSpec> = {
   'portal-home': {
     rows: ['..PPPP..', '.PLLLLP.', 'PLWWWWLP', 'PLWWWWLP', 'PLWWWWLP', 'PLWWWWLP', '.PLLLLP.', '..PPPP..'],
@@ -91,14 +121,8 @@ export const PROP_ART: Record<string, ArtSpec> = {
     rows: ['........', '..DD....', '.DYDYD..', 'DYYYYYD.', 'DYYYYYD.', 'DDDDDDD.', '.HHHHH..', '........'],
     palette: { D: '#8a5a2b', Y: '#e0b64a', H: '#5a3a1c' },
   },
-  brazier: {
-    rows: ['........', '........', 'B......B', 'BB....BB', '.BBBBBB.', '..BBBB..', '...BB...', '..BBBB..'],
-    palette: { B: '#4a3a30' },
-  },
-  'brazier:lit': {
-    rows: ['..OY....', '.OOOY...', 'B.OOY..B', 'BB.OY.BB', '.BBBBBB.', '..BBBB..', '...BB...', '..BBBB..'],
-    palette: { B: '#4a3a30', O: '#ff8a3d', Y: '#ffcf5c' },
-  },
+  // -- braziers: the order is carved on the rim as pips, one to three -------
+  ...brazierArt(),
   seal: {
     rows: ['SSSSSSSS', 'S.KKKK.S', 'S.K..K.S', 'S.KYYK.S', 'S.KYYK.S', 'S.K..K.S', 'S.KKKK.S', 'SSSSSSSS'],
     palette: { S: STONE_DARK, K: '#1a1420', Y: '#f5c451' },

@@ -164,20 +164,24 @@ Play it at **https://postazure.github.io/table-maze/**
     carry it back to the right statue. In the sky, Medusa paces the cloud
     meadows, and her gaze along an open line turns you to stone if you hold
     it — break the line or turn your back. On the wine-dark sea, sirens sing
-    from the rocks and pull you a tile at a time toward them unless you carry
-    beeswax, and a ship's helm sails you between the pier and the island. In
+    down straight lines from their rocks; linger in one and the song takes
+    hold of your feet and drags you onto the rocks a tile at a time. Beeswax
+    in your ears stops it, and so does Poseidon's trident once you hold it,
+    which is as well, since the trident lies at the far end of a siren's
+    line. A ship's helm sails you between the pier and the island. In
     the underworld, Charon's ferry crosses the Styx for an obol, three
-    braziers lit in the carved order open a sealed way to a honey-cake, and
+    braziers lit in the order of the pips on their rims open a sealed way to a honey-cake, and
     the cake laid down before Cerberus puts him to sleep long enough to take
     Hades' helm. Place all three symbols and the Olive Crown is yours.
   - The **Necromancer** opens **Boston, after dark**: streets and blocks,
     houses with coloured doors, a church on the square, and a chant with a
     clock on it. Cultists patrol the avenues with knives — each one killed is
     one fewer voice, and buys you fifteen seconds. Exactly one house hides the
-    tablet. Force a door and you find a note; three of the notes are real
-    clues, about the tablet house's door colour, whether it stands on a
-    corner, and which side of the church it is on, and three real clues always
-    leave exactly one house. Carry the tablet to the chalk circle by the
+    tablet. Force a wrong door and you find a note: the first three houses
+    you search wrongly each give one, about the tablet house's door colour,
+    whether it stands on a corner, and which side of the church it is on, and
+    the three together always leave exactly one house. The ritual clock sits
+    on the HUD beside the world's name. Carry the tablet to the chalk circle by the
     church before the clock runs out and the circle breaks. The Silver Key is
     yours.
   - The **Weeping Angels** open the **Cemetery**: grass paths between hedge

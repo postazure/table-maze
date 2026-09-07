@@ -47,12 +47,17 @@ interface ArkhamData {
   [key: string]: unknown;
   houses: HouseInfo[];
   tabletHouseId: string;
-  /** Exactly three houses (never the tablet's) whose search reveals a clue. */
-  clueHouseIds: string[];
-  /** Parallel to `clueHouseIds`. */
+  /**
+   * The three clues, in the order the notes hand them out: one per wrong
+   * house searched, until all three are out. Any wrong house will do — the
+   * puzzle is "three notes name the house", not "find the three houses that
+   * happen to hold a note".
+   */
   clueTexts: string[];
-  /** Which of `clueHouseIds` have already been read (for a friendlier repeat search). */
-  notesFound: string[];
+  /** The same three, short enough to float over the house for a moment. */
+  clueShorts: string[];
+  /** How many of `clueTexts` the hero has read so far. */
+  cluesGiven: number;
   /** Every house searched so far, tablet's or not (drives "already searched"). */
   searchedHouseIds: string[];
   tabletFound: boolean;
@@ -179,12 +184,18 @@ function placeHouses(rng: ReturnType<typeof makeRng>, tiles: Tile[][], props: Pr
   return houses;
 }
 
-/** The plain, deducible sentence for one of the tablet house's three attributes. */
-function clueSentences(house: HouseInfo): string[] {
+/** The plain, deducible sentence for each of the tablet house's three attributes, with a short form for the screen. */
+function clueSentences(house: HouseInfo): Array<{ text: string; short: string }> {
   return [
-    house.side === 'north' ? 'The tablet is north of the church.' : 'The tablet is south of the church.',
-    house.corner ? 'It is on a corner.' : 'It is not on a corner — a mid-block house.',
-    `Look for a ${house.color} door.`,
+    {
+      text: house.side === 'north' ? 'The tablet is north of the church.' : 'The tablet is south of the church.',
+      short: house.side === 'north' ? 'North of the church' : 'South of the church',
+    },
+    {
+      text: house.corner ? 'It is on a corner.' : 'It is not on a corner: a mid-block house.',
+      short: house.corner ? 'A corner house' : 'A mid-block house',
+    },
+    { text: `Look for a ${house.color} door.`, short: `A ${house.color} door` },
   ];
 }
 
@@ -277,11 +288,7 @@ function generate(stage: number, runSeed: number, hero: Hero, data: WorldData['d
   const houses = placeHouses(rng, tiles, props);
   const tabletHouse = rng.pick(houses);
   const tabletPos = { ...tabletHouse.doorTile };
-  props.push({ id: 'tablet', pos: tabletPos, kind: 'tablet', solid: false, art: 'tablet', carriable: true, hidden: true });
-
   const clues = rng.shuffle(clueSentences(tabletHouse));
-  const clueHouses = rng.shuffle(houses.filter((h) => h.id !== tabletHouse.id)).slice(0, 3);
-  const clueHouseIds = clueHouses.map((h) => h.id);
 
   const startPos: Vec = { x: 9, y: 1 };
   const portalPos: Vec = { x: 8, y: 1 };
@@ -297,13 +304,25 @@ function generate(stage: number, runSeed: number, hero: Hero, data: WorldData['d
     props.push({ id: `lamp-${i}`, pos: lampSpots[i], kind: 'lamp', solid: false, art: 'lamp' });
   }
 
-  // Restore a house's searched look and the tablet's carried state across a
+  // Restore a house's searched look and the tablet's whereabouts across a
   // regenerate of the same (runSeed, stage): the layout above always comes
-  // out identical, so restoring by id is safe.
+  // out identical, so restoring by id is safe. A tablet already found is
+  // either in the hero's arms (hidden, as a carried prop is) or lying on its
+  // house's doorstep, where a knockdown dropped it; it is never lost.
   const prev = data && typeof data === 'object' ? (data as Partial<ArkhamData>) : null;
   const prevSearched = Array.isArray(prev?.searchedHouseIds) ? (prev!.searchedHouseIds as string[]) : [];
   for (const p of props) if (p.kind === 'house' && prevSearched.includes(p.id)) p.state = 'searched';
   const tabletFound = prev?.tabletFound === true;
+  const tabletCarried = hero.carrying === 'tablet';
+  props.push({
+    id: 'tablet',
+    pos: tabletPos,
+    kind: 'tablet',
+    solid: false,
+    art: 'tablet',
+    carriable: true,
+    hidden: !tabletFound || tabletCarried,
+  });
 
   const grid = gridOnly(tiles);
   const blockedTiles = new Set<string>(props.filter((p) => p.solid).map((p) => key(p.pos)));
@@ -328,19 +347,20 @@ function generate(stage: number, runSeed: number, hero: Hero, data: WorldData['d
   ];
   monsters.push(makeCultist('cultist-priest', priestPath, hero.level, true));
 
+  const ritualMs = typeof prev?.ritualMs === 'number' ? (prev!.ritualMs as number) : 240000 + 20000 * Math.max(1, Math.floor(hero.level));
   const worldData: ArkhamData = {
     houses,
     tabletHouseId: tabletHouse.id,
-    clueHouseIds,
-    clueTexts: clueHouseIds.map((_, i) => clues[i]),
-    notesFound: Array.isArray(prev?.notesFound) ? (prev!.notesFound as string[]) : [],
+    clueTexts: clues.map((c) => c.text),
+    clueShorts: clues.map((c) => c.short),
+    cluesGiven: typeof prev?.cluesGiven === 'number' ? (prev!.cluesGiven as number) : 0,
     searchedHouseIds: prevSearched,
     tabletFound,
     // Cultists always respawn at full strength on a regenerate, so the kill
     // clock starts counting fresh kills from that count too — nothing here
     // grants time twice for one death.
     lastAlive: monsters.length,
-    ritualMs: typeof prev?.ritualMs === 'number' ? (prev!.ritualMs as number) : 240000 + 20000 * Math.max(1, Math.floor(hero.level)),
+    ritualMs,
     warned60: prev?.warned60 === true,
     warned20: prev?.warned20 === true,
     pulseAcc: 0,
@@ -353,7 +373,7 @@ function generate(stage: number, runSeed: number, hero: Hero, data: WorldData['d
     seed: runSeed ^ stage,
     kind: 'world',
     theme: 'arkham',
-    world: { kind: 'necromancer', stage, data: worldData, won: false },
+    world: { kind: 'necromancer', stage, data: worldData, won: false, clockMs: ritualMs },
     width: WIDTH,
     height: HEIGHT,
     tiles,
@@ -385,8 +405,8 @@ export const ARKHAM: WorldModule = {
     lines: [
       'Somewhere below, the cultists chant toward a ritual, and the clock is already running.',
       'The tablet that stops it is hidden in one house on these streets.',
-      'Search houses for notes. Every note rules houses out. Three are enough.',
-      'Bring the tablet to the chalk circle, in the square by the church.',
+      'Force a wrong door and you find a note. Three notes name the house.',
+      'Bring the tablet to the chalk circle, in the square by the church. Every cultist killed buys time.',
     ],
   }),
 
@@ -415,6 +435,7 @@ export const ARKHAM: WorldModule = {
     data.lastAlive = alive;
 
     data.ritualMs -= dt;
+    ctx.world.clockMs = Math.max(0, data.ritualMs);
     if (!data.warned60 && data.ritualMs <= 60000) {
       data.warned60 = true;
       ctx.log('Sixty seconds. The chant is rising.');
@@ -425,6 +446,7 @@ export const ARKHAM: WorldModule = {
     }
     if (data.ritualMs <= 0) {
       data.ritualMs = 0;
+      ctx.world.clockMs = 0;
       ctx.gameOver('ritual');
       return;
     }
@@ -476,20 +498,22 @@ export const ARKHAM: WorldModule = {
       const tablet = (ctx.level.props ?? []).find((p) => p.kind === 'tablet');
       if (tablet) ctx.pickUp(tablet);
       ctx.sfx('relic');
+      ctx.text(prop.pos, 'The tablet!', '#3aff8f', 1400);
       ctx.log('Beneath the floorboards: the tablet.');
       return;
     }
     // A wrong house after the tablet is already known costs nothing but the
     // time just spent forcing its door.
     if (data.tabletFound) {
-      ctx.log('Nothing here but dust — the tablet is already found.');
+      ctx.log('Nothing here but dust. The tablet is already found.');
       return;
     }
-    const clueIdx = data.clueHouseIds.indexOf(prop.id);
-    if (clueIdx >= 0) {
-      if (!data.notesFound.includes(prop.id)) data.notesFound.push(prop.id);
-      ctx.log(data.clueTexts[clueIdx]);
+    if (data.cluesGiven < data.clueTexts.length) {
+      const i = data.cluesGiven++;
+      ctx.text(prop.pos, data.clueShorts[i], '#f2c14e', 2200);
+      ctx.log(`A note: "${data.clueTexts[i]}"`);
     } else {
+      ctx.text(prop.pos, 'Dust', '#8f8ca8', 900);
       ctx.log('Nothing here but dust and old newspaper.');
     }
   },

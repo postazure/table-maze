@@ -127,6 +127,16 @@ button {
   letter-spacing: 1px;
 }
 
+.hud-clock {
+  margin-left: 6px;
+  color: var(--text);
+}
+
+.hud-clock-late {
+  color: var(--red);
+  animation: lens-badge-pulse 1s steps(4) infinite alternate;
+}
+
 .hud-badge b {
   color: var(--gold);
   font-weight: normal;

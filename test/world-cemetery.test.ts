@@ -504,3 +504,94 @@ test('a ghoul steps toward the hero within its range, and stays put beyond it', 
     assert.equal(stayed, null, 'out of range: the ghoul does not move');
   }
 });
+
+// ---------------------------------------------------------------------------
+// The quality pass: what the first cut got wrong
+// ---------------------------------------------------------------------------
+
+test('a carried piece rides up to the surface and into other crypts, hidden in the hero\'s arms', () => {
+  const seed = 11;
+  const hero = newHero();
+  const surface0 = CEMETERY.generate(0, seed, hero, null);
+  const data = surface0.world!.data as { pieceKind: (string | null)[]; cryptState: string[] };
+  const idx = data.pieceKind.findIndex((k) => k !== null);
+  const crypt = CEMETERY.generate(1 + idx, seed, hero, surface0.world!.data);
+  const piece = crypt.props!.find((p) => p.id === `piece-${idx}`)!;
+  const ctx = fakeCtx(crypt);
+  ctx.hero.carrying = piece.id;
+  piece.hidden = true;
+  CEMETERY.onEnter!(ctx, piece.pos);
+  assert.notEqual(data.cryptState[idx], 'done', 'picking a piece up does not finish the crypt');
+
+  const surface = CEMETERY.generate(0, seed, ctx.hero, crypt.world!.data);
+  const ghost = surface.props!.find((p) => p.id === piece.id);
+  assert.ok(ghost && ghost.hidden && ghost.kind === piece.kind, 'the piece is in the hero\'s arms on the surface');
+
+  const other = data.pieceKind.findIndex((k, i) => k !== null && i !== idx);
+  const otherCrypt = CEMETERY.generate(1 + other, seed, ctx.hero, crypt.world!.data);
+  assert.ok(otherCrypt.props!.some((p) => p.id === piece.id && p.hidden), 'and in the next crypt too');
+  assert.ok(otherCrypt.props!.some((p) => p.id === `piece-${other}` && !p.hidden), 'whose own piece still lies at the far end');
+});
+
+test('a piece dropped in its crypt is back at the far end next time; delivered, the crypt is done', () => {
+  const seed = 11;
+  const hero = newHero();
+  const surface = CEMETERY.generate(0, seed, hero, null);
+  const data = surface.world!.data as { pieceKind: (string | null)[]; cryptState: string[]; pieces: number };
+  const idx = data.pieceKind.findIndex((k) => k !== null);
+  const crypt = CEMETERY.generate(1 + idx, seed, hero, surface.world!.data);
+  const piece = crypt.props!.find((p) => p.id === `piece-${idx}`)!;
+  const ctx = fakeCtx(crypt);
+  pickUpProp(ctx, piece);
+  CEMETERY.onEnter!(ctx, piece.pos);
+  ctx.setDown(ctx.hero.pos); // a knockdown drops it
+  ctx.hero.carrying = null;
+
+  const again = CEMETERY.generate(1 + idx, seed, ctx.hero, crypt.world!.data);
+  const back = again.props!.find((p) => p.id === piece.id);
+  assert.ok(back && !back.hidden && eq(back.pos, again.exit), 'the piece lies at the far end again');
+
+  // Delivered to the contraption: its crypt is done and holds nothing.
+  const surface2 = CEMETERY.generate(0, seed, ctx.hero, crypt.world!.data);
+  const sctx = fakeCtx(surface2);
+  const ghost: Prop = { id: piece.id, pos: { ...sctx.hero.pos }, kind: piece.kind, solid: false, art: piece.art, carriable: true, hidden: true };
+  pickUpProp(sctx, ghost);
+  CEMETERY.onBump!(sctx, surface2.props!.find((p) => p.kind === 'contraption')!);
+  assert.equal(data.cryptState[idx], 'done');
+  const emptied = CEMETERY.generate(1 + idx, seed, sctx.hero, surface2.world!.data);
+  assert.equal(emptied.props!.some((p) => p.id === piece.id), false);
+});
+
+test('the decoy crypt holds the key to its own chest, and a shift never walls the key in', () => {
+  for (const seed of SEEDS) {
+    const surface = CEMETERY.generate(0, seed, newHero(), null);
+    const data = surface.world!.data as { decoyCrypt: number };
+    const crypt = CEMETERY.generate(1 + data.decoyCrypt, seed, newHero(), surface.world!.data);
+    assert.equal(crypt.chests.length, 1, `seed ${seed}`);
+    assert.equal(crypt.keys.length, 1, `seed ${seed}`);
+    assert.equal(crypt.keys[0].kind, 'chest');
+    assert.ok(bfsPath(crypt, crypt.start, crypt.keys[0].pos) !== null, `seed ${seed}: the key can be walked to`);
+    const ctx = fakeCtx(crypt);
+    CEMETERY.tick!(ctx, 26000);
+    assert.ok(bfsPath(crypt, ctx.hero.pos, crypt.keys[0].pos) !== null, `seed ${seed}: still after a shift`);
+    assert.equal(crypt.tiles[crypt.keys[0].pos.y][crypt.keys[0].pos.x], Tile.Floor);
+  }
+});
+
+test('angels: a hero who walks up to a holding angel pushes it back a step', () => {
+  const level = openHall();
+  const angel = idleAngel({ x: 6, y: level.start.y }, 'a1');
+  angel.state = 'chasing';
+  level.monsters.push(angel);
+  const ctx = fakeCtx(level);
+  ctx.hero.pos = { x: 4, y: level.start.y }; // two tiles off
+  CEMETERY.tick!(ctx, 700);
+  assert.equal(manhattan(angel.pos, ctx.hero.pos), 3, 'stepped back out to three tiles');
+  assert.equal(ctx.state.over, false);
+});
+
+test('the plaza has a way out on two sides', () => {
+  const level = CEMETERY.generate(0, 3, newHero(), null);
+  assert.equal(level.tiles[23][15], Tile.Floor);
+  assert.equal(level.tiles[17][15], Tile.Floor);
+});

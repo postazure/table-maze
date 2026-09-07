@@ -255,6 +255,37 @@ test('goto calls generate with the current data and carries it into the new stag
   });
 });
 
+test('a carried prop rides through goto when the next stage regenerates it hidden; anything else is set down', () => {
+  withFakeWorld(() => {
+    hooks.extraProps = (stage) =>
+      stage === 0
+        ? [{ id: 'gem', pos: { x: 2, y: 1 }, kind: 'gem', solid: false, art: 'gem', carriable: true }]
+        : [{ id: 'gem', pos: { x: 1, y: 1 }, kind: 'gem', solid: false, art: 'gem', carriable: true, hidden: true }];
+    hooks.onBump = (ctx) => ctx.goto(1);
+    const g = Game.forTest(5);
+    g.enterWorld('minotaur');
+    g.dismissModal();
+    const st = g.state;
+    step(g, { x: 2, y: 1 });
+    assert.equal(st.hero.carrying, 'gem', 'picked up');
+
+    step(g, { x: 3, y: 1 }); // the portal-home prop: our hook sends the hero to stage 1 instead
+    assert.equal(st.level.world?.stage, 1);
+    assert.equal(st.hero.carrying, 'gem', 'still in the hero\'s arms on the new stage');
+    const ghost = st.level.props!.find((p) => p.id === 'gem');
+    assert.ok(ghost && ghost.hidden, 'the regenerated stage carries it hidden');
+
+    // A stage that does not regenerate it: the hero arrives empty-handed.
+    g.dismissModal();
+    hooks.extraProps = () => [];
+    hooks.onBump = (ctx) => ctx.goto(2);
+    step(g, { x: 2, y: 1 });
+    step(g, { x: 3, y: 1 });
+    assert.equal(st.level.world?.stage, 2);
+    assert.equal(st.hero.carrying, null);
+  });
+});
+
 test('finish persists the collectible, sets won, and shows worldWon', () => {
   useMemStorage();
   withFakeWorld(() => {
@@ -470,3 +501,32 @@ test('a world monster kind is routed to the module\'s step (and fights)', () => 
 function fakeHost(): WorldHost {
   return { enterWorldStage: () => {}, returnFromWorld: () => {} };
 }
+
+// ---------------------------------------------------------------------------
+// Every real world, every stage: the things the hero must bump stand where a
+// drag can reach them
+// ---------------------------------------------------------------------------
+
+test('every prop in every world stage stands on a floor tile with a floor tile beside it', () => {
+  const stages: Record<WorldKind, number[]> = { minotaur: [0, 1, 2, 3], necromancer: [0], angels: [0, 1, 2, 3, 4, 5] };
+  for (const kind of Object.keys(stages) as WorldKind[]) {
+    const module = WORLDS[kind];
+    for (const stage of stages[kind]) {
+      for (const seed of [1, 7, 42]) {
+        const hero = Game.forTest(seed).state.hero;
+        const level = module.generate(stage, seed, hero, null);
+        for (const p of level.props ?? []) {
+          const where = `${kind} stage ${stage} seed ${seed}: ${p.id}`;
+          assert.equal(level.tiles[p.pos.y][p.pos.x], Tile.Floor, `${where} stands on floor`);
+          const beside = [
+            { x: p.pos.x + 1, y: p.pos.y },
+            { x: p.pos.x - 1, y: p.pos.y },
+            { x: p.pos.x, y: p.pos.y + 1 },
+            { x: p.pos.x, y: p.pos.y - 1 },
+          ].some((q) => level.tiles[q.y]?.[q.x] === Tile.Floor);
+          assert.ok(beside, `${where} can be stood next to`);
+        }
+      }
+    }
+  }
+});

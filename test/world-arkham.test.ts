@@ -22,9 +22,9 @@ interface HouseInfo {
 interface ArkhamData {
   houses: HouseInfo[];
   tabletHouseId: string;
-  clueHouseIds: string[];
   clueTexts: string[];
-  notesFound: string[];
+  clueShorts: string[];
+  cluesGiven: number;
   searchedHouseIds: string[];
   tabletFound: boolean;
   ritualMs: number;
@@ -190,9 +190,9 @@ test('the three clues, together, narrow every house down to the tablet\'s', () =
     const level = ARKHAM.generate(0, seed, newHero(), null);
     const data = dataOf(level);
     const truth = data.houses.find((h) => h.id === data.tabletHouseId)!;
-    assert.equal(data.clueHouseIds.length, 3);
     assert.equal(data.clueTexts.length, 3);
-    assert.ok(!data.clueHouseIds.includes(data.tabletHouseId), 'the tablet house never carries its own note');
+    assert.equal(data.clueShorts.length, 3);
+    assert.equal(data.cluesGiven, 0);
 
     // Every house the true attributes could describe is the true house alone.
     const candidates = data.houses.filter((h) => h.side === truth.side && h.corner === truth.corner && h.color === truth.color);
@@ -213,20 +213,51 @@ test('searching the tablet house puts the tablet in the hero\'s arms', () => {
   assert.equal(carriedNow()?.kind, 'tablet');
 });
 
-test('a wrong house gives a note before the tablet is found, and costs nothing once it is', () => {
+test('every wrong house hands out the next note until three are out, then only dust', () => {
   const level = ARKHAM.generate(0, 20260906, newHero(), null);
   const data = dataOf(level);
-  const clueHouse = propAt(level, data.clueHouseIds[0]);
+  const wrong = data.houses.filter((h) => h.id !== data.tabletHouseId).map((h) => propAt(level, h.id));
   const { ctx, calls } = makeCtx(level);
 
-  ARKHAM.onBump!(ctx, clueHouse);
-  assert.equal(clueHouse.state, 'searched');
-  assert.ok(calls.logs.includes(data.clueTexts[0]));
-
-  // Searching it again is harmless.
+  for (let i = 0; i < 3; i++) {
+    ARKHAM.onBump!(ctx, wrong[i]);
+    assert.equal(wrong[i].state, 'searched');
+    assert.equal(data.cluesGiven, i + 1);
+    assert.ok(calls.logs.some((l) => l.includes(data.clueTexts[i])), `note ${i + 1} is read out`);
+  }
+  // A fourth wrong house has nothing left to say.
   calls.logs.length = 0;
-  ARKHAM.onBump!(ctx, clueHouse);
+  ARKHAM.onBump!(ctx, wrong[3]);
+  assert.equal(data.cluesGiven, 3);
+  assert.ok(calls.logs.some((l) => l.toLowerCase().includes('dust')));
+
+  // Searching a house again is harmless.
+  calls.logs.length = 0;
+  ARKHAM.onBump!(ctx, wrong[0]);
   assert.ok(calls.logs.some((l) => l.toLowerCase().includes('already searched')));
+});
+
+test('a found tablet that was dropped is lying on its doorstep when the stage regenerates', () => {
+  const hero = newHero();
+  const level = ARKHAM.generate(0, 20260906, hero, null);
+  const data = dataOf(level);
+  const { ctx } = makeCtx(level, hero);
+  ARKHAM.onBump!(ctx, propAt(level, data.tabletHouseId)); // picks the tablet up
+  assert.equal(data.tabletFound, true);
+
+  // Carried: the regenerated stage keeps it hidden, in the hero's arms.
+  hero.carrying = 'tablet';
+  const carried = ARKHAM.generate(0, 20260906, hero, level.world!.data);
+  assert.equal(propAt(carried, 'tablet').hidden, true);
+
+  // Dropped (a knockdown, then a paid retry): it lies on the tablet house's doorstep.
+  hero.carrying = null;
+  const dropped = ARKHAM.generate(0, 20260906, hero, level.world!.data);
+  const tablet = propAt(dropped, 'tablet');
+  assert.equal(tablet.hidden, false);
+  const house = data.houses.find((h) => h.id === data.tabletHouseId)!;
+  assert.deepEqual(tablet.pos, house.doorTile);
+  assert.equal(propAt(dropped, data.tabletHouseId).state, 'searched');
 });
 
 test('bringing the tablet to the circle finishes the world', () => {

@@ -47,6 +47,13 @@ function Stat({
   );
 }
 
+/** m:ss for a world's countdown. */
+function formatClock(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
 function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound, onOpenVolume }: HudProps) {
   const xpPct = steppedPct(model.xp, model.xpToNext);
 
@@ -97,7 +104,12 @@ function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound, onOpenVolu
             ) : model.levelKind === 'boss' ? (
               <>BOSS</>
             ) : model.levelKind === 'world' ? (
-              <>{(model.worldName ?? 'WORLD').toUpperCase()}</>
+              <>
+                {(model.worldName ?? 'WORLD').toUpperCase()}
+                {model.worldClock !== null && (
+                  <b className={model.worldClock <= 60 ? 'hud-clock hud-clock-late' : 'hud-clock'}>{formatClock(model.worldClock)}</b>
+                )}
+              </>
             ) : (
               <>
                 DEPTH <b>{model.depth}</b>

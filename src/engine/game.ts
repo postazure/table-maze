@@ -696,7 +696,13 @@ export class Game {
     hero.pos = { x: level.start.x, y: level.start.y };
     hero.rpos = { x: level.start.x, y: level.start.y };
     hero.keys = { door: 0, chest: 0 };
-    hero.carrying = null; // an orb belongs to its wing, and the wing is behind us
+    // An orb belongs to its wing, and the wing is behind us. A world's own
+    // prop is different: a module regenerates whatever the hero is carrying
+    // hidden, in their arms, on the stage it builds (see CONTRACTS.md), and
+    // that is the one thing that rides through a stage change.
+    const carriedAlong =
+      level.kind === 'world' && !!hero.carrying && (level.props ?? []).some((p) => p.id === hero.carrying && p.hidden);
+    if (!carriedAlong) hero.carrying = null;
     hero.hp = Math.min(hero.maxHp, hero.hp + Math.floor((hero.maxHp - hero.hp) * healFraction));
     hero.potions = hero.potionCapacity;
     hero.stun = 0;
