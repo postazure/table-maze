@@ -745,7 +745,7 @@ export interface ShopOffer {
 /**
  * The forge in a shop: a 2x2 block like a podium. Walk into it and the hero
  * may pay to raise one worn magic item a level instead of buying a new one.
- * It counts as the shop's one purchase, the same as a podium does.
+ * Its own one-time purchase, independent of a podium's.
  */
 export interface ShopForge {
   pos: Vec;
@@ -754,8 +754,10 @@ export interface ShopForge {
 export interface Shop {
   offers: ShopOffer[];
   forge: ShopForge;
-  /** Set once anything is bought (an item or an upgrade); everything else goes dark. */
-  bought: boolean;
+  /** Set once a podium item is bought; the other podiums go dark. The forge is unaffected. */
+  boughtItem: boolean;
+  /** Set once the forge is used; the podiums are unaffected. */
+  boughtUpgrade: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1007,7 +1009,7 @@ export type Modal =
       gold: number;
       /** The item this one would push out of its slot, if any. */
       replaces: MagicItem | null;
-      /** Something was already bought in this shop: nothing else is for sale. */
+      /** An item was already bought from a podium in this shop: the rest are not for sale. */
       soldOut: boolean;
     }
   /** Bought a magic item. `replaced` is the item it pushed out of the slot, if any. */
@@ -1020,6 +1022,7 @@ export type Modal =
       kind: 'shopForge';
       gold: number;
       offers: { slot: ItemSlot; item: MagicItem; price: number }[];
+      /** The forge was already used in this shop. */
       soldOut: boolean;
     }
   /** A worn item was raised a level at the forge. */

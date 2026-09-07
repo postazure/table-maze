@@ -218,7 +218,8 @@ test('generateShopLevel builds the podium room', () => {
   // Three podiums, one per slot, left to right.
   const shop = level.shop;
   assert.ok(shop);
-  assert.equal(shop.bought, false);
+  assert.equal(shop.boughtItem, false);
+  assert.equal(shop.boughtUpgrade, false);
   assert.equal(shop.offers.length, 3);
   const slots: ItemSlot[] = ['offense', 'defense', 'spirit'];
   shop.offers.forEach((o, i) => {

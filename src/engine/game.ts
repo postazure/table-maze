@@ -1231,8 +1231,8 @@ export class Game {
    */
   /**
    * The hero walked into the forge. The popup lists every worn item with the
-   * price of a level on it; buying one is the shop's purchase, the same as a
-   * podium's.
+   * price of a level on it; buying one is the forge's own one-time purchase,
+   * independent of a podium's.
    */
   private bumpForge(forge: ShopForge): void {
     const st = this.state;
@@ -1246,27 +1246,27 @@ export class Game {
       const item = hero.gear?.[slot];
       if (item) offers.push({ slot, item, price: upgradePrice(item) });
     }
-    st.modal = { kind: 'shopForge', gold: hero.gold, offers, soldOut: st.level.shop?.bought ?? false };
+    st.modal = { kind: 'shopForge', gold: hero.gold, offers, soldOut: st.level.shop?.boughtUpgrade ?? false };
     this.dirty = true;
   }
 
   /**
-   * Pay the forge to raise the item in `slot` a level. Refused when the shop
-   * has sold its one thing, the slot is empty, or the purse is short — the
-   * popup already greys those out.
+   * Pay the forge to raise the item in `slot` a level. Refused when the forge
+   * has already been used in this shop, the slot is empty, or the purse is
+   * short — the popup already greys those out.
    */
   buyUpgrade(slot: ItemSlot): void {
     const st = this.state;
     const hero = st.hero;
     const shop = st.level.shop;
-    if (!shop || shop.bought) return;
+    if (!shop || shop.boughtUpgrade) return;
     const item = hero.gear?.[slot];
     if (!item) return;
     const price = upgradePrice(item);
     if (hero.gold < price) return;
     hero.gold -= price;
     upgradeItem(hero, slot);
-    shop.bought = true;
+    shop.boughtUpgrade = true;
     const c = forgeCenter(shop.forge);
     st.fx.push({ kind: 'ring', pos: c, radius: 1.8, color: ORANGE, t: 0, ttl: 420 });
     st.modal = { kind: 'upgraded', item };
@@ -1332,7 +1332,7 @@ export class Game {
       price: offer.price,
       gold: hero.gold,
       replaces: hero.gear?.[ITEM_SLOT[offer.item.kind]] ?? null,
-      soldOut: st.level.shop?.bought ?? false,
+      soldOut: st.level.shop?.boughtItem ?? false,
     };
     this.dirty = true;
   }
@@ -1347,13 +1347,13 @@ export class Game {
     const st = this.state;
     const hero = st.hero;
     const shop = st.level.shop;
-    if (!shop || shop.bought) return;
+    if (!shop || shop.boughtItem) return;
     const offer = shop.offers.find((o) => o.id === offerId);
     if (!offer || hero.gold < offer.price) return;
 
     hero.gold -= offer.price;
     const replaced = equip(hero, offer.item);
-    shop.bought = true;
+    shop.boughtItem = true;
     const c = offerCenter(offer);
     st.fx.push({ kind: 'ring', pos: c, radius: 1.8, color: GOLD, t: 0, ttl: 420 });
     st.modal = { kind: 'item', item: offer.item, replaced };

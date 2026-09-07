@@ -511,7 +511,8 @@ with the lens' own blue where an ordinary chest wears gold — the same tell as
 every rune and seal in the wing — since none of them need a chest key. A mimic
 chest is drawn as the (secret) chest it claims to be, with a sub-pixel shiver
 every few seconds for a player who stops to look. The shop's forge is a 2x2
-block like a podium, dimmed with the podiums once anything is bought.
+block like a podium, dimmed on its own once it has been used (independent of
+the podiums, which dim once a podium item is bought).
 
 Anything standing on hidden ground (a wing's monsters, chests and furniture) is
 drawn through `drawBehindWall`, which clips it to the hidden tiles around it
@@ -706,8 +707,10 @@ Rules:
   what it costs and what it would replace. `Game.buyOffer(offerId)` spends the
   gold, equips the item and swaps the popup for `{kind:'item', ...}`;
   `Game.dismissModal()` walks away. Buying is refused (and the popup's buy
-  button greys out) when the hero is short of gold or `shop.bought` is already
-  true. After one purchase `shop.bought = true` and the other podiums go dark.
+  button greys out) when the hero is short of gold or `shop.boughtItem` is
+  already true. After one purchase `shop.boughtItem = true` and the other
+  podiums go dark; the forge is unaffected, and a hero may still use it in the
+  same visit (see below).
 - No monsters, keys, doors or chests in a shop.
 
 ## engine/items.ts
@@ -805,7 +808,9 @@ tiles between neighbours so the hero can walk between them. All four tiles of a
 podium are solid; walking into any of them opens the offer popup. The forge
 is another 2x2 block at (7, 9), under the middle podium: walking into it
 opens the `shopForge` popup, every worn item priced by `upgradePrice`, and
-`Game.buyUpgrade(slot)` is the shop's one purchase as much as `buyOffer` is.
+`Game.buyUpgrade(slot)` is its own one-time purchase (`shop.boughtUpgrade`),
+independent of a podium's (`shop.boughtItem`) — a hero may buy an item and
+use the forge in the same shop visit.
 
 ## render/itemArt.ts (shared pixel art; both canvas and DOM use it)
 ```ts
