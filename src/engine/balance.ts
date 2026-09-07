@@ -561,7 +561,7 @@ export function rollChestLoot(depth: number, rng: Rng): Loot {
     const roll = rng.int(0, 4);
     let item: LootItem;
     if (roll === 0) item = { name: SWORDS[tier], atk: 1 + Math.floor(d / 10) };
-    else if (roll === 1) item = { name: SHIELDS[tier], def: 1 + Math.floor(d / 14) };
+    else if (roll === 1) item = { name: SHIELDS[tier], def: 1 + Math.floor(d / 10) };
     else if (roll === 2) item = { name: AMULETS[tier], maxHp: HEART * (1 + Math.floor(d / 8)) }; // whole hearts
     else if (roll === 3) item = { name: RINGS[tier], maxHp: HEART * (1 + Math.floor(d / 12)) };
     else item = { name: 'Health Potion', potionCapacity: 1 };
