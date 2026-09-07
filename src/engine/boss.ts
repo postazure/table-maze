@@ -112,13 +112,19 @@ export function makeBossMonster(kind: BossMonsterKind, depth: number, pos: Vec, 
   };
   switch (kind) {
     case 'minion':
-      // Trash: two or three swings, a quarter-heart nip, but it shoves.
+      // Trash: two or three swings, a quarter-heart nip, but it shoves. Its
+      // atk is already at the damage formula's floor (`max(1, atk - def)` is
+      // 1 no matter how high the hero's defense goes), so it cannot be made
+      // to hit any softer per swing — the real lever against a crowd of them
+      // is a slower attack clock and less hp to chew through, both eased a
+      // touch so four skeletons cornering the hero at once (the necromancer
+      // arena's spawn cap makes that routine) doesn't melt them.
       base.name = 'Skeleton';
       base.glyph = '💀';
-      base.hp = base.maxHp = 3 + 2 * d;
+      base.hp = base.maxHp = Math.round(3 + 1.5 * d);
       base.atk = 1;
       base.moveInterval = 420;
-      base.attackInterval = 800;
+      base.attackInterval = 950;
       base.sightRange = 999;
       base.state = 'chasing';
       base.xp = 2 + d;
