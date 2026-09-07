@@ -1094,8 +1094,8 @@ doors / chests, deterministic for (depth, runSeed)):
   come looking for detail, where the HUD chip and the pip over the hero are
   read mid-fight and stay wordless. For the same reason `shrineDescription`
   says what an effect does but never how long it lasts — that would be two
-  clocks for one effect. With nothing running the section explains what
-  alcoves are and names the hero's spirit.
+  clocks for one effect. With nothing running the section just says so; how
+  shrines work belongs to the Guide tab, not this one.
 - The Hero tab's "Carried" section lists the lens, an orb in hand, every
   relic and every trophy; a "Boons" section lists the run's boons with runs
   left. The chest popup grows two buttons (wear it / melt down) when it holds

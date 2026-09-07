@@ -181,10 +181,7 @@ function HeroTab({ model }: { model: HudModel }) {
         {model.buffs.length > 0 ? (
           model.buffs.map((buff) => <BuffRow key={buff.kind} buff={buff} tempHp={model.tempHp} />)
         ) : (
-          <p className="help-gear-desc help-muted">
-            Nothing running. Glowing alcoves stand off the corridors of every floor — walk over one and it hands
-            you its gift, once. Your spirit ({model.spirit}) is how much further each one goes.
-          </p>
+          <p className="help-gear-desc help-muted">Nothing running.</p>
         )}
       </div>
     </>
