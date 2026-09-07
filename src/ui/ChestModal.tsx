@@ -3,6 +3,7 @@ import type { Loot, MagicItem } from '../engine/types';
 import { HEART } from '../engine/types';
 import { itemDescription, itemName } from '../engine/items';
 import { LENS_NAME } from '../engine/lens';
+import { BRASS_DESCRIPTION, BRASS_NAME } from '../engine/crafting';
 import { PixelIcon, type IconName } from './icons';
 import { PixelArt } from './PixelArt';
 
@@ -19,9 +20,10 @@ const CHEST_PALETTE: Record<string, string> = { W: '#8b5a2b', G: '#f5c451', L: '
  * off an icon. Everything else stays wordless: a trinket shows what it adds,
  * and a chest with nothing else in it shows its coins.
  */
-function prize(loot: Loot): { icon: IconName; amount: number | null; label?: string } {
+function prize(loot: Loot): { icon: IconName; amount: number | null; label?: string; desc?: string } {
   if (loot.magic) return { icon: loot.magic.kind, amount: null, label: itemName(loot.magic.kind) };
   if (loot.lens) return { icon: 'lens', amount: null, label: LENS_NAME };
+  if (loot.brass) return { icon: 'brass', amount: null, label: BRASS_NAME, desc: BRASS_DESCRIPTION };
   const item = loot.item;
   if (item?.atk) return { icon: 'sword', amount: item.atk };
   if (item?.def) return { icon: 'shield', amount: item.def };
@@ -50,7 +52,7 @@ export interface ChestModalProps {
 export function ChestModal({ loot, choice, onTake, onSell, onClose }: ChestModalProps) {
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
-  const { icon, amount, label } = prize(loot);
+  const { icon, amount, label, desc } = prize(loot);
   const showCoins = icon !== 'coin' && loot.gold > 0;
 
   useEffect(() => {
@@ -81,6 +83,7 @@ export function ChestModal({ loot, choice, onTake, onSell, onClose }: ChestModal
           <span className="chest-spark chest-spark-c" />
         </div>
         {label && <span className="chest-label">{label}</span>}
+        {desc && <p className="shop-desc chest-choice-desc">{desc}</p>}
         {showCoins && (
           <div className="chest-coins">
             <PixelIcon name="coin" size={16} />

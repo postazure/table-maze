@@ -71,6 +71,13 @@ export interface HudModel {
   boons: Boon[];
   /** Every boss world's collectible ever won, by id (see engine/worlds). Outlives the run. */
   collection: string[];
+  /** Brass lumps carried, and every crystal carved so far (crystals outlive the run). */
+  brass: number;
+  crystals: BossKind[];
+  /** The lens has been filled with brass at the bench: it never shatters again. */
+  lensWhole: boolean;
+  /** This run's lens is the heirloom one: an ordinary lens, but its housing already cracked once. */
+  lensHeirloom: boolean;
   /** The kind of level the hero is currently on (drives the depth badge). */
   levelKind: 'maze' | 'shop' | 'boss' | 'world';
   /** The world's own name (`WORLDS[kind].name`) on a world floor; null everywhere else. */
@@ -125,6 +132,10 @@ export function deriveHudModel(state: GameState): HudModel {
     trophies: hero.trophies ?? [],
     boons: state.boons ?? [],
     collection: state.collection ?? [],
+    brass: hero.brass ?? 0,
+    crystals: hero.crystals ?? [],
+    lensWhole: !!hero.lens?.unbreakable,
+    lensHeirloom: !!hero.lens?.heirloom,
     levelKind: state.level.kind,
     worldName: state.level.kind === 'world' && state.level.world ? WORLDS[state.level.world.kind].name : null,
     modal: state.modal,
@@ -169,6 +180,10 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     a.trophies.length !== b.trophies.length ||
     a.boons.length !== b.boons.length ||
     a.collection.length !== b.collection.length ||
+    a.brass !== b.brass ||
+    a.crystals.length !== b.crystals.length ||
+    a.lensWhole !== b.lensWhole ||
+    a.lensHeirloom !== b.lensHeirloom ||
     a.levelKind !== b.levelKind ||
     a.worldName !== b.worldName ||
     a.modal !== b.modal ||
@@ -185,6 +200,7 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
   for (let i = 0; i < a.relics.length; i++) if (a.relics[i] !== b.relics[i]) return false;
   for (let i = 0; i < a.trophies.length; i++) if (a.trophies[i] !== b.trophies[i]) return false;
   for (let i = 0; i < a.collection.length; i++) if (a.collection[i] !== b.collection[i]) return false;
+  for (let i = 0; i < a.crystals.length; i++) if (a.crystals[i] !== b.crystals[i]) return false;
   for (let i = 0; i < a.boons.length; i++) {
     if (a.boons[i].kind !== b.boons[i].kind || a.boons[i].runsLeft !== b.boons[i].runsLeft) return false;
   }

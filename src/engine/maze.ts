@@ -36,6 +36,7 @@ import { hashSeed, makeRng } from './rng';
 import { levelDims, makeMonster, rollChestLoot } from './balance';
 import type { MonsterOpts } from './balance';
 import { lensFloor } from './lens';
+import { brassFloor, carverFloor } from './crafting';
 import { themeForDepth } from './themes';
 import { bfsDistances, bfsPath, cutTiles, floorNeighbors, isFloor } from './pathfind';
 import { WING_MARGIN, canDig, digWings, pocketBeat, shiftWingContent, stockWings } from './wings';
@@ -57,6 +58,16 @@ interface GenOpts {
   heroLevel?: number;
   /** The run's own seed: the wings read earlier floors of the run off it. */
   runSeed: number;
+  /**
+   * The hero already holds an unbreakable lens: no chest on this floor (or
+   * any later one this run) needs to carry another. See engine/crafting.ts.
+   */
+  noLens?: boolean;
+}
+
+/** Extra generation options `generateLevel` takes beyond its positional ones. */
+export interface GenerateLevelOpts {
+  noLens?: boolean;
 }
 
 /**
@@ -65,21 +76,27 @@ interface GenOpts {
  * `monsterLevelCap`). The level is generated once and then saved with the run,
  * so the cap is a snapshot of the hero on arrival, not a moving target.
  */
-export function generateLevel(depth: number, runSeed: number, heroLevel?: number): LevelData {
+export function generateLevel(
+  depth: number,
+  runSeed: number,
+  heroLevel?: number,
+  opts?: GenerateLevelOpts,
+): LevelData {
   const d = Math.max(1, Math.floor(depth));
+  const noLens = opts?.noLens ?? false;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const seed = attempt === 0 ? hashSeed(runSeed, d) : hashSeed(runSeed, d, attempt);
-    const level = build(d, seed, { doors: true, chests: true, heroLevel, runSeed });
+    const level = build(d, seed, { doors: true, chests: true, heroLevel, runSeed, noLens });
     if (validate(level)) return level;
   }
   // Relax: drop the doors (and their keys), keep the rest.
   for (let attempt = MAX_ATTEMPTS; attempt < MAX_ATTEMPTS + 8; attempt++) {
     const seed = hashSeed(runSeed, d, attempt);
-    const level = build(d, seed, { doors: false, chests: true, heroLevel, runSeed });
+    const level = build(d, seed, { doors: false, chests: true, heroLevel, runSeed, noLens });
     if (validate(level)) return level;
   }
   // Never throw: a bare maze with monsters is always solvable.
-  return build(d, hashSeed(runSeed, d, 9999), { doors: false, chests: false, heroLevel, runSeed });
+  return build(d, hashSeed(runSeed, d, 9999), { doors: false, chests: false, heroLevel, runSeed, noLens });
 }
 
 // ---------------------------------------------------------------------------
@@ -280,6 +297,11 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
   level.shrines = placeShrines(level, depth, warrens, onMain, used, distFromStart, rng);
   for (const sh of level.shrines) used.add(key(sh.pos));
 
+  // The carving shrine competes with chests for a dead end, same as a shrine
+  // does, but only from depth 4 and only about half the time — so it claims
+  // its tile here, before the chests pick over what shrines left behind.
+  placeCarver(level, depth, opts.runSeed, hidden, used, distFromStart, rng);
+
   if (opts.chests) {
     // The wing's chests are already in `level.chests`, so if the floor runs
     // out of room for chest keys it is an ordinary chest that gets dropped
@@ -316,7 +338,8 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
       const dropped = level.chests.pop();
       if (dropped) used.delete(key(dropped.pos));
     }
-    placeLens(level, depth, hidden, rng);
+    if (!opts.noLens) placeLens(level, depth, hidden, rng);
+    placeBrass(level, depth, opts.runSeed, hidden, rng);
   }
 
   placeMonsters(level, depth, fullPath, onMain, used, distFromStart, warrens, rng, spawnOpts(opts));
@@ -961,6 +984,48 @@ function placeLens(level: LevelData, depth: number, hidden: Set<string>, rng: Rn
   rng.pick(open).loot.lens = true;
 }
 
+/**
+ * Put a brass lump in one of this floor's ordinary chests, exactly the way
+ * `placeLens` places its lens: out in the open, never behind a wing, and
+ * never marked so it is not the same chest every time.
+ */
+function placeBrass(level: LevelData, depth: number, runSeed: number, hidden: Set<string>, rng: Rng): void {
+  if (!brassFloor(runSeed, depth)) return;
+  const open = level.chests.filter((c) => !hidden.has(key(c.pos)));
+  if (!open.length) return;
+  rng.pick(open).loot.brass = true;
+}
+
+/**
+ * Put the carving shrine in a free maze dead end: not hidden, not already
+ * spoken for, and at least `SHRINE_MIN_DIST` from the start — the same reach
+ * a shrine needs, since it is walkable exactly like one. Shrines have
+ * already taken their pick of the floor's dead ends by the time this runs,
+ * so this only ever gets what is left; reserving its own tile in `used`
+ * keeps the chests that come next from landing on it in turn.
+ */
+function placeCarver(
+  level: LevelData,
+  depth: number,
+  runSeed: number,
+  hidden: Set<string>,
+  used: Set<string>,
+  dist: Map<string, number>,
+  rng: Rng,
+): void {
+  if (!carverFloor(runSeed, depth)) return;
+  const cands: Vec[] = [];
+  for (const [k, d] of dist) {
+    if (d < SHRINE_MIN_DIST || used.has(k) || hidden.has(k)) continue;
+    const p = parseKey(k);
+    if (floorNeighbors(level, p).length === 1) cands.push(p);
+  }
+  if (!cands.length) return;
+  const pos = rng.pick(cands);
+  level.carver = { pos, used: false };
+  used.add(key(pos));
+}
+
 function oddAtLeast(n: number): number {
   return n % 2 === 1 ? n : n + 1;
 }
@@ -1108,6 +1173,7 @@ function validate(level: LevelData): boolean {
   for (const k of level.keys) if (!claim(k.pos) || k.taken) return false;
   for (const c of level.chests) if (!claim(c.pos) || c.opened) return false;
   for (const sh of level.shrines ?? []) if (!claim(sh.pos) || sh.used) return false;
+  if (level.carver && (!claim(level.carver.pos) || level.carver.used)) return false;
   for (const m of level.monsters) if (!claim(m.pos)) return false;
 
   // Key bookkeeping.
@@ -1122,7 +1188,11 @@ function validate(level: LevelData): boolean {
   // floor with the passages open and every seal already worked. Chests and
   // altars are solid in both, so they count as walls; each must still be
   // reachable via a neighbouring tile.
-  const solidTiles = new Set([...level.chests.map((c) => key(c.pos)), ...(level.altars ?? []).map((a) => key(a.pos))]);
+  const solidTiles = new Set([
+    ...level.chests.map((c) => key(c.pos)),
+    ...(level.altars ?? []).map((a) => key(a.pos)),
+    ...(level.portal ? [key(level.portal.pos)] : []),
+  ]);
   const chestTiles = new Set(level.chests.map((c) => key(c.pos)));
   const hidden = new Set(passageTilesOf(level).map(key));
   const lensed = bfsDistances(level, start, { blocked: (p) => solidTiles.has(key(p)) });
@@ -1142,11 +1212,19 @@ function validate(level: LevelData): boolean {
     if (!claim(a.pos) || a.used || !hidden.has(key(a.pos))) return false;
     if (!floorNeighbors(level, a.pos).some((nb) => lensed.has(key(nb)))) return false;
   }
+  // The portal is the wing's, exactly like an altar: hidden ground, reachable
+  // only with the lens on.
+  if (level.portal) {
+    if (!hidden.has(key(level.portal.pos))) return false;
+    if (!floorNeighbors(level, level.portal.pos).some((nb) => lensed.has(key(nb)))) return false;
+  }
   // Keys and shrines never hide in a passage: everything a floor *needs* is
-  // out in the maze where a hero with no lens can reach it.
+  // out in the maze where a hero with no lens can reach it. The carving
+  // shrine is the same: a nice-to-have, never a requirement.
   for (const k of level.keys) if (!open.has(key(k.pos))) return false;
   // Shrines are floor, not furniture: the hero has to be able to stand on one.
   for (const sh of level.shrines ?? []) if (!open.has(key(sh.pos))) return false;
+  if (level.carver && (!open.has(key(level.carver.pos)) || hidden.has(key(level.carver.pos)))) return false;
 
   // Nothing past the stairs. Walking onto them ends the floor, so every tile
   // has to be reachable without crossing them, or it is ground the hero can

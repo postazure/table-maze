@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Game } from '../engine/game';
-import type { ItemSlot } from '../engine/types';
+import type { BossKind, ItemSlot } from '../engine/types';
 import { clearSave, loadGame, saveGame } from '../engine/save';
 import { deriveHudModel, hudModelEquals, type HudModel } from './hudModel';
 
@@ -71,6 +71,24 @@ export function useGame() {
   const takeMagic = useCallback(() => game.takeMagic(), [game]);
   const sellMagic = useCallback(() => game.sellMagic(), [game]);
   const offerTrophy = useCallback(() => game.offerTrophy(), [game]);
+  const craftLens = useCallback(() => game.craftLens(), [game]);
+  const carveTrophy = useCallback((boss: BossKind) => game.carveTrophy(boss), [game]);
+  const usePortal = useCallback((boss: BossKind) => game.usePortal(boss), [game]);
 
-  return { game, hud, newGame, dismissModal, openHelp, buyOffer, retryBoss, buyUpgrade, takeMagic, sellMagic, offerTrophy };
+  return {
+    game,
+    hud,
+    newGame,
+    dismissModal,
+    openHelp,
+    buyOffer,
+    retryBoss,
+    buyUpgrade,
+    takeMagic,
+    sellMagic,
+    offerTrophy,
+    craftLens,
+    carveTrophy,
+    usePortal,
+  };
 }

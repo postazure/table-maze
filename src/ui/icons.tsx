@@ -7,7 +7,19 @@
 import type { ReactElement } from 'react';
 import type { BoonKind, BossKind, ItemKind, ItemSlot, RelicKind, ShrineKind } from '../engine/types';
 import { BOON_KINDS, BOSS_KINDS, ITEM_KINDS, RELIC_KINDS, SHRINE_KINDS } from '../engine/types';
-import { BOON_ART, FORGE_ART, ITEM_ART, LENS_ART, ORB_ART, RELIC_ART, SHRINE_ART, SLOT_ART, TROPHY_ART } from '../render/itemArt';
+import {
+  BOON_ART,
+  BRASS_ART,
+  CRYSTAL_ART,
+  FORGE_ART,
+  ITEM_ART,
+  LENS_ART,
+  ORB_ART,
+  RELIC_ART,
+  SHRINE_ART,
+  SLOT_ART,
+  TROPHY_ART,
+} from '../render/itemArt';
 
 type Rows = readonly string[];
 type Palette = Readonly<Record<string, string>>;
@@ -24,14 +36,22 @@ type BaseIconName =
   | 'lens'
   | 'orb'
   | 'forge'
+  | 'brass'
   | 'sound'
   | 'soundOff';
+/** One crystal icon per boss, distinct from that boss's trophy icon. */
+type CrystalIconName = 'necromancerCrystal' | 'minotaurCrystal' | 'angelsCrystal';
 /**
  * Every magic item kind, gear slot, shrine kind, relic, boss trophy and boon
  * is also a valid icon name, drawn from itemArt.ts — so the HUD, the help
  * screen and the map all show the same picture for the same thing.
  */
-export type IconName = BaseIconName | ItemKind | ItemSlot | ShrineKind | RelicKind | BossKind | BoonKind;
+export type IconName = BaseIconName | ItemKind | ItemSlot | ShrineKind | RelicKind | BossKind | BoonKind | CrystalIconName;
+
+/** `${boss}Crystal` for every `BossKind` — the icon name a carved crystal uses. */
+export function crystalIcon(boss: BossKind): CrystalIconName {
+  return `${boss}Crystal` as CrystalIconName;
+}
 
 const ITEM_SLOTS: readonly ItemSlot[] = ['offense', 'defense', 'spirit'];
 
@@ -109,6 +129,7 @@ const BASE_ICONS: Record<BaseIconName, { rows: Rows; palette: Palette }> = {
   lens: LENS_ART,
   orb: ORB_ART,
   forge: FORGE_ART,
+  brass: BRASS_ART,
   skull: {
     rows: ['..WWWW..', '.WWWWWW.', 'WWEWWEWW', 'WWEWWEWW', 'WWWWWWWW', '.WWWWWW.', '..W.W.W.', '..WWWWW.'],
     palette: { W: '#f0ecff', E: '#141414' },
@@ -133,6 +154,7 @@ for (const kind of SHRINE_KINDS) ICONS[kind] = SHRINE_ART[kind];
 for (const kind of RELIC_KINDS) ICONS[kind] = RELIC_ART[kind];
 for (const kind of BOSS_KINDS) ICONS[kind] = TROPHY_ART[kind];
 for (const kind of BOON_KINDS) ICONS[kind] = BOON_ART[kind];
+for (const kind of BOSS_KINDS) ICONS[crystalIcon(kind)] = CRYSTAL_ART[kind];
 
 export interface PixelIconProps {
   name: IconName;

@@ -27,6 +27,7 @@ import { bossRetryCost, damage, xpShare } from './balance';
 import { bfsDistances, floorNeighbors, isFloor } from './pathfind';
 import { hiddenAt, sameSide } from './lens';
 import { altarAt, closedSealAt, orbById } from './puzzles';
+import { benchAt, portalAt } from './crafting';
 import type { ItemStats } from './items';
 import { berserkActive, heroStats } from './items';
 import { SHRINE_COLORS, buffAtk, buffDef } from './shrines';
@@ -164,6 +165,8 @@ export function heroCanStand(level: LevelData, p: Vec, from?: Vec): boolean {
   if (chestAt(level, p)) return false;
   if (altarAt(level, p)) return false;
   if (solidPropAt(level, p)) return false;
+  if (benchAt(level, p)) return false;
+  if (portalAt(level, p)) return false;
   if (hiddenAt(level, p) !== (from ? hiddenAt(level, from) : false)) return false;
   return true;
 }

@@ -2,8 +2,8 @@
  * localStorage persistence. Everything is best-effort: private-mode failures,
  * quota errors and corrupt payloads all degrade to "no save".
  */
-import type { Boon, GameState, Hero, LevelData, SaveData } from './types';
-import { BOON_KINDS, SAVE_VERSION, key } from './types';
+import type { Boon, BossKind, GameState, Hero, LevelData, SaveData } from './types';
+import { BOON_KINDS, BOSS_KINDS, SAVE_VERSION, key } from './types';
 import { reviveGear } from './items';
 import { reviveBuffs } from './shrines';
 
@@ -18,6 +18,19 @@ const BOONS_KEY = 'table-maze:boons';
  * collectible ever won, by id. Outlives the run exactly like the boons do.
  */
 const COLLECTION_KEY = 'table-maze:collection';
+/**
+ * The heirloom flag: set at the jeweller's bench the moment the lens goes
+ * unbreakable, cleared the instant the next run reads it. Beside the save
+ * for the same reason the boons are — a save dies with its run, and this is
+ * meant to outlive that.
+ */
+const HEIRLOOM_KEY = 'table-maze:heirloom';
+/**
+ * Carved crystals: outlive the run entirely (see engine/crafting.ts). Kept
+ * here rather than in the save so a game over or a fresh run never loses
+ * one — only the portal spends them.
+ */
+const CRYSTALS_KEY = 'table-maze:crystals';
 
 /** localStorage if it exists and is usable (guarded so tests can import this). */
 function store(): Storage | null {
@@ -209,6 +222,53 @@ export function saveCollection(ids: string[]): void {
   try {
     if (ids.length === 0) ls.removeItem(COLLECTION_KEY);
     else ls.setItem(COLLECTION_KEY, JSON.stringify(ids));
+  } catch {
+    /* quota / private mode: skip */
+  }
+}
+
+/** Has the hero's lens gone unbreakable, waiting for the next run to start with it? */
+export function loadHeirloom(): boolean {
+  const ls = store();
+  if (!ls) return false;
+  try {
+    return ls.getItem(HEIRLOOM_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function saveHeirloom(flag: boolean): void {
+  const ls = store();
+  if (!ls) return;
+  try {
+    if (flag) ls.setItem(HEIRLOOM_KEY, '1');
+    else ls.removeItem(HEIRLOOM_KEY);
+  } catch {
+    /* quota / private mode: skip */
+  }
+}
+
+/** Every crystal carved so far, across every run. Empty when storage is unusable. */
+export function loadCrystals(): BossKind[] {
+  const ls = store();
+  if (!ls) return [];
+  try {
+    const raw = ls.getItem(CRYSTALS_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((k): k is BossKind => typeof k === 'string' && BOSS_KINDS.includes(k as BossKind)) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCrystals(crystals: BossKind[]): void {
+  const ls = store();
+  if (!ls) return;
+  try {
+    if (crystals.length === 0) ls.removeItem(CRYSTALS_KEY);
+    else ls.setItem(CRYSTALS_KEY, JSON.stringify(crystals));
   } catch {
     /* quota / private mode: skip */
   }
