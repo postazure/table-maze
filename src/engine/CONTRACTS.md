@@ -354,6 +354,16 @@ straight back in still re-aggros it — then walks back to `chaseFrom` (where it
 was standing when this chase began, set on the idle -> chasing transition and
 kept through any returning -> chasing re-aggro). Arriving settles it to `idle`
 and clears `chaseFrom`.
+A lurker (or a sprung mimic, which hunts the same way) only ever notices the
+hero by sight otherwise, so `damageMonster` (combat.ts) also aggroes it
+straight to `chasing` — same as the idle -> chasing transition, `chaseFrom`
+set to its current spot — the moment a hit from source `hero`, `fire` or
+`chain` lands, whether or not the hero is within its `sightRange`: a long
+sword's reach, a fire staff's burn or chain lightning hopping to it should
+never land on something that just stands there and takes it. A `poison` tick
+(it keeps ticking after the hero has walked away) and a hit bounced back by
+the hero's own `thorn` mail do not aggro it — neither one means the hero
+found it.
 
 ### Passages and monsters (monsters.ts)
 A monster stays in the world it was spawned into: `moveBlocked` and

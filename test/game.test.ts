@@ -588,6 +588,28 @@ test('a lurker starts chasing when the hero comes within sightRange', () => {
   assert.deepEqual(lurk.pos, { x: 4, y: 2 }, 'stays put instead of walking home');
 });
 
+test('a hit that lands from outside sight range still aggroes a lurker, like the fire staff or the long sword', () => {
+  const g = Game.forTest(1234);
+  const st = g.state;
+  const lurk = mkMonster({ id: 'l1', kind: 'lurker', pos: { x: 10, y: 1 }, home: { x: 10, y: 1 }, sightRange: 3, leash: 6 });
+  st.level.monsters = [lurk];
+  const rng = makeRng(1);
+
+  // Fire staff: a hero nowhere near sightRange still burns it from range.
+  damageMonster(st, lurk, 1, rng, { source: 'fire' });
+  assert.equal(lurk.state, 'chasing', 'the burn wakes it up');
+  assert.deepEqual(lurk.chaseFrom, lurk.pos);
+
+  // Poison ticking after the hero walked away is not "the hero found me".
+  lurk.state = 'idle';
+  damageMonster(st, lurk, 1, rng, { source: 'poison' });
+  assert.equal(lurk.state, 'idle', 'a poison tick does not aggro it');
+
+  // A long sword's reach swing is an ordinary hero hit (default source).
+  damageMonster(st, lurk, 1, rng);
+  assert.equal(lurk.state, 'chasing', "the hero's own hit wakes it up too");
+});
+
 test('lurker aggro range shrinks with the level gap, capped both ways', () => {
   // At or under the hero's level: the full range, never more.
   assert.equal(lurkerSightRange(4, 3, 3), 4);

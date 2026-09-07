@@ -299,6 +299,18 @@ export function damageMonster(
   // Poison keeps ticking after the hero has walked away: it must not hold the
   // hero's out-of-combat regen hostage.
   if (source !== 'poison') hero.sinceCombat = 0;
+  // A lurker (or a sprung mimic, which hunts the same way) only ever notices
+  // the hero by sight, so a hit that lands from outside its sight range — a
+  // long sword's reach, a fire staff's burn, chain lightning hopping to it —
+  // used to leave it standing there taking it without ever waking up. Any
+  // hero-caused hit aggroes it exactly as spotting the hero would. Poison
+  // still ticking after the hero has walked away, and a monster's own blow
+  // bouncing back off thorn mail, are not "the hero found me" moments, so
+  // neither one aggroes.
+  if ((m.kind === 'lurker' || m.kind === 'mimic') && m.state !== 'chasing' && (source === 'hero' || source === 'fire' || source === 'chain')) {
+    m.state = 'chasing';
+    m.chaseFrom = { x: m.pos.x, y: m.pos.y };
+  }
   pushText(state, m.pos, opts.text ?? `-${amount}`, opts.color ?? WHITE, 900, DAMAGE_TEXT_RISE0);
   // The hero's own swing is the one that gets a "connected" sound; fireballs,
   // lightning, poison and thorns already announce themselves.
