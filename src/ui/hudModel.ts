@@ -1,6 +1,7 @@
 import type { Boon, BossKind, GameState, ItemSlot, MagicItem, Modal, RelicKind, ShrineKind } from '../engine/types';
 import { buffAtk, buffDef, buffPhase, type BuffPhase } from '../engine/shrines';
 import { lensActive } from '../engine/lens';
+import { WORLDS } from '../engine/worlds';
 
 /**
  * One running shrine effect, as the HUD shows it: a glyph, how much of it is
@@ -68,8 +69,12 @@ export interface HudModel {
   relics: RelicKind[];
   trophies: BossKind[];
   boons: Boon[];
+  /** Every boss world's collectible ever won, by id (see engine/worlds). Outlives the run. */
+  collection: string[];
   /** The kind of level the hero is currently on (drives the depth badge). */
   levelKind: 'maze' | 'shop' | 'boss' | 'world';
+  /** The world's own name (`WORLDS[kind].name`) on a world floor; null everywhere else. */
+  worldName: string | null;
   /** Current popup, compared by reference. */
   modal: Modal | null;
 }
@@ -119,7 +124,9 @@ export function deriveHudModel(state: GameState): HudModel {
     relics: hero.relics ?? [],
     trophies: hero.trophies ?? [],
     boons: state.boons ?? [],
+    collection: state.collection ?? [],
     levelKind: state.level.kind,
+    worldName: state.level.kind === 'world' && state.level.world ? WORLDS[state.level.world.kind].name : null,
     modal: state.modal,
     log: state.log.map((m) => m.text),
   };
@@ -161,7 +168,9 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     a.relics.length !== b.relics.length ||
     a.trophies.length !== b.trophies.length ||
     a.boons.length !== b.boons.length ||
+    a.collection.length !== b.collection.length ||
     a.levelKind !== b.levelKind ||
+    a.worldName !== b.worldName ||
     a.modal !== b.modal ||
     a.log.length !== b.log.length ||
     !gearSlotEquals(a.gear.offense, b.gear.offense) ||
@@ -175,6 +184,7 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
   }
   for (let i = 0; i < a.relics.length; i++) if (a.relics[i] !== b.relics[i]) return false;
   for (let i = 0; i < a.trophies.length; i++) if (a.trophies[i] !== b.trophies[i]) return false;
+  for (let i = 0; i < a.collection.length; i++) if (a.collection[i] !== b.collection[i]) return false;
   for (let i = 0; i < a.boons.length; i++) {
     if (a.boons[i].kind !== b.boons[i].kind || a.boons[i].runsLeft !== b.boons[i].runsLeft) return false;
   }

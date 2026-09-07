@@ -44,6 +44,16 @@
  *    `defeat(cause)` turns the engine's or the module's cause token into the
  *    world's own sentence. The player may pay to retry the stage, exactly as
  *    a boss fight.
+ *
+ * Import direction, and why `combat.ts` is allowed to import `./worlds`:
+ * `worlds/index.ts` imports the three modules (`greece.ts`, `arkham.ts`,
+ * `cemetery.ts`), and every one of them imports only `../types`,
+ * `../pathfind`, `../balance` and `../rng` (this file, `world.ts`, adds only
+ * `../items` for the `ItemStats` type). None of that reaches `combat.ts` or
+ * `game.ts`, which is what lets `combat.ts` import `./worlds` (for a world's
+ * `defeat` sentence on a knockdown) with no cycle. A module must never import
+ * `combat.ts` or `game.ts`, directly or through anything else — the day one
+ * does, that import breaks.
  */
 import type { GameState, Hero, LevelData, Monster, Prop, Rng, SfxId, Vec, WorldData, WorldKind } from '../types';
 import type { ItemStats } from '../items';

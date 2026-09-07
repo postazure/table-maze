@@ -15,6 +15,7 @@ import type {
   LevelData,
   Monster,
   Orb,
+  Prop,
   Rng,
   RunStats,
   SfxId,
@@ -29,6 +30,12 @@ import { altarAt, closedSealAt, orbById } from './puzzles';
 import type { ItemStats } from './items';
 import { berserkActive, heroStats } from './items';
 import { SHRINE_COLORS, buffAtk, buffDef } from './shrines';
+// `worlds/index.ts` imports the three world modules, which import only
+// `./types`, `./pathfind`, `./balance` and `./rng` — never this file or
+// `./game`. That is the whole of what keeps this import from being a cycle:
+// a world module must never import `combat.ts` or `game.ts`, directly or
+// through anything else.
+import { WORLDS } from './worlds';
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -156,8 +163,23 @@ export function heroCanStand(level: LevelData, p: Vec, from?: Vec): boolean {
   if (liveMonsterAt(level, p)) return false;
   if (chestAt(level, p)) return false;
   if (altarAt(level, p)) return false;
+  if (solidPropAt(level, p)) return false;
   if (hiddenAt(level, p) !== (from ? hiddenAt(level, from) : false)) return false;
   return true;
+}
+
+/**
+ * A world's own furniture (see engine/worlds): a solid, visible prop on `p`,
+ * or null. Solid props block like chests everywhere a chest does
+ * (`isWalkable`, `heroCanStand`, `moveBlocked`); a hidden one (carried, or
+ * consumed) is nowhere at all. Ground props never block, so nothing here
+ * looks them up.
+ */
+export function solidPropAt(level: LevelData, p: Vec): Prop | null {
+  for (const pr of level.props ?? []) {
+    if (pr.solid && !pr.hidden && pr.pos.x === p.x && pr.pos.y === p.y) return pr;
+  }
+  return null;
 }
 
 /** The orb the hero is carrying, or null. */
@@ -166,23 +188,44 @@ export function carriedOrb(state: GameState): Orb | null {
   return id ? orbById(state.level, id) : null;
 }
 
+/**
+ * The world prop the hero is carrying, or null. Beside `carriedOrb`: a hero's
+ * hands hold one or the other, never both, and `hero.carrying` is the one
+ * field that says which (an id into `level.orbs` or `level.props`).
+ */
+export function carriedProp(state: GameState): Prop | null {
+  const id = state.hero.carrying;
+  if (!id) return null;
+  return (state.level.props ?? []).find((p) => p.id === id) ?? null;
+}
+
 /** The lens' own blue, which the orbs and runes share. */
 export const ORB = '#8fe3ff';
 
 /**
- * Set the carried orb down on `at`. Both hands are free again; the orb lies
- * where it was put and is picked up again by stepping onto it. Silent when
+ * Set down whatever the hero is carrying on `at`, orb or world prop alike.
+ * Both hands are free again; the thing lies where it was put and (an orb, or
+ * a carriable prop) is picked up again by stepping onto it. Silent when
  * nothing is carried.
  */
 export function dropOrb(state: GameState, at: Vec): Orb | null {
   const orb = carriedOrb(state);
-  if (!orb) return null;
-  orb.state = 'floor';
-  orb.pos = { x: at.x, y: at.y };
-  state.hero.carrying = null;
-  pushText(state, at, 'Set down', ORB, 800);
-  pushSfx(state, 'orbSet');
-  return orb;
+  if (orb) {
+    orb.state = 'floor';
+    orb.pos = { x: at.x, y: at.y };
+    state.hero.carrying = null;
+    pushText(state, at, 'Set down', ORB, 800);
+    pushSfx(state, 'orbSet');
+    return orb;
+  }
+  const prop = carriedProp(state);
+  if (prop) {
+    prop.hidden = false;
+    prop.pos = { x: at.x, y: at.y };
+    state.hero.carrying = null;
+    pushSfx(state, 'orbSet');
+  }
+  return null;
 }
 
 /** Unit step from `a` toward the 4-adjacent `b`. */
@@ -457,9 +500,15 @@ function absorbWithWard(state: GameState, dmg: number): number {
 }
 
 /**
- * The run is over: only ever called from a boss chamber. Freezes the world
- * behind the game-over popup with a snapshot of the run for it to show. The
- * hero is left standing where they fell, on 0 hp.
+ * The run is over: only ever called from a boss chamber or a world floor.
+ * Freezes the world behind the game-over popup with a snapshot of the run for
+ * it to show. The hero is left standing where they fell, on 0 hp.
+ *
+ * On a world floor `cause` is the engine's token ('knockdown') or one the
+ * module passed to `ctx.gameOver`; the world's own `defeat(stage, cause)`
+ * turns it into the sentence the popup (and the log) actually show, exactly
+ * as a boss chamber's own words are already final by the time they arrive
+ * here.
  */
 export function gameOver(state: GameState, cause: string): void {
   const hero = state.hero;
@@ -478,10 +527,18 @@ export function gameOver(state: GameState, cause: string): void {
   hero.stun = 0;
   state.path.length = 0;
   state.pointer = null;
+  const retryCost = bossRetryCost(state.depth, state.stats.bossRetries);
+  const world = state.level.kind === 'world' ? state.level.world : undefined;
+  if (world) {
+    const sentence = WORLDS[world.kind].defeat(world.stage, cause);
+    pushLog(state, sentence);
+    pushSfx(state, 'gameOver');
+    state.modal = { kind: 'gameOver', cause: sentence, boss: world.kind, stats, retryCost, world: world.kind };
+    return;
+  }
   pushLog(state, cause);
   pushSfx(state, 'gameOver');
   const boss: BossKind = state.level.boss?.kind ?? 'necromancer';
-  const retryCost = bossRetryCost(state.depth, state.stats.bossRetries);
   state.modal = { kind: 'gameOver', cause, boss, stats, retryCost };
 }
 
@@ -550,6 +607,13 @@ function knockDown(state: GameState, attacker: Monster | null = null): void {
   // of the run. `hero.hp` may be negative here; gameOver settles it at 0.
   if (state.level.kind === 'boss') {
     gameOver(state, causeOfDeath(attacker));
+    return;
+  }
+
+  // A world floor is a boss chamber in this one respect too: a knockdown ends
+  // the run, not a nap. `gameOver` turns the token into the world's own words.
+  if (state.level.kind === 'world') {
+    gameOver(state, 'knockdown');
     return;
   }
 

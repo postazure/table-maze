@@ -13,6 +13,8 @@ import { ShopForgeModal } from './ShopForgeModal';
 import { AltarModal } from './AltarModal';
 import { BoonModal } from './BoonModal';
 import { VolumeModal } from './VolumeModal';
+import { WorldIntroModal } from './WorldIntroModal';
+import { WorldWonModal } from './WorldWonModal';
 import { useAudio } from './useAudio';
 import { useGame } from './useGame';
 
@@ -61,12 +63,24 @@ export function App() {
       {hud.modal?.kind === 'bossWon' && (
         <BossWonModal boss={hud.modal.boss} upgraded={hud.modal.upgraded} heart={hud.modal.heart} onClose={dismissModal} />
       )}
+      {hud.modal?.kind === 'worldIntro' && (
+        <WorldIntroModal
+          world={hud.modal.world}
+          stage={hud.modal.stage}
+          data={game.state.level.world?.data ?? {}}
+          onClose={dismissModal}
+        />
+      )}
+      {hud.modal?.kind === 'worldWon' && (
+        <WorldWonModal world={hud.modal.world} collectible={hud.modal.collectible} onClose={dismissModal} />
+      )}
       {hud.modal?.kind === 'gameOver' && (
         <GameOverModal
           cause={hud.modal.cause}
           boss={hud.modal.boss}
           stats={hud.modal.stats}
           retryCost={hud.modal.retryCost}
+          world={hud.modal.world}
           onRetry={retryBoss}
           onClose={dismissModal}
         />
