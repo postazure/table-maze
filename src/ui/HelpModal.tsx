@@ -1,12 +1,23 @@
 import { useState } from 'react';
 import type { HudBuff, HudModel } from './hudModel';
 import type { ItemSlot, MagicItem } from '../engine/types';
+import { BOSS_KINDS } from '../engine/types';
 import { itemDescription, itemName } from '../engine/items';
 import { heartsLabel, shrineDescription, shrineName } from '../engine/shrines';
 import { LENS_NAME } from '../engine/lens';
 import { relicName } from '../engine/puzzles';
 import { boonDescription, boonName, trophyName } from '../engine/boons';
+import { WORLDS } from '../engine/worlds';
 import { PixelIcon, type IconName } from './icons';
+
+/** Every world's collectible, looked up by id. An id nothing offered is skipped. */
+function collectibleById(id: string): { name: string; description: string } | null {
+  for (const kind of BOSS_KINDS) {
+    const c = WORLDS[kind].collectible;
+    if (c.id === id) return c;
+  }
+  return null;
+}
 
 export interface HelpModalProps {
   model: HudModel;
@@ -136,6 +147,16 @@ function HeroTab({ model }: { model: HudModel }) {
           ))}
         </div>
       )}
+      {model.collection.length > 0 && (
+        <div className="help-section">
+          <span className="help-title">Collection</span>
+          {model.collection.map((id) => {
+            const c = collectibleById(id);
+            if (!c) return null;
+            return <CarriedRow key={id} icon="lens" name={c.name} desc={c.description} />;
+          })}
+        </div>
+      )}
       <div className="help-section">
         <span className="help-title">Running now</span>
         {model.buffs.length > 0 ? (
@@ -203,6 +224,8 @@ function GuideTab() {
       <li>You can buy one thing per shop, and each slot holds one item. The forge is the other choice: a level on something you already wear.</li>
       <li>After every third floor you face a boss. Beat it and one of your magic items gains a level.</li>
       <li>Lose in a boss chamber and the run is over.</li>
+      <li>A carved crystal, spent at the portal on floor one, opens the way into a boss's own world.</li>
+      <li>Win a boss world and its collectible is yours for good — win it once, keep it every run after.</li>
       <li>The hero faces the way they last walked. Some monsters care about that.</li>
     </ul>
   );

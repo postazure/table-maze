@@ -25,6 +25,7 @@ import {
   type Altar,
   type BossKind,
   type ShopForge,
+  type Prop,
   SHRINE_KINDS,
   RELIC_KINDS,
   BOSS_KINDS,
@@ -51,7 +52,7 @@ import {
   TROPHY_ART,
   runeArt,
 } from './itemArt';
-import { carriedOrb } from '../engine/combat';
+import { carriedOrb, carriedProp } from '../engine/combat';
 import { BLINK_MS, SHRINE_COLORS, buffPhase } from '../engine/shrines';
 import {
   LENS_ALPHA,
@@ -62,8 +63,9 @@ import {
   lensRevealAt,
   passageTiles,
 } from '../engine/lens';
-import { themeById } from '../engine/themes';
+import { themeById, type PaintStyle, type ThemePalette } from '../engine/themes';
 import { MONSTER_CFGS, creatureRows, monsterSpriteKey } from './monsterArt';
+import { propArt } from './worlds';
 
 // ---------------------------------------------------------------------------
 // Palette / constants
@@ -477,6 +479,96 @@ function hash2(x: number, y: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// Paint styles (see engine/themes.ts's `PaintStyle`): 'brick' is the dungeon
+// and is painted inline in `paintLevel` (it alone needs the warren-break /
+// rubble treatment); everything else — the boss worlds' looks — is a pure
+// function of the SUB-resolution pixel coordinates here, exactly like the
+// brick pattern, so the sealed picture never grows a seam either.
+// ---------------------------------------------------------------------------
+
+/** One wall pixel for a non-brick style, at sub-pixel resolution `(gx, gy)`. */
+function wallPixel(style: PaintStyle, pal: ThemePalette, gx: number, gy: number): string {
+  switch (style) {
+    case 'cloud': {
+      // Sky: flat wallA with a scatter of lighter wallHi pixels.
+      return hash2(gx, gy) % 23 === 0 ? pal.wallHi : pal.wallA;
+    }
+    case 'water': {
+      // Sea: wallA/wallB in horizontal wave bands 2 sub-pixels tall, each
+      // band's crest (a wallHi pixel) offset sideways by a hash of the band.
+      const band = Math.floor(gy / 2);
+      const crest = hash2(band, 0) % SUB;
+      const hi = ((gx + hash2(0, band)) % SUB) === crest;
+      if (hi) return pal.wallHi;
+      return band % 2 === 0 ? pal.wallA : pal.wallB;
+    }
+    case 'street': {
+      // Building: wallA with wallHi windows in a 3x3 grid (one lit corner of
+      // every 6x6 block, checkerboarded), mortar lines every 4 rows.
+      if (gy % 4 === 0) return pal.mortar;
+      const wx = gx % 6;
+      const wy = gy % 6;
+      if (wx >= 1 && wx <= 3 && wy >= 1 && wy <= 3 && (wx + wy) % 2 === 0) return pal.wallHi;
+      return pal.wallA;
+    }
+    case 'hedge': {
+      // Hedge: a leafy speckle of wallA/wallB with the odd wallHi leaf catching light.
+      const h = hash2(gx, gy);
+      if (h % 11 === 0) return pal.wallHi;
+      return h % 2 === 0 ? pal.wallA : pal.wallB;
+    }
+    case 'stone': {
+      // Rough rock: irregular wallA/wallB blobs (hashed at half resolution, so
+      // they read as chunks of stone rather than single pixels) with mortar cracks.
+      const crack = hash2(gx, gy) % 17 === 0;
+      if (crack) return pal.mortar;
+      return hash2(gx >> 1, gy >> 1) % 2 === 0 ? pal.wallA : pal.wallB;
+    }
+    default:
+      return pal.wallA;
+  }
+}
+
+/** One floor pixel for a non-brick style. `nearWall` bit-flags which sides of the tile border a wall (N=1, E=2, S=4, W=8), for 'cloud''s rounded edge. */
+function floorPixel(style: PaintStyle, pal: ThemePalette, gx: number, gy: number, lx: number, ly: number, nearWall: number): string {
+  switch (style) {
+    case 'cloud': {
+      // Cloud: floor colour with speckLight bumps, and a soft, hash-broken
+      // (never a hard line) darker edge where the cloud meets open sky.
+      const h = hash2(gx, gy);
+      const edge =
+        ((nearWall & 1 && ly < 2) || (nearWall & 4 && ly >= SUB - 2) || (nearWall & 2 && lx >= SUB - 2) || (nearWall & 8 && lx < 2)) &&
+        h % 3 !== 0;
+      if (edge) return pal.speckDark;
+      if (h % 7 === 0) return pal.speckLight;
+      return pal.floor;
+    }
+    case 'water': {
+      // Deck planks: a seam every 4 sub-pixels across the grain, plus speckLight wood grain.
+      if (gx % 4 === 0) return pal.speckDark;
+      return hash2(gx, gy) % 9 === 0 ? pal.speckLight : pal.floor;
+    }
+    case 'street': {
+      // Cobbles: a 2x2 pattern, each cobble speckLight or speckDark, with a floor-coloured mortar seam between them.
+      if (gx % 2 === 0 || gy % 2 === 0) return ((gx >> 1) + (gy >> 1)) % 2 === 0 ? pal.speckDark : pal.speckLight;
+      return pal.floor;
+    }
+    case 'hedge': {
+      // Grass: a scatter of speckLight blades.
+      return hash2(gx, gy) % 6 === 0 ? pal.speckLight : pal.floor;
+    }
+    case 'stone': {
+      // Flagstones: speckDark joints every 8 sub-pixels, offset a half-stone every other row.
+      const rowOffset = (Math.floor(gy / 8) % 2) * 4;
+      if ((gx + rowOffset) % 8 === 0 || gy % 8 === 0) return pal.speckDark;
+      return pal.floor;
+    }
+    default:
+      return pal.floor;
+  }
+}
+
+// ---------------------------------------------------------------------------
 
 export class Renderer implements TileMapper {
   private canvas: HTMLCanvasElement;
@@ -510,6 +602,14 @@ export class Renderer implements TileMapper {
    * into a passage opens the light instead of popping it on.
    */
   private lensGlow = 0;
+  /**
+   * `level.rev` as it stood the last time `buildStatic` painted it. A world
+   * module that changes `tiles` after generation bumps `rev` (see
+   * `WorldCtx.rebuild`); `draw` compares against this every frame and rebuilds
+   * the static canvases when it moves, without waiting for `resize` to notice
+   * a level object it already has.
+   */
+  private paintedRev = 0;
   /** This frame's shake offset in screen pixels, so the reveal buffer can match it. */
   private shake = { x: 0, y: 0 };
 
@@ -548,6 +648,13 @@ export class Renderer implements TileMapper {
   private forgeSprite: HTMLCanvasElement;
   private relicSprites: Map<RelicKind, HTMLCanvasElement> = new Map();
   private trophySprites: Map<BossKind, HTMLCanvasElement> = new Map();
+  /**
+   * A boss world's own furniture (see engine/worlds): built lazily, one
+   * sprite per distinct `Prop.art`/`Prop.art:state` key, the first time each
+   * turns up — unlike the tables above, a prop's art is only known once a
+   * world's level exists, not at construction time.
+   */
+  private propSprites: Map<string, HTMLCanvasElement> = new Map();
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -684,8 +791,14 @@ export class Renderer implements TileMapper {
     const sctx = canvas.getContext('2d');
     if (!sctx) return null;
     const pal = themeById(level.theme).palette;
+    const style = pal.style ?? 'brick';
     const { broken, rubble } = mouthMasonry(level);
     const hidden = level.passages?.length ? passageTiles(level) : null;
+    const isWallTile = (x: number, y: number): boolean => {
+      if (x < 0 || y < 0 || x >= level.width || y >= level.height) return true;
+      if (level.tiles[y][x] === Tile.Wall) return true;
+      return !revealHidden && hidden !== null && hidden.has(key({ x, y }));
+    };
     const img = sctx.createImageData(w, h);
     for (let ty = 0; ty < level.height; ty++) {
       const row = level.tiles[ty];
@@ -694,33 +807,48 @@ export class Renderer implements TileMapper {
         const isWall = row[tx] === Tile.Wall || (!revealHidden && hidden !== null && hidden.has(k));
         const breakToward = broken.get(k);
         const rubbleToward = rubble.get(k);
+        // Which sides of this floor tile touch a wall, for 'cloud''s soft
+        // edge: bit 1 = north, 2 = east, 4 = south, 8 = west.
+        const nearWall = isWall
+          ? 0
+          : (isWallTile(tx, ty - 1) ? 1 : 0) |
+            (isWallTile(tx + 1, ty) ? 2 : 0) |
+            (isWallTile(tx, ty + 1) ? 4 : 0) |
+            (isWallTile(tx - 1, ty) ? 8 : 0);
         for (let ly = 0; ly < SUB; ly++) {
           const gy = ty * SUB + ly;
           for (let lx = 0; lx < SUB; lx++) {
             const gx = tx * SUB + lx;
             let hex: string;
             if (isWall) {
-              const brickRow = Math.floor(ly / 4);
-              const offset = (brickRow % 2) * 4;
-              const withinBrickX = (lx + offset) % 8;
-              const isMortarV = withinBrickX === 0;
-              const isMortarH = ly % 4 === 0;
-              if (isMortarV || isMortarH) hex = pal.mortar;
-              else if (ly % 4 === 1) hex = pal.wallHi;
-              else hex = (tx + brickRow) % 2 === 0 ? pal.wallA : pal.wallB;
-              // A block framing a warren mouth is chewed away on the face that
-              // meets the gap, in a ragged line so it reads as knocked through
-              // rather than cut.
-              if (breakToward) {
-                const fromFace = faceDepth(breakToward, lx, ly);
-                // Band the randomness so the edge steps in chunks the size of
-                // a broken brick rather than flickering pixel by pixel.
-                const band = breakToward.x !== 0 ? ly >> 1 : lx >> 1;
-                const bite = 1 + (hash2(tx * 31 + band, ty * 17) % BREAK_DEPTH);
-                if (fromFace < bite) {
-                  hex = fromFace === bite - 1 ? pal.wallHi : pal.mortar;
+              if (style !== 'brick') {
+                hex = wallPixel(style, pal, gx, gy);
+              } else {
+                const brickRow = Math.floor(ly / 4);
+                const offset = (brickRow % 2) * 4;
+                const withinBrickX = (lx + offset) % 8;
+                const isMortarV = withinBrickX === 0;
+                const isMortarH = ly % 4 === 0;
+                if (isMortarV || isMortarH) hex = pal.mortar;
+                else if (ly % 4 === 1) hex = pal.wallHi;
+                else hex = (tx + brickRow) % 2 === 0 ? pal.wallA : pal.wallB;
+                // A block framing a warren mouth is chewed away on the face
+                // that meets the gap, in a ragged line so it reads as knocked
+                // through rather than cut. Warrens are a dungeon notion, so
+                // this never applies outside the 'brick' style.
+                if (breakToward) {
+                  const fromFace = faceDepth(breakToward, lx, ly);
+                  // Band the randomness so the edge steps in chunks the size
+                  // of a broken brick rather than flickering pixel by pixel.
+                  const band = breakToward.x !== 0 ? ly >> 1 : lx >> 1;
+                  const bite = 1 + (hash2(tx * 31 + band, ty * 17) % BREAK_DEPTH);
+                  if (fromFace < bite) {
+                    hex = fromFace === bite - 1 ? pal.wallHi : pal.mortar;
+                  }
                 }
               }
+            } else if (style !== 'brick') {
+              hex = floorPixel(style, pal, gx, gy, lx, ly, nearWall);
             } else {
               const hv = hash2(tx, ty);
               const slx = (hv >> 3) % SUB;
@@ -763,6 +891,7 @@ export class Renderer implements TileMapper {
     this.revealCanvas = hides ? this.paintLevel(level, true) : null;
     this.hiddenMask = hides ? this.paintHiddenMask(level) : null;
     this.lensGlow = 0;
+    this.paintedRev = level.rev ?? 0;
   }
 
   /** One solid block per hidden tile, at the same scale as the level canvases. */
@@ -1003,6 +1132,13 @@ export class Renderer implements TileMapper {
       state.level.kind === 'boss' && state.level.boss?.kind === 'necromancer'
         ? state.level.boss.spellMs / state.level.boss.spellTotalMs
         : 1;
+    // A world module changed `tiles` after generation (`WorldCtx.rebuild`
+    // bumps `rev`): repaint the static canvases in place, same level object
+    // and all, rather than waiting for `resize` to notice a level it already
+    // has.
+    if (this.level === state.level && (state.level.rev ?? 0) !== this.paintedRev) {
+      this.buildStatic(state.level);
+    }
     // 1. Age & prune effects.
     for (const fx of state.fx) fx.t += dt;
     state.fx = state.fx.filter((fx) => fx.t < fx.ttl);
@@ -1189,11 +1325,26 @@ export class Renderer implements TileMapper {
       if (this.inRange(a.pos, startX, endX, startY, endY)) this.drawBehindWall(ctx, state, a.pos, t, () => this.drawAltar(ctx, a, t));
     }
 
+    // A boss world's own ground props (see engine/worlds): floor, not
+    // furniture, so drawn before the chests and monsters exactly as a shrine
+    // alcove is.
+    for (const p of state.level.props ?? []) {
+      if (p.hidden || p.solid) continue;
+      if (this.inRange(p.pos, startX, endX, startY, endY)) this.drawProp(ctx, p, t, 0.7);
+    }
+
     // Chests. A wing's chest stands on hidden ground, so it is drawn through
     // the slot the wing makes, like everything else in there.
     for (const c of state.level.chests) {
       if (!this.inRange(c.pos, startX, endX, startY, endY)) continue;
       this.drawBehindWall(ctx, state, c.pos, t, () => this.drawChest(ctx, c, t));
+    }
+
+    // A boss world's solid props, drawn in the same pass as the chests: a
+    // statue, a symbol, a crypt door, the portal home.
+    for (const p of state.level.props ?? []) {
+      if (p.hidden || !p.solid) continue;
+      if (this.inRange(p.pos, startX, endX, startY, endY)) this.drawProp(ctx, p, t, 0.8);
     }
 
     // Exit. Hidden while the necromancer still stands on it (his tile IS the
@@ -1244,6 +1395,8 @@ export class Renderer implements TileMapper {
     // Hero (always near the viewport center), and the orb in their arms.
     this.drawHero(ctx, state.hero, t);
     if (carriedOrb(state)) this.drawCarriedOrb(ctx, state.hero, t);
+    const cprop = carriedProp(state);
+    if (cprop) this.drawCarriedProp(ctx, state.hero, cprop, t);
 
     // keyCompass: arrow hovering over the hero, pointing at the tracked tile.
     if (state.compass) this.drawCompass(ctx, state.hero, state.compass, t);
@@ -1503,6 +1656,42 @@ export class Renderer implements TileMapper {
     ctx.fillRect(x - 2, y - 2, size + 4, size + 4);
     ctx.restore();
     ctx.drawImage(this.orbSprite, x, y, size, size);
+  }
+
+  /**
+   * A boss world's prop art, built the first time this `art`/`state` pair is
+   * drawn and cached after (see `propSprites`). Null when the module named an
+   * art key nothing registered — drawn as nothing, the same as a monster
+   * whose sprite key does not resolve.
+   */
+  private getPropSprite(art: string, state?: string): HTMLCanvasElement | null {
+    const k = state ? `${art}:${state}` : art;
+    const cached = this.propSprites.get(k);
+    if (cached) return cached;
+    const spec = propArt(art, state);
+    if (!spec) return null;
+    const sprite = buildIcon(spec.rows as string[], spec.palette as Record<string, string>);
+    this.propSprites.set(k, sprite);
+    return sprite;
+  }
+
+  /** A prop standing on the floor: solid ones a touch bigger than ground ones. */
+  private drawProp(ctx: CanvasRenderingContext2D, p: Prop, t: number, scale: number): void {
+    const sprite = this.getPropSprite(p.art, p.state);
+    if (!sprite) return;
+    this.drawTileSprite(ctx, sprite, p.pos, t, scale);
+  }
+
+  /** A carried prop in the hero's arms, held exactly where a carried orb is. */
+  private drawCarriedProp(ctx: CanvasRenderingContext2D, hero: Hero, prop: Prop, t: number): void {
+    const sprite = this.getPropSprite(prop.art, prop.state);
+    if (!sprite) return;
+    const sub = Math.max(1, t / SUB);
+    const size = Math.round(t * 0.42);
+    const bob = Math.round((Math.sin(performance.now() / 300) * sub) / sub) * sub;
+    const x = Math.round((hero.rpos.x * t + t * 0.62) / sub) * sub;
+    const y = Math.round((hero.rpos.y * t - t * 0.05 + bob) / sub) * sub;
+    ctx.drawImage(sprite, x, y, size, size);
   }
 
   /**

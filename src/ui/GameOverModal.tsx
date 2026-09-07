@@ -1,4 +1,7 @@
-import type { BossKind, RunStats } from '../engine/types';
+import type { BossKind, RunStats, WorldKind } from '../engine/types';
+import { WORLDS } from '../engine/worlds';
+import { WORLD_DEFEAT_ART } from '../render/worlds';
+import { PixelArt } from './PixelArt';
 import { PixelIcon } from './icons';
 
 export interface GameOverModalProps {
@@ -7,6 +10,8 @@ export interface GameOverModalProps {
   stats: RunStats;
   /** Gold to buy back into this same fight, fixed at the moment of death. */
   retryCost: number;
+  /** Set when the run ended on a boss world's floor rather than a boss chamber. */
+  world?: WorldKind;
   onRetry: () => void;
   onClose: () => void;
 }
@@ -26,7 +31,7 @@ function formatPlayTime(ms: number): string {
  * "New Game" — there is nothing left to lose by starting over, so nothing to
  * confirm.
  */
-export function GameOverModal({ cause, stats, retryCost, onRetry, onClose }: GameOverModalProps) {
+export function GameOverModal({ cause, stats, retryCost, world, onRetry, onClose }: GameOverModalProps) {
   const rows: [string, string | number][] = [
     ['Deepest floor', stats.deepest],
     ['Hero level', stats.heroLevel],
@@ -37,14 +42,21 @@ export function GameOverModal({ cause, stats, retryCost, onRetry, onClose }: Gam
   ];
   if (stats.retries > 0) rows.push(['Boss retries paid', stats.retries]);
   const canRetry = stats.gold >= retryCost;
+  const worldName = world ? WORLDS[world].name : null;
+  const art = world ? WORLD_DEFEAT_ART[world] : null;
 
   return (
     <div className="modal-backdrop boss-backdrop" role="dialog" aria-label="Game over">
       <div className="boss-modal gameover-modal">
         <div className="boss-head">
-          <span className="boss-title gameover-title">Game Over</span>
+          <span className="boss-title gameover-title">{worldName ? `Lost in ${worldName}` : 'Game Over'}</span>
         </div>
         <div className="boss-body">
+          {art && (
+            <div className="boss-sprite-wrap">
+              <PixelArt rows={art.rows} palette={art.palette} size={128} />
+            </div>
+          )}
           <p className="boss-desc gameover-cause">{cause}</p>
           <div className="gameover-stats">
             {rows.map(([label, value]) => (
@@ -61,9 +73,9 @@ export function GameOverModal({ cause, stats, retryCost, onRetry, onClose }: Gam
             className="shop-btn shop-btn-buy"
             onClick={onRetry}
             disabled={!canRetry}
-            aria-label={`Pay ${retryCost} gold to retry this boss`}
+            aria-label={worldName ? `Pay ${retryCost} gold to try the stage again` : `Pay ${retryCost} gold to retry this boss`}
           >
-            <span className="shop-btn-label">Retry this fight</span>
+            <span className="shop-btn-label">{worldName ? 'Try the stage again' : 'Retry this fight'}</span>
             <span className="shop-price">
               <PixelIcon name="coin" size={14} />
               {retryCost}

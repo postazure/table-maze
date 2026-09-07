@@ -3,26 +3,55 @@
  * hero within a leash of their home tile. All movement is one tile at a time
  * on the tile grid, gated by `moveCooldown`.
  */
-import type { GameState, LevelData, Monster, Rng, Vec } from './types';
+import type { GameState, LevelData, Monster, Rng, Vec, WorldMonsterKind } from './types';
 import { eq, key, manhattan } from './types';
 import { bfsDistances, bfsPath } from './pathfind';
-import { GREEN, chestAt, closedDoorAt, damageMonster, exitAt, keyAt, liveMonsterAt, monsterAttack } from './combat';
+import {
+  GREEN,
+  chestAt,
+  closedDoorAt,
+  damageMonster,
+  exitAt,
+  keyAt,
+  liveMonsterAt,
+  monsterAttack,
+  solidPropAt,
+} from './combat';
 import type { ItemStats } from './items';
 import { heroStats } from './items';
 import { lurkerSightRange } from './balance';
 import { hiddenAt, sameSide } from './lens';
 import { altarAt, closedSealAt, pickupAt } from './puzzles';
 import { timeBubble } from './shrines';
+import type { WorldCtx } from './worlds/world';
+import { WORLDS } from './worlds';
+import { type WorldHost, makeWorldCtx } from './worldRuntime';
 
 /** Render position catch-up speed, tiles per second. */
 const RPOS_SPEED = 14;
 /** One poison tick per second. */
 const POISON_TICK_MS = 1000;
 
-/** Advance every monster by `dt` ms. */
-export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
+/** The world's own monster kinds, routed to `WorldModule.step`/`fights` (see worlds/world.ts). */
+const WORLD_MONSTER_KINDS: readonly WorldMonsterKind[] = ['medusa', 'siren', 'cerberus', 'cultist', 'ghoul', 'shade'];
+
+function isWorldMonsterKind(kind: Monster['kind']): kind is WorldMonsterKind {
+  return (WORLD_MONSTER_KINDS as readonly string[]).includes(kind);
+}
+
+/**
+ * Advance every monster by `dt` ms. `host` is only needed on a world floor —
+ * it is what lets a routed monster's `step`/`fights` call `ctx.goto` or
+ * `ctx.returnHome` (see worldRuntime.ts); every other kind never touches it.
+ */
+export function updateMonsters(state: GameState, dt: number, rng: Rng, host?: WorldHost): void {
   const level = state.level;
   const stats = heroStats(state.hero);
+  // Built once per call, not per monster: a `WorldCtx` is cheap, but there is
+  // no reason to allocate one per monster when every monster on the floor
+  // shares the same state, level, world and rng.
+  const worldCtx: WorldCtx | null =
+    host && level.kind === 'world' && level.world ? makeWorldCtx(host, state, level.world, rng) : null;
   for (const m of level.monsters) {
     if (!m.alive) continue;
 
@@ -54,7 +83,7 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
 
     // Attack takes priority over movement. A sleeping hero is left alone.
     if (!state.hero.sleeping && manhattan(m.pos, heroPos) === 1) {
-      if (m.attackCooldown <= 0 && willFight(state, m)) {
+      if (m.attackCooldown <= 0 && willFight(state, m, worldCtx)) {
         const knocked = monsterAttack(state, m, rng);
         m.attackCooldown = cooldownFor(state, m, stats, m.attackInterval);
         // The hit just resolved a knockdown (potion, phoenix, sleep, or game
@@ -66,7 +95,7 @@ export function updateMonsters(state: GameState, dt: number, rng: Rng): void {
 
     if (m.moveCooldown > 0) continue;
 
-    const step = chooseStep(state, m, stats);
+    const step = chooseStep(state, m, stats, worldCtx);
     if (step) {
       m.pos = { x: step.x, y: step.y };
       m.moveCooldown = cooldownFor(state, m, stats, m.moveInterval);
@@ -99,13 +128,20 @@ function cooldownFor(state: GameState, m: Monster, stats: ItemStats, base: numbe
  * lurkers always attack whoever stands next to them.
  *
  * In a boss chamber: crystals and the necromancer never lift a finger.
- * Angels never reach this: they act from `angelsAct` (angels.ts) instead.
+ * Angels never reach this: they act from `angelsAct` (angels.ts) instead. A
+ * world's own monster kind asks its module (`WorldModule.fights`), defaulting
+ * to true when the module has nothing to say about it.
  */
-function willFight(state: GameState, m: Monster): boolean {
+function willFight(state: GameState, m: Monster, worldCtx: WorldCtx | null): boolean {
   // A mouth tile is inside the passage and next to the maze at the same time,
   // so a monster standing on one really is adjacent to a hero out in the
   // corridor. It is still behind a wall: neither of them can touch the other.
   if (!sameSide(state.level, m.pos, state.hero.pos)) return false;
+  if (isWorldMonsterKind(m.kind)) {
+    if (!worldCtx) return true;
+    const fights = WORLDS[worldCtx.world.kind].fights;
+    return fights ? fights(worldCtx, m) : true;
+  }
   switch (m.kind) {
     case 'guard':
       return m.sinceCombat < GUARD_ENGAGE_MS;
@@ -195,6 +231,7 @@ function moveBlocked(state: GameState, m: Monster): (p: Vec) => boolean {
     if (keyAt(level, p)) return true;
     if (chestAt(level, p)) return true;
     if (altarAt(level, p)) return true;
+    if (solidPropAt(level, p)) return true;
     if (pickupAt(level, p)) return true;
     if (exitAt(level, p)) return true;
     return false;
@@ -260,7 +297,11 @@ function stepToward(state: GameState, m: Monster, to: Vec, maxLen: number): Vec 
 // Per-kind behaviour
 // ---------------------------------------------------------------------------
 
-function chooseStep(state: GameState, m: Monster, stats: ItemStats): Vec | null {
+function chooseStep(state: GameState, m: Monster, stats: ItemStats, worldCtx: WorldCtx | null): Vec | null {
+  if (isWorldMonsterKind(m.kind)) {
+    if (!worldCtx) return null;
+    return WORLDS[worldCtx.world.kind].step?.(worldCtx, m) ?? null;
+  }
   switch (m.kind) {
     case 'guard':
       return null;

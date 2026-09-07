@@ -13,6 +13,11 @@ const STORAGE_KEY = 'table-maze:save';
  * ends, and a boon is the one thing meant to outlive that.
  */
 const BOONS_KEY = 'table-maze:boons';
+/**
+ * The permanent collection (see engine/worlds): every boss world's
+ * collectible ever won, by id. Outlives the run exactly like the boons do.
+ */
+const COLLECTION_KEY = 'table-maze:collection';
 
 /** localStorage if it exists and is usable (guarded so tests can import this). */
 function store(): Storage | null {
@@ -45,6 +50,9 @@ export function saveGame(state: GameState): void {
       descending: 0,
       over: false,
       boons: state.boons ?? [],
+      stash: state.stash ?? null,
+      freeze: 0,
+      collection: state.collection ?? [],
     };
     ls.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
@@ -97,6 +105,8 @@ export function loadGame(): GameState | null {
     if (typeof hero.carrying !== 'string') hero.carrying = null;
     if (!Array.isArray(hero.relics)) hero.relics = [];
     if (!Array.isArray(hero.trophies)) hero.trophies = [];
+    if (typeof hero.brass !== 'number') hero.brass = 0;
+    if (!Array.isArray(hero.crystals)) hero.crystals = [];
     hero.stun = 0;
     if (typeof hero.sleeping !== 'boolean') hero.sleeping = false;
     hero.hitFlash = 0;
@@ -138,6 +148,9 @@ export function loadGame(): GameState | null {
       compass: null,
       over: false,
       boons: Array.isArray(d.boons) ? d.boons.filter(validBoon) : [],
+      stash: d.stash && typeof d.stash === 'object' && d.stash.level ? d.stash : null,
+      freeze: 0,
+      collection: Array.isArray(d.collection) ? d.collection.filter((c): c is string => typeof c === 'string') : [],
     };
     return state;
   } catch {
@@ -171,6 +184,31 @@ export function saveBoons(boons: Boon[]): void {
   try {
     if (boons.length === 0) ls.removeItem(BOONS_KEY);
     else ls.setItem(BOONS_KEY, JSON.stringify(boons));
+  } catch {
+    /* quota / private mode: skip */
+  }
+}
+
+/** Every world collectible ever won, by id. Empty when there are none or storage is unusable. */
+export function loadCollection(): string[] {
+  const ls = store();
+  if (!ls) return [];
+  try {
+    const raw = ls.getItem(COLLECTION_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((c): c is string => typeof c === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCollection(ids: string[]): void {
+  const ls = store();
+  if (!ls) return;
+  try {
+    if (ids.length === 0) ls.removeItem(COLLECTION_KEY);
+    else ls.setItem(COLLECTION_KEY, JSON.stringify(ids));
   } catch {
     /* quota / private mode: skip */
   }

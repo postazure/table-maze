@@ -182,9 +182,12 @@ const THEME_TRACK: Record<string, TrackId> = {
 };
 
 /** The track for the level the hero is standing on. */
-export function trackForLevel(kind: 'maze' | 'shop' | 'boss', theme: string): TrackId {
+export function trackForLevel(kind: 'maze' | 'shop' | 'boss' | 'world', theme: string): TrackId {
   if (kind === 'boss') return 'dread';
   if (kind === 'shop') return 'market';
+  // A boss world plays by its theme like a maze floor; a world theme with no
+  // track of its own gets the boss chambers' pulse.
+  if (kind === 'world') return THEME_TRACK[theme] ?? 'dread';
   return THEME_TRACK[theme] ?? 'nocturne';
 }
 

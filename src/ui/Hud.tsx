@@ -96,6 +96,8 @@ function HudInner({ model, onNewGame, onHelp, soundOn, onToggleSound, onOpenVolu
               <>SHOP</>
             ) : model.levelKind === 'boss' ? (
               <>BOSS</>
+            ) : model.levelKind === 'world' ? (
+              <>{(model.worldName ?? 'WORLD').toUpperCase()}</>
             ) : (
               <>
                 DEPTH <b>{model.depth}</b>

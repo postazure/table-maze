@@ -432,6 +432,55 @@ const SFX: Record<SfxId, Voice> = {
     tone(ctx, dest, { type: 'sine', freq: hz(88), dur: 1.0, gain: 0.06, at: 0.5, attack: 0.2 });
   },
 
+  /** The jeweller's bench: a fine file on brass, then the lens' own ring, whole. */
+  craft(ctx, dest) {
+    noise(ctx, dest, { filter: 'highpass', freq: 3000, to: 5000, dur: 0.18, gain: 0.07, q: 0.6 });
+    noise(ctx, dest, { filter: 'highpass', freq: 3000, to: 5000, dur: 0.18, gain: 0.07, q: 0.6, at: 0.22 });
+    arpeggio(ctx, dest, [hz(84), hz(89), hz(96), hz(101)], { step: 0.07, dur: 0.5, gain: 0.09, at: 0.45, type: 'sine' });
+  },
+
+  /** A trophy carved into a crystal: stone chipped, then a clear high note held. */
+  carve(ctx, dest) {
+    noise(ctx, dest, { filter: 'bandpass', freq: 2200, to: 1400, dur: 0.07, gain: 0.1, q: 1.5 });
+    noise(ctx, dest, { filter: 'bandpass', freq: 2200, to: 1400, dur: 0.07, gain: 0.1, q: 1.5, at: 0.16 });
+    noise(ctx, dest, { filter: 'bandpass', freq: 2200, to: 1400, dur: 0.07, gain: 0.1, q: 1.5, at: 0.32 });
+    tone(ctx, dest, { type: 'sine', freq: hz(96), dur: 1.0, gain: 0.08, at: 0.45, attack: 0.15 });
+  },
+
+  /** A portal opening: a low swell rising through a whole octave, air rushing with it. */
+  portal(ctx, dest) {
+    tone(ctx, dest, { type: 'sawtooth', freq: hz(45), to: hz(57), dur: 1.2, gain: 0.1, attack: 0.3, vibrato: { hz: 5, cents: 25 } });
+    noise(ctx, dest, { filter: 'bandpass', freq: 300, to: 3000, dur: 1.1, gain: 0.07, q: 0.7, at: 0.1 });
+    tone(ctx, dest, { type: 'sine', freq: hz(81), dur: 0.9, gain: 0.06, at: 0.6, attack: 0.2 });
+  },
+
+  /** The ground shaking: a long low rumble with stone grinding over it. */
+  rumble(ctx, dest) {
+    noise(ctx, dest, { filter: 'lowpass', freq: 120, to: 60, dur: 1.4, gain: 0.18, q: 0.7 });
+    tone(ctx, dest, { type: 'sawtooth', freq: 38, to: 30, dur: 1.3, gain: 0.1, attack: 0.1 });
+    noise(ctx, dest, { filter: 'lowpass', freq: 500, to: 250, dur: 0.9, gain: 0.08, at: 0.3 });
+  },
+
+  /** A collectible won: the level-up run, slower and held longer, the one true fanfare outside a boss. */
+  collect(ctx, dest) {
+    arpeggio(ctx, dest, [hz(67), hz(71), hz(74), hz(79), hz(83)], { step: 0.09, dur: 0.3, gain: 0.12, type: 'square' });
+    tone(ctx, dest, { type: 'square', freq: hz(86), dur: 0.9, gain: 0.12, at: 0.48 });
+    tone(ctx, dest, { type: 'triangle', freq: hz(74), dur: 1.0, gain: 0.08, at: 0.48 });
+  },
+
+  /** A gaze landing: a hard glassy stab and a sudden stop. */
+  gaze(ctx, dest) {
+    tone(ctx, dest, { type: 'square', freq: 1800, to: 2400, dur: 0.08, gain: 0.12 });
+    noise(ctx, dest, { filter: 'highpass', freq: 5000, to: 2000, dur: 0.25, gain: 0.08, q: 0.5, at: 0.06 });
+    tone(ctx, dest, { type: 'triangle', freq: 90, to: 60, dur: 0.3, gain: 0.08, at: 0.1 });
+  },
+
+  /** A siren's song: two close sine notes swelling, a little too sweet. */
+  song(ctx, dest) {
+    tone(ctx, dest, { type: 'sine', freq: hz(76), dur: 1.2, gain: 0.08, attack: 0.3, vibrato: { hz: 5.5, cents: 20 } });
+    tone(ctx, dest, { type: 'sine', freq: hz(80), dur: 1.2, gain: 0.07, attack: 0.45, vibrato: { hz: 4.5, cents: 20 } });
+  },
+
   /** The forge: hammer on anvil, twice, and the ring of the metal after. */
   forge(ctx, dest) {
     tone(ctx, dest, { type: 'square', freq: 1400, to: 900, dur: 0.06, gain: 0.12 });

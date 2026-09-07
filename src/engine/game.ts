@@ -25,6 +25,7 @@ import type {
   ShopOffer,
   Shrine,
   Vec,
+  WorldKind,
 } from './types';
 import { HEART, ITEM_SLOT, SAVE_VERSION, eq, key, manhattan } from './types';
 import { hashSeed, makeRng } from './rng';
@@ -59,6 +60,7 @@ import {
   pushShake,
   pushText,
   shrineAt,
+  solidPropAt,
   unitToward,
 } from './combat';
 import { isFloor } from './pathfind';
@@ -105,6 +107,9 @@ import {
 } from './shrines';
 import { forgeAt, forgeCenter, generateShopLevel, offerAt, offerCenter } from './shop';
 import { BOSS_EVERY, bossName, generateBossLevel, makeBossMonster, roomAt } from './boss';
+import { WORLDS } from './worlds';
+import type { WorldCtx } from './worlds';
+import { type WorldHost, makeWorldCtx, worldSalt } from './worldRuntime';
 
 /** The two boss kinds with per-tick rules, narrowed out of the union. */
 type NecroData = Extract<BossData, { kind: 'necromancer' }>;
@@ -154,6 +159,13 @@ const TIME_PULSE_MS = 900;
 const RUNE_COLOR = ORB;
 /** A relic's own colour: old gold. */
 const RELIC_COLOR = '#f5c451';
+/**
+ * How much of the hero's missing hp a world stage heals on arrival: an
+ * ordinary floor transition's own fraction (see `resetToLevel`), since
+ * entering a fresh world stage is exactly that — a paid retry is the one that
+ * heals in full.
+ */
+const WORLD_HEAL_FRACTION = 0.5;
 
 export class Game {
   state!: GameState;
@@ -181,6 +193,16 @@ export class Game {
    * ids stay unique across a save/reload (dead minions stay in the list).
    */
   private minionSeq = 0;
+  /**
+   * The two things a `WorldCtx` cannot do by itself (see worldRuntime.ts):
+   * enter a freshly generated stage, and restore the stashed main floor. Built
+   * once so `worldCtx()` (and `monsters.ts`, which gets it handed in) never
+   * allocate a new one just to read it.
+   */
+  private readonly worldHost: WorldHost = {
+    enterWorldStage: (kind, stage, level) => this.enterWorldStage(kind, stage, level),
+    returnFromWorld: () => this.returnFromWorld(),
+  };
 
   constructor(saved?: GameState | null) {
     // A dead run is not resumable: start over rather than reviving a corpse.
@@ -268,6 +290,16 @@ export class Game {
     // A popup is up: the whole world waits.
     if (st.modal) return;
 
+    // A world cutscene (a maze that shifts, and the like): the clock and the
+    // camera are the only things still moving. Not a modal — nothing to
+    // dismiss, it just runs out on its own.
+    if (st.freeze > 0) {
+      st.freeze = Math.max(0, st.freeze - dt);
+      st.stats.playMs += dt;
+      this.lerpHero(dt);
+      return;
+    }
+
     st.stats.playMs += dt;
     hero.sinceCombat += dt;
     if (hero.hitFlash > 0) hero.hitFlash = Math.max(0, hero.hitFlash - dt);
@@ -331,11 +363,20 @@ export class Game {
     if (!hero.sleeping) {
       const hpBefore = hero.hp;
       const posBefore = hero.pos;
-      updateMonsters(st, dt, this.rng);
+      updateMonsters(st, dt, this.rng, this.worldHost);
       if (hero.hp !== hpBefore || hero.pos !== posBefore) this.dirty = true;
 
       // --- boss chamber -----------------------------------------------------
       this.tickBoss(dt);
+
+      // --- world floors -------------------------------------------------------
+      // Skipped while a popup came up mid-tick (a fresh stage's worldIntro,
+      // say): nothing runs on a world floor until its briefing is dismissed,
+      // exactly as a boss chamber's own clock waits on bossIntro.
+      if (!st.modal && st.level.kind === 'world' && st.level.world) {
+        WORLDS[st.level.world.kind].tick?.(this.worldCtx(), dt);
+        this.dirty = true;
+      }
     }
     this.checkLevelUp();
     // A boss popup (won, or the run ending) freezes everything else at once.
@@ -396,6 +437,9 @@ export class Game {
       compass: null,
       over: false,
       boons: spent.active,
+      stash: null,
+      freeze: 0,
+      collection: [],
     };
     this.rng = makeRng(hashSeed(seed, depth, RNG_SALT));
     this.minionSeq = 0;
@@ -463,6 +507,24 @@ export class Game {
     hero.gold -= cost;
     st.stats.bossRetries += 1;
     st.over = false;
+
+    // A world floor lost: regenerate the very same stage (same data), never
+    // the stale, partly-solved one from the lost attempt — same reasoning as
+    // a boss chamber's crystals/minions never coming back stale.
+    const worldKind = st.modal.world;
+    if (worldKind) {
+      const world = st.level.world;
+      const stage = world?.stage ?? 0;
+      const module = WORLDS[worldKind];
+      const level = module.generate(stage, st.seed, hero, world?.data ?? null);
+      this.resetToLevel(level, worldSalt(worldKind, stage, st.stats.bossRetries), 1);
+      st.modal = { kind: 'worldIntro', world: worldKind, stage };
+      pushLog(st, `Paid ${cost} gold to retry ${module.name}`);
+      this.dirty = true;
+      this.emit();
+      return;
+    }
+
     const level = generateBossLevel(st.depth, st.seed);
     this.resetToLevel(level, RNG_SALT + 2 + st.stats.bossRetries, 1);
     const boss = st.level.boss;
@@ -474,6 +536,125 @@ export class Game {
     }
     this.dirty = true;
     this.emit();
+  }
+
+  // -------------------------------------------------------------------------
+  // Boss worlds (see engine/worlds and worldRuntime.ts)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Step through the portal into `kind`'s world: stash the main floor exactly
+   * as it stands (level, trail, depth), generate stage 0 with no prior state,
+   * and enter it. Does NOT spend a crystal — the crafting chain does that
+   * before calling this. No-op if a modal is up or a world is already stashed
+   * (walking into the portal twice is not two trips).
+   */
+  enterWorld(kind: WorldKind): void {
+    const st = this.state;
+    if (st.modal || st.stash) return;
+    const hero = st.hero;
+    st.stash = { level: st.level, trail: Array.from(st.trail), depth: st.depth };
+    const module = WORLDS[kind];
+    const level = module.generate(0, st.seed, hero, null);
+    this.enterWorldStage(kind, 0, level);
+  }
+
+  /**
+   * Enter `level` as stage `stage` of `kind`'s world: an ordinary fresh-floor
+   * arrival (`resetToLevel`, own salt, the ordinary transition's heal), then
+   * the briefing. `state.depth` is untouched — a world floor keeps whatever
+   * the main floor's depth was, and `stats.deepest` never moves for it.
+   */
+  private enterWorldStage(kind: WorldKind, stage: number, level: LevelData): void {
+    const st = this.state;
+    this.resetToLevel(level, worldSalt(kind, stage), WORLD_HEAL_FRACTION);
+    st.modal = { kind: 'worldIntro', world: kind, stage };
+    pushLog(st, WORLDS[kind].name);
+    this.dirty = true;
+    this.emit();
+  }
+
+  /**
+   * Back through the portal: the stashed main floor is restored exactly as it
+   * stood, the hero appears beside its portal (or, failing that, at the
+   * level's own start), and the run carries on from there — hp, gear and
+   * everything else the hero is are untouched; only what is per-level (keys,
+   * potions, the queued path, trail) resets, the same as any level entry.
+   */
+  private returnFromWorld(): void {
+    const st = this.state;
+    const stash = st.stash;
+    if (!stash) return;
+    const hero = st.hero;
+    const level = stash.level;
+    const at = level.portal ? this.freeTileAdjacentIn(level, level.portal.pos) : { x: level.start.x, y: level.start.y };
+    st.level = level;
+    st.depth = stash.depth;
+    st.stash = null;
+    hero.pos = { x: at.x, y: at.y };
+    hero.rpos = { x: at.x, y: at.y };
+    hero.carrying = null;
+    hero.keys = { door: 0, chest: 0 };
+    hero.potions = hero.potionCapacity;
+    hero.stun = 0;
+    hero.sleeping = false;
+    hero.hitFlash = 0;
+    hero.lungeT = 0;
+    hero.lunge = undefined;
+    st.trail = new Set<string>(stash.trail);
+    st.trail.add(key(at));
+    st.path = [];
+    st.fx = [];
+    st.sfx = [];
+    st.pointer = null;
+    st.descending = 0;
+    st.compass = null;
+    this.rng = makeRng(hashSeed(st.seed, st.depth, RNG_SALT));
+    this.moveTimer = 0;
+    this.holdTimer = 0;
+    this.engagedId = null;
+    this.regenTimer = 0;
+    this.compassTimer = COMPASS_MS;
+    this.minionSeq = level.monsters.length;
+    pushLog(st, 'Back through the portal');
+    this.dirty = true;
+    this.emit();
+  }
+
+  /** A fresh `WorldCtx` for the current world floor, built for one call. */
+  private worldCtx(): WorldCtx {
+    const st = this.state;
+    const world = st.level.world;
+    if (!world) throw new Error('worldCtx: not a world floor');
+    return makeWorldCtx(this.worldHost, st, world, this.rng);
+  }
+
+  /**
+   * A free floor tile next to `p` in `level` (four sides first, then the
+   * corners), or `p` itself if nothing else is free. Unlike `freeTileNear`
+   * (which only ever looks near the necromancer, in his own open chamber)
+   * this also refuses doors and seals, since it places the hero on an
+   * arbitrary level — the stashed main floor — rather than a boss's room.
+   */
+  private freeTileAdjacentIn(level: LevelData, p: Vec): Vec {
+    const around: Vec[] = [
+      { x: p.x, y: p.y - 1 },
+      { x: p.x + 1, y: p.y },
+      { x: p.x, y: p.y + 1 },
+      { x: p.x - 1, y: p.y },
+      { x: p.x + 1, y: p.y - 1 },
+      { x: p.x + 1, y: p.y + 1 },
+      { x: p.x - 1, y: p.y + 1 },
+      { x: p.x - 1, y: p.y - 1 },
+    ];
+    for (const t of around) {
+      if (!isFloor(level, t)) continue;
+      if (liveMonsterAt(level, t)) continue;
+      if (chestAt(level, t) || altarAt(level, t)) continue;
+      if (closedDoorAt(level, t) || closedSealAt(level, t)) continue;
+      return t;
+    }
+    return p;
   }
 
   /**
@@ -540,6 +721,7 @@ export class Game {
     if (chestAt(st.level, p)) return false;
     if (altarAt(st.level, p)) return false;
     if (offerAt(st.level, p) || forgeAt(st.level, p)) return false; // pedestals are solid
+    if (solidPropAt(st.level, p)) return false; // a world's own furniture is solid too
     if (closedDoorAt(st.level, p) && st.hero.keys.door <= 0) return false;
     if (closedSealAt(st.level, p)) return false; // no key opens a seal; walking into one only reads it
     return true;
@@ -586,6 +768,21 @@ export class Game {
     if (m) {
       this.swingAt(m);
       return;
+    }
+
+    // A world's own furniture: solid props block like a chest, and the
+    // module decides what bumping one means.
+    if (st.level.kind === 'world') {
+      const prop = solidPropAt(st.level, next);
+      if (prop) {
+        st.path.length = 0;
+        this.holdTimer = 0;
+        const face = dirFromVec(unitToward(hero.pos, next));
+        if (face) hero.facing = face;
+        WORLDS[st.level.world!.kind].onBump?.(this.worldCtx(), prop);
+        this.dirty = true;
+        return;
+      }
     }
 
     const offer = offerAt(st.level, next);
@@ -1268,7 +1465,27 @@ export class Game {
       }
     }
 
-    if (exitAt(level, tile)) {
+    // A world's own carriable furniture: picked up by walking onto it, hands
+    // full exactly as an orb leaves them (see `dropOrb`).
+    if (level.kind === 'world' && !hero.carrying) {
+      const prop = (level.props ?? []).find((p) => !p.hidden && p.carriable && p.pos.x === tile.x && p.pos.y === tile.y);
+      if (prop) {
+        hero.carrying = prop.id;
+        prop.hidden = true;
+        pushText(st, tile, 'Picked up', GOLD, 1000);
+        pushSfx(st, 'orbLift');
+        this.dirty = true;
+      }
+    }
+
+    if (level.kind === 'world' && level.world) {
+      WORLDS[level.world.kind].onEnter?.(this.worldCtx(), tile);
+    }
+
+    // The exit is a maze/boss/shop notion; a world floor is left by the
+    // module's own means (`ctx.goto`/`ctx.returnHome`), never by walking onto
+    // whatever tile `generate` happened to set as `level.exit`.
+    if (level.kind !== 'world' && exitAt(level, tile)) {
       // The stairs of a minotaur / angel chamber ARE the objective: claim the
       // reward first, then descend once the player dismisses the popup. A
       // wing's own stairs (`level.wingExit`) go down exactly the same way.
@@ -1974,6 +2191,11 @@ function reviveState(saved: GameState): GameState {
   if (s.level.kind === 'boss' && s.level.boss && !s.level.boss.defeated) {
     s.modal = { kind: 'bossIntro', boss: s.level.boss.kind };
   }
+  // Same reasoning for a world floor: reloaded mid-stage, its briefing is
+  // shown again rather than letting the module's own tick run unread.
+  if (s.level.kind === 'world' && s.level.world && !s.level.world.won) {
+    s.modal = { kind: 'worldIntro', world: s.level.world.kind, stage: s.level.world.stage };
+  }
   const hero = s.hero as Hero;
   if (!hero.keys) hero.keys = { door: 0, chest: 0 };
   if (!Array.isArray(hero.items)) hero.items = [];
@@ -1984,6 +2206,11 @@ function reviveState(saved: GameState): GameState {
   if (!Array.isArray(hero.relics)) hero.relics = [];
   if (!Array.isArray(hero.trophies)) hero.trophies = [];
   if (!Array.isArray(s.boons)) s.boons = [];
+  if (s.stash === undefined) s.stash = null;
+  if (typeof s.freeze !== 'number') s.freeze = 0;
+  if (!Array.isArray(s.collection)) s.collection = [];
+  if (typeof hero.brass !== 'number') hero.brass = 0;
+  if (!Array.isArray(hero.crystals)) hero.crystals = [];
   hero.stun = 0;
   if (typeof hero.sleeping !== 'boolean') hero.sleeping = false;
   hero.hitFlash = 0;
