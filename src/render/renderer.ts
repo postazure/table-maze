@@ -2451,7 +2451,7 @@ export class Renderer implements TileMapper {
 
     const cx = hero.rpos.x * t + t / 2;
     const rowW = pips.length * size + (pips.length - 1) * gap;
-    const bottom = hero.rpos.y * t + t / 2 - t * 1.32;
+    const bottom = hero.rpos.y * t + t / 2 - t * 1.1;
     const y = Math.round((bottom - size) / sub) * sub;
     let x = Math.round((cx - rowW / 2) / sub) * sub;
 
@@ -2522,7 +2522,7 @@ export class Renderer implements TileMapper {
     if (fx.kind === 'text') {
       const progress = Math.max(0, Math.min(1, fx.t / fx.ttl));
       const cx = fx.pos.x * t + t / 2;
-      const cy = fx.pos.y * t + t / 2 - progress * t * 0.8;
+      const cy = fx.pos.y * t + t / 2 - (fx.rise0 ?? 0) * t - progress * t * 0.8;
       ctx.save();
       ctx.globalAlpha = Math.max(0, 1 - progress);
       ctx.font = `${Math.max(6, Math.round(t * 0.32))}px "Press Start 2P", monospace`;

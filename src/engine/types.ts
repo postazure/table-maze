@@ -911,7 +911,13 @@ export interface Boon {
  * dropped once t >= ttl.
  */
 export type Effect =
-  | { kind: 'text'; pos: Vec; text: string; color: string; t: number; ttl: number }
+  /**
+   * `rise0`: where the text starts, in tiles above the entity's tile center
+   * (0 = dead center, the default). Combat damage numbers start well above
+   * that so they never open on top of the hp bar that just appeared; it
+   * still rises the same distance from there.
+   */
+  | { kind: 'text'; pos: Vec; text: string; color: string; t: number; ttl: number; rise0?: number }
   | { kind: 'flash'; pos: Vec; color: string; t: number; ttl: number }
   | { kind: 'shake'; t: number; ttl: number; strength: number }
   /** Jagged lightning through `points` (tile coords, in order). */

@@ -325,7 +325,18 @@ down where they stand (`dropOrb`), hp is set to ~40% of max, the hero is
 `stun`ned for ~900ms, and moved back along the trail ~4 tiles (walk back through
 the most recently visited trail tiles that are free floor; fall back to any free
 adjacent tile). Push a "Knocked down!" message and a shake effect.
-Out of combat (sinceCombat > 3000ms) hero regains 1 hp every ~600ms.
+Regen only runs while the hero is truly standing still: no queued path, the
+tile hasn't changed, and no combat either direction landed this tick
+(`stillTimer`, `Game.tick`). The first `STILL_REGEN_DELAY_MS` (3s) of that
+heals nothing; past it the rate ramps up over `STILL_REGEN_RAMP_MS` (12s) to
+a peak expressed as a *fraction of max hp per second*
+(`STILL_REGEN_PEAK_FRAC_PER_S`), not a fixed hp number, so a hero with four
+hearts and one with forty heal to 80% max hp on the same clock (~30s
+standing still) instead of the big one taking many times longer. That peak
+fraction is derived from `STILL_REGEN_TARGET_S`/`STILL_REGEN_TARGET_FRACTION`
+rather than hand-picked, so retuning the target retunes the rate. The regen
+ring (`stats.regenMult`) multiplies the peak rate directly (3x), and moving,
+queuing a path, or landing/taking a hit resets `stillTimer` to 0.
 
 ## monsters.ts
 ```ts

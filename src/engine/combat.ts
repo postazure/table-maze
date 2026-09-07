@@ -53,15 +53,23 @@ export const GREY = '#c9c6d6';
 export const SPARK = '#bfe3ff';
 export const ICE = '#bfe3ff';
 
-/** Push a floating text effect at `pos`. */
+/**
+ * Where a combat hit's floating number starts, in tiles above the target's
+ * center — clear of even the tallest hp bar (a boss's, `sizeScale` 1.05) so
+ * it never opens on top of the bar it just caused to appear.
+ */
+export const DAMAGE_TEXT_RISE0 = 0.75;
+
+/** Push a floating text effect at `pos`. `rise0` (tiles above center) shifts where it starts; see `Effect`. */
 export function pushText(
   state: GameState,
   pos: Vec,
   text: string,
   color: string,
   ttl = 900,
+  rise0?: number,
 ): void {
-  const e: Effect = { kind: 'text', pos: { x: pos.x, y: pos.y }, text, color, t: 0, ttl };
+  const e: Effect = { kind: 'text', pos: { x: pos.x, y: pos.y }, text, color, t: 0, ttl, rise0 };
   state.fx.push(e);
 }
 
@@ -277,7 +285,7 @@ export function damageMonster(
   // Bosses, angels and the necromancer cannot be hurt at all: no hit flash, no
   // combat clocks, no on-hit procs. Just a word so the player stops trying.
   if (m.invulnerable) {
-    pushText(state, m.pos, 'Immune', GREY);
+    pushText(state, m.pos, 'Immune', GREY, 900, DAMAGE_TEXT_RISE0);
     pushSfx(state, 'immune');
     return;
   }
@@ -291,7 +299,7 @@ export function damageMonster(
   // Poison keeps ticking after the hero has walked away: it must not hold the
   // hero's out-of-combat regen hostage.
   if (source !== 'poison') hero.sinceCombat = 0;
-  pushText(state, m.pos, opts.text ?? `-${amount}`, opts.color ?? WHITE);
+  pushText(state, m.pos, opts.text ?? `-${amount}`, opts.color ?? WHITE, 900, DAMAGE_TEXT_RISE0);
   // The hero's own swing is the one that gets a "connected" sound; fireballs,
   // lightning, poison and thorns already announce themselves.
   if (source === 'hero') pushSfx(state, 'hit');
@@ -437,7 +445,7 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): boolean {
   hero.hp -= dmg - soaked;
   hero.hitFlash = 150;
 
-  pushText(state, hero.pos, `-${dmg}`, soaked > 0 ? WARD : RED);
+  pushText(state, hero.pos, `-${dmg}`, soaked > 0 ? WARD : RED, 900, DAMAGE_TEXT_RISE0);
   pushShake(state, bossHit ? BOSS_SHAKE : 4, bossHit ? 380 : 180);
   pushSfx(state, 'hurt');
   if (m.kind === 'angel') {
