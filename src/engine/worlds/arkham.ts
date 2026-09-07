@@ -292,7 +292,7 @@ function generate(stage: number, runSeed: number, hero: Hero, data: WorldData['d
 
   const startPos: Vec = { x: 9, y: 1 };
   const portalPos: Vec = { x: 8, y: 1 };
-  props.push({ id: 'home', pos: portalPos, kind: 'portal-home', solid: true, art: 'portal-home' });
+  props.push({ id: 'home', pos: portalPos, kind: 'portal-home', solid: true, art: 'portal-home', hidden: true });
 
   const AVENUE_X = [8, 9, 17, 18];
   const AVENUE_Y = [6, 7, 13, 14, 20, 21, 27, 28];

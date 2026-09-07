@@ -49,8 +49,8 @@ export interface WorldHost {
 /**
  * The world is won: the collectible is the hero's for good (deduped, and
  * written to the storage slot that survives the run ending), the floor
- * remembers it, and the popup says so. Whether the hero has yet found the
- * way home is between them and the module's own portal prop.
+ * remembers it, the popup says so, and the way home — hidden until now, so a
+ * hero can't stumble home before the world is done — opens.
  */
 function finish(state: GameState): void {
   const world = state.level.world;
@@ -61,6 +61,8 @@ function finish(state: GameState): void {
     saveCollection(state.collection);
   }
   world.won = true;
+  const home = (state.level.props ?? []).find((p) => p.kind === 'portal-home');
+  if (home) home.hidden = false;
   pushLog(state, `Won ${module.collectible.name}`);
   pushSfx(state, 'collect');
   state.modal = { kind: 'worldWon', world: world.kind, collectible: module.collectible.name };

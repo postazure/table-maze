@@ -161,6 +161,7 @@ test('surface: valid, deterministic, five crypts, exactly four pieces, contrapti
     assert.ok(contraption, `seed ${seed}: a contraption`);
     const home = (a.props ?? []).find((p) => p.kind === 'portal-home');
     assert.ok(home, `seed ${seed}: a portal home`);
+    assert.equal(home!.hidden, true, `seed ${seed}: nobody has finished yet, so the way home stays hidden`);
 
     // Every crypt's door tile, and the contraption, reachable from start
     // (solid props block like chests everywhere).
@@ -264,6 +265,18 @@ test('regenerating the surface keeps delivered pieces gone and done crypts done'
   assert.equal(crypts[2].state, 'shut');
   const contraption = (again.props ?? []).find((p) => p.kind === 'contraption')!;
   assert.equal(contraption.state, 'two');
+});
+
+test('the surface portal home reveals once the contraption is finished', () => {
+  const seed = 5;
+  const first = CEMETERY.generate(0, seed, newHero(), null);
+  const data = first.world!.data as { finished: boolean };
+  assert.equal(data.finished, false);
+  data.finished = true;
+  const again = CEMETERY.generate(0, seed, newHero(), data);
+  const home = (again.props ?? []).find((p) => p.kind === 'portal-home')!;
+  assert.equal(home.hidden, false);
+  assert.equal(again.world?.won, true);
 });
 
 // ---------------------------------------------------------------------------

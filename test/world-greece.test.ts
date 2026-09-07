@@ -236,6 +236,23 @@ test('every stage generates an odd-dimensioned, solid-ringed level with the prop
   }
 });
 
+test('the hub portal home is hidden until all three statues are lit, then revealed', () => {
+  const lv = GREECE.generate(0, 7, hero(), null);
+  const portal = (lv.props ?? []).find((p) => p.kind === 'portal-home');
+  assert.ok(portal, 'the hub always has a portal-home prop');
+  assert.equal(portal!.hidden, true, 'nobody has won yet: the way home stays hidden');
+  assert.equal(lv.world?.won, false);
+
+  const data = lv.world!.data as { placed: Record<string, boolean> };
+  data.placed.zeus = true;
+  data.placed.poseidon = true;
+  data.placed.hades = true;
+  const won = GREECE.generate(0, 7, hero(), data as unknown as WorldData['data']);
+  const wonPortal = (won.props ?? []).find((p) => p.kind === 'portal-home');
+  assert.equal(wonPortal!.hidden, false, 'all three placed: the way home is open');
+  assert.equal(won.world?.won, true);
+});
+
 test('generation is deterministic for a given (stage, seed, data)', () => {
   for (const seed of SEEDS) {
     for (let stage = 0; stage <= 3; stage++) {

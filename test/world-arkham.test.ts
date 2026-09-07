@@ -275,6 +275,13 @@ test('bringing the tablet to the circle finishes the world', () => {
   assert.ok(calls.freezes.length > 0);
 });
 
+test('the portal home starts hidden: the mystery is not solved yet', () => {
+  const level = ARKHAM.generate(0, 20260906, newHero(), null);
+  const home = propAt(level, 'home');
+  assert.equal(home.kind, 'portal-home');
+  assert.equal(home.hidden, true);
+});
+
 test('walking onto the circle without the tablet does nothing but flavour', () => {
   const level = ARKHAM.generate(0, 20260906, newHero(), null);
   const { ctx, calls } = makeCtx(level);

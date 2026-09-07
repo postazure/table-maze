@@ -333,7 +333,14 @@ function buildSurface(runSeed: number, hero: Hero, data: CemeteryData): LevelDat
     art: 'contraption',
     state: contraptionState(data.pieces),
   });
-  props.push({ id: 'home', pos: { ...PORTAL_POS }, kind: 'portal-home', solid: true, art: 'portal-home' });
+  props.push({
+    id: 'home',
+    pos: { ...PORTAL_POS },
+    kind: 'portal-home',
+    solid: true,
+    art: 'portal-home',
+    hidden: !data.finished,
+  });
   const carried = carriedPiece(hero, data);
   if (carried) props.push(carried);
   for (let i = 0; i < FENCE_POS.length; i++) {
