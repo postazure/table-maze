@@ -733,7 +733,7 @@ test('the forge stands under the podiums and raises a worn item a level for gold
   assert.equal(hero.gold, 9999, 'nothing to upgrade, nothing paid');
   g.dismissModal();
 
-  // Wearing a sword: one row, priced, and buying it is the shop's purchase.
+  // Wearing a sword: one row, priced, and buying it is the forge's own purchase.
   const sword: MagicItem = { kind: 'longSword', level: 3 };
   equip(hero, sword);
   step(g, { x: FORGE_TILE.x, y: FORGE_TILE.y + 1 });
@@ -745,16 +745,24 @@ test('the forge stands under the podiums and raises a worn item a level for gold
   assert.equal(sword.level, 4);
   assert.equal(hero.gear.offense?.level, 4);
   assert.equal(hero.gold, 9999 - upgradePrice({ kind: 'longSword', level: 3 }));
-  assert.equal(level.shop?.bought, true);
+  assert.equal(level.shop?.boughtUpgrade, true);
+  assert.equal(level.shop?.boughtItem, false, 'a podium purchase is still open');
   assert.equal(st.modal?.kind, 'upgraded');
   assert.ok(st.sfx.includes('forge'));
   g.dismissModal();
 
-  // Sold out now: the podiums refuse too.
+  // The podiums are not sold out: using the forge does not spend a podium's
+  // one item, so a hero may buy both in the same visit.
   const offer = level.shop?.offers[0];
   assert.ok(offer);
   g.buyOffer(offer!.id);
-  assert.equal(hero.gear[ITEM_SLOT[offer!.item.kind]]?.kind === offer!.item.kind && offer!.item.kind !== 'longSword', false, 'one purchase per shop');
+  assert.equal(hero.gear[ITEM_SLOT[offer!.item.kind]]?.kind, offer!.item.kind, 'the podium still sells after the forge is used');
+  assert.equal(level.shop?.boughtItem, true);
+
+  // But the forge itself is spent: a second upgrade is refused.
+  const goldBeforeSecondUpgrade = hero.gold;
+  g.buyUpgrade('offense');
+  assert.equal(hero.gold, goldBeforeSecondUpgrade, 'the forge already sold its one upgrade');
 });
 
 test('the forge refuses a short purse', () => {
@@ -765,7 +773,7 @@ test('the forge refuses a short purse', () => {
   step(g, { x: FORGE_TILE.x, y: FORGE_TILE.y + 1 });
   g.buyUpgrade('spirit');
   assert.equal(worn.level, 2);
-  assert.equal(st.level.shop?.bought, false);
+  assert.equal(st.level.shop?.boughtUpgrade, false);
   assert.equal(st.modal?.kind, 'shopForge', 'the popup stays up');
 });
 

@@ -881,7 +881,7 @@ test('a podium fills four tiles and any of them opens the offer', () => {
   assert.equal(modal.gold, 9999);
   assert.equal(modal.soldOut, false);
   assert.equal(st.hero.gold, 9999, 'looking is free');
-  assert.equal(shop.bought, false);
+  assert.equal(shop.boughtItem, false);
 });
 
 test('buying from the offer popup pays, equips and shows the prize', () => {
@@ -895,7 +895,7 @@ test('buying from the offer popup pays, equips and shows the prize', () => {
   g.buyOffer(offer.id);
 
   assert.equal(st.hero.gold, 9999 - offer.price, 'the gold is spent');
-  assert.equal(shop.bought, true);
+  assert.equal(shop.boughtItem, true);
   assert.equal(st.hero.gear[ITEM_SLOT[offer.item.kind]]?.kind, offer.item.kind);
   const modal = st.modal as { kind: string; item: MagicItem; replaced: MagicItem | null } | null;
   assert.ok(modal, 'a popup shows the new item');
@@ -936,7 +936,7 @@ test('a podium the hero cannot afford opens but will not sell', () => {
 
   g.buyOffer(offer.id);
   assert.equal(st.hero.gold, 0);
-  assert.equal(shop.bought, false);
+  assert.equal(shop.boughtItem, false);
   assert.equal(st.hero.gear.offense, null);
   assert.equal((st.modal as { kind: string }).kind, 'shopOffer', 'the popup stays up');
 });

@@ -18,9 +18,9 @@ const SLOT_LABEL: Record<ItemSlot, string> = {
 };
 
 /**
- * The forge: every worn item with the price of one more level on it. Buying
- * one is the shop's purchase, so the buttons grey out once anything has been
- * bought here, or when the purse is short of that item's price. A hero
+ * The forge: every worn item with the price of one more level on it. It is
+ * its own one-time purchase, so the buttons grey out once the forge has
+ * already been used, or when the purse is short of that item's price. A hero
  * wearing nothing is told so and sent to the podiums.
  */
 export function ShopForgeModal({ forge, onBuy, onClose }: ShopForgeModalProps) {
@@ -88,7 +88,7 @@ export function ShopForgeModal({ forge, onBuy, onClose }: ShopForgeModalProps) {
           </button>
         </div>
 
-        {soldOut && <div className="shop-warn">You already bought something in this shop.</div>}
+        {soldOut && <div className="shop-warn">You already used the forge in this shop.</div>}
       </div>
     </div>
   );

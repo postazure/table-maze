@@ -1406,17 +1406,19 @@ export class Renderer implements TileMapper {
     // item floats above it, the price tag hangs below), so the range test is
     // deliberately generous.
     if (state.level.kind === 'shop' && state.level.shop) {
-      const dimmed = state.level.shop.bought;
+      const itemsDimmed = state.level.shop.boughtItem;
       for (const offer of state.level.shop.offers) {
         const near =
           offer.pos.x + PODIUM_TILES > startX - 1 &&
           offer.pos.x < endX + 1 &&
           offer.pos.y + PODIUM_TILES > startY - 2 &&
           offer.pos.y < endY + 2;
-        if (near) this.drawShopOffer(ctx, offer, dimmed, t);
+        if (near) this.drawShopOffer(ctx, offer, itemsDimmed, t);
       }
       const forge = state.level.shop.forge;
-      if (forge && this.inRange(forge.pos, startX - 2, endX + 2, startY - 2, endY + 2)) this.drawForge(ctx, forge, dimmed, t);
+      if (forge && this.inRange(forge.pos, startX - 2, endX + 2, startY - 2, endY + 2)) {
+        this.drawForge(ctx, forge, state.level.shop.boughtUpgrade, t);
+      }
     }
 
     // Monsters.
@@ -1902,7 +1904,7 @@ export class Renderer implements TileMapper {
     ctx.restore();
   }
 
-  /** The shop's forge: a 2x2 block like a podium, dimmed with the rest once anything is bought. */
+  /** The shop's forge: a 2x2 block like a podium, dimmed once it has been used. */
   private drawForge(ctx: CanvasRenderingContext2D, forge: ShopForge, dimmed: boolean, t: number): void {
     const block = PODIUM_TILES * t;
     const bx = Math.round(forge.pos.x * t);

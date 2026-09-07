@@ -118,7 +118,7 @@ export function generateShopLevel(depth: number, runSeed: number, hero: Hero): L
     seed,
     kind: 'shop',
     theme: themeForDepth(depth).id,
-    shop: { offers, forge: { pos: { x: FORGE_TILE.x, y: FORGE_TILE.y } }, bought: false },
+    shop: { offers, forge: { pos: { x: FORGE_TILE.x, y: FORGE_TILE.y } }, boughtItem: false, boughtUpgrade: false },
     bench: { pos: { ...BENCH_POS } },
     width: SHOP_WIDTH,
     height: SHOP_HEIGHT,
