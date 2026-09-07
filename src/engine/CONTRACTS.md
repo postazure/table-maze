@@ -91,9 +91,13 @@ Requirements:
   door key placed somewhere reachable WITHOUT passing through that door (or
   any later door). Verify with BFS using `blocked` = closed doors.
 - Chests: 3 + floor(depth / 2) chests (cap 8) in dead ends / off-path branches,
-  some may sit behind doors. One chest key per chest, placed reachable
-  (respecting the door ordering above). Chest keys and door keys are distinct
-  kinds.
+  some may sit behind doors. After `rollChestLoot` and the floor's lens/brass
+  placement run, any of these that turned up nothing but gold and xp — no
+  item, lens, magic or brass — becomes a `GoldPile` instead (same tile,
+  `level.goldPiles`, walkable, no key): a chest is only ever locked if it has
+  something worth a lock. One chest key per *remaining* chest, placed
+  reachable (respecting the door ordering above). Chest keys and door keys
+  are distinct kinds.
 - Monsters: count scales with depth (≈ 5 + 1.5·depth, cap 18). Mix:
   guards on chokepoints near chests/doors/exit, patrols along straight-ish
   corridor runs (give them a `patrolPath` of 4-10 tiles walked via BFS),
@@ -206,6 +210,7 @@ export function passageAt(level: LevelData, p: Vec): Passage | null;
 export const LENS_CORE: number;    // tiles revealed at full strength
 export const LENS_RADIUS: number;  // ...and where the reveal has faded to nothing
 export const LENS_ALPHA: number;   // how see-through the brick ever gets (< 1)
+export const MOUTH_SIGHT: number;  // 3: tiles from a mouth before the lamp lights on its own
 export function lensRevealAt(dist: number): number;
 export function lensLit(level: LevelData, hero: Hero, depth: number): boolean;
 ```
@@ -221,13 +226,15 @@ Requirements:
 - A lens is bound to the three-floor themed set it was found in
   (`Hero.lens.set`), works nowhere else, and is dropped by `dismissModal` when
   the `lensShatter` popup closes on the way out of that set's shop.
-- `lensLit` is true only while the hero stands on hidden ground or one tile
-  from a mouth, and it is the *only* thing that ever shows a passage. Nothing
-  marks one from further off — no seam, no glow, no map marker — so a passage
-  is found by walking past its mouth and watching the wall open. Walking a
-  corridor that merely runs alongside one shows nothing. Never add an
-  indicator here: the reward for covering ground is the point, and a floor is
-  meant to keep its passages from a player who took the direct route down.
+- `lensLit` is true only while the hero stands on hidden ground or within
+  `MOUTH_SIGHT` (3) tiles of a mouth, and it is the *only* thing that ever
+  shows a passage — no seam, no glow, no map marker, no distinct sprite for
+  the mouth itself. Beyond that reach a passage is found by walking within it
+  and watching the wall open. Walking a corridor that merely runs alongside
+  one, out past `MOUTH_SIGHT`, still shows nothing. Don't add a marker beyond
+  this reveal radius: the reward for covering ground is the point, and a
+  floor is meant to keep its passages from a player who took the direct route
+  down.
 - `passageTiles`/`passageMouths` cache per `LevelData` in a `WeakMap`: they are
   asked once per BFS node while monsters path.
 
@@ -318,7 +325,18 @@ down where they stand (`dropOrb`), hp is set to ~40% of max, the hero is
 `stun`ned for ~900ms, and moved back along the trail ~4 tiles (walk back through
 the most recently visited trail tiles that are free floor; fall back to any free
 adjacent tile). Push a "Knocked down!" message and a shake effect.
-Out of combat (sinceCombat > 3000ms) hero regains 1 hp every ~600ms.
+Regen only runs while the hero is truly standing still: no queued path, the
+tile hasn't changed, and no combat either direction landed this tick
+(`stillTimer`, `Game.tick`). The first `STILL_REGEN_DELAY_MS` (3s) of that
+heals nothing; past it the rate ramps up over `STILL_REGEN_RAMP_MS` (12s) to
+a peak expressed as a *fraction of max hp per second*
+(`STILL_REGEN_PEAK_FRAC_PER_S`), not a fixed hp number, so a hero with four
+hearts and one with forty heal to 80% max hp on the same clock (~30s
+standing still) instead of the big one taking many times longer. That peak
+fraction is derived from `STILL_REGEN_TARGET_S`/`STILL_REGEN_TARGET_FRACTION`
+rather than hand-picked, so retuning the target retunes the rate. The regen
+ring (`stats.regenMult`) multiplies the peak rate directly (3x), and moving,
+queuing a path, or landing/taking a hit resets `stillTimer` to 0.
 
 ## monsters.ts
 ```ts
@@ -336,6 +354,16 @@ straight back in still re-aggros it — then walks back to `chaseFrom` (where it
 was standing when this chase began, set on the idle -> chasing transition and
 kept through any returning -> chasing re-aggro). Arriving settles it to `idle`
 and clears `chaseFrom`.
+A lurker (or a sprung mimic, which hunts the same way) only ever notices the
+hero by sight otherwise, so `damageMonster` (combat.ts) also aggroes it
+straight to `chasing` — same as the idle -> chasing transition, `chaseFrom`
+set to its current spot — the moment a hit from source `hero`, `fire` or
+`chain` lands, whether or not the hero is within its `sightRange`: a long
+sword's reach, a fire staff's burn or chain lightning hopping to it should
+never land on something that just stands there and takes it. A `poison` tick
+(it keeps ticking after the hero has walked away) and a hit bounced back by
+the hero's own `thorn` mail do not aggro it — neither one means the hero
+found it.
 
 ### Passages and monsters (monsters.ts)
 A monster stays in the world it was spawned into: `moveBlocked` and
@@ -426,6 +454,13 @@ cosmetic timers keep running.
   `hero.relics`; an orb on the floor is picked up (`hero.carrying`); the
   cradle of the carried orb's seal takes it and opens the seal; stepping off
   hidden ground with an orb sends it back to `orb.home`.
+- `pickUpOrb` factors that floor-orb pickup out so `pointerAt` can call it too:
+  a knockdown with nowhere `retreatTile` calls safe to retreat to can leave
+  the hero asleep standing exactly on the orb `dropOrb` just set down —
+  walking never carries the hero onto a tile they're already on, so the
+  ordinary `onEnter` pickup would never fire. Tapping the hero's own tile
+  (`pointerAt`'s `eq(tile, hero.pos)` branch) picks up a floor orb there
+  directly instead of only clearing the path.
 - `openSeal` sets `open = true` with a ring, a shake, a log line and the
   `seal` sound. Fire, ice and the long sword never reach through a shut one.
 - `winBoss` pushes the boss's kind onto `hero.trophies`. `offerTrophy`
@@ -450,7 +485,10 @@ cleared).
 Hero walks the path at ~7 tiles/s (moveInterval ≈ 140ms), lerping `rpos`.
 Stepping on a key picks it up; on a chest with a chest key opens it (consumes
 the key, applies loot, item bonuses) — except a `Chest.secret` chest (a wing's
-own), which opens with no key and consumes none; on the exit starts the descend: after
+own), which opens with no key and consumes none; on a gold pile picks it up
+the same instant way a key does (`goldPileAt`, `combat.ts`), no modal, gold
+and xp scaled by `stats.goldMult`/`xpMult` same as a chest's would be; on the
+exit starts the descend: after
 ~700ms generate `depth+1`, reset trail/path, place hero at start, keep hero
 stats but NOT keys (keys are per-level), heal 50% of missing hp.
 `trail` gets every tile the hero stands on.
@@ -1094,8 +1132,8 @@ doors / chests, deterministic for (depth, runSeed)):
   come looking for detail, where the HUD chip and the pip over the hero are
   read mid-fight and stay wordless. For the same reason `shrineDescription`
   says what an effect does but never how long it lasts — that would be two
-  clocks for one effect. With nothing running the section explains what
-  alcoves are and names the hero's spirit.
+  clocks for one effect. With nothing running the section just says so; how
+  shrines work belongs to the Guide tab, not this one.
 - The Hero tab's "Carried" section lists the lens, an orb in hand, every
   relic and every trophy; a "Boons" section lists the run's boons with runs
   left. The chest popup grows two buttons (wear it / melt down) when it holds

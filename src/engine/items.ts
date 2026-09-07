@@ -465,7 +465,7 @@ function itemEffect(item: MagicItem, s: ItemStats): string {
     case 'phoenixFeather':
       return `When you would be knocked down, you burst back up with half your hearts instead of sleeping. Works once every ${sec(s.phoenixCooldownMs)}.`;
     case 'regenRing':
-      return `Hearts refill ${s.regenMult}x faster out of combat, and sleep heals twice as fast.`;
+      return `Hearts refill ${s.regenMult}x faster while standing still, and sleep heals twice as fast.`;
     case 'stoneRing':
       return `+${s.defBonus} defense, and monsters can no longer shove you back.`;
     case 'goldCharm':

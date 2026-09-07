@@ -161,6 +161,19 @@ test('generateLevel: structure, entities and solvability', () => {
         if (!hidden.has(key(c.pos))) {
           assert.equal(floorNeighbors(lv, c.pos).length, 1, `${where}: chest ${c.id} must be in a dead end`);
         }
+        // A remaining ordinary chest is never gold-only: that one would have
+        // become a gold pile instead, and asked for no key.
+        if (!c.secret && !c.mimic) {
+          assert.ok(c.loot.item || c.loot.lens || c.loot.magic || c.loot.brass, `${where}: chest ${c.id} is gold-only but kept its lock`);
+        }
+      }
+
+      // gold piles: what a gold-only chest became. Walkable, so no dead-end
+      // requirement; untaken and paying something on every fresh floor.
+      for (const g of lv.goldPiles) {
+        assert.equal(g.taken, false, where);
+        assert.ok(g.gold > 0, `${where}: gold pile ${g.id} pays nothing`);
+        assert.ok(!hidden.has(key(g.pos)), `${where}: a gold pile inside a wing`);
       }
 
       // monsters
@@ -197,11 +210,11 @@ test('generateLevel: structure, entities and solvability', () => {
       }
       // ids unique
       const ids = new Set(
-        [...lv.doors, ...lv.keys, ...lv.chests, ...lv.monsters].map((e) => e.id),
+        [...lv.doors, ...lv.keys, ...lv.chests, ...lv.goldPiles, ...lv.monsters].map((e) => e.id),
       );
       assert.equal(
         ids.size,
-        lv.doors.length + lv.keys.length + lv.chests.length + lv.monsters.length,
+        lv.doors.length + lv.keys.length + lv.chests.length + lv.goldPiles.length + lv.monsters.length,
         `${where}: entity ids unique per collection`,
       );
 
@@ -209,6 +222,7 @@ test('generateLevel: structure, entities and solvability', () => {
       assert.ok(bfsPath(lv, lv.start, lv.exit), `${where}: exit unreachable`);
       for (const c of lv.chests) assert.ok(open.has(key(c.pos)), `${where}: chest unreachable`);
       for (const k of lv.keys) assert.ok(open.has(key(k.pos)), `${where}: key unreachable`);
+      for (const g of lv.goldPiles) assert.ok(open.has(key(g.pos)), `${where}: gold pile unreachable`);
 
       // keys obtainable in order
       assert.ok(canProgress(lv), `${where}: progression blocked`);

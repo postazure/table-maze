@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Tile, key } from '../src/engine/types';
+import { Tile, key, manhattan } from '../src/engine/types';
 import type { LevelData, Vec } from '../src/engine/types';
 import { Game } from '../src/engine/game';
 import {
@@ -18,6 +18,7 @@ import {
   lensLit,
   lensRevealAt,
   mouthAt,
+  MOUTH_SIGHT,
 } from '../src/engine/lens';
 import { gateGuards, generateLevel, passageTilesOf } from '../src/engine/maze';
 import { bfsDistances, floorNeighbors, isFloor } from '../src/engine/pathfind';
@@ -55,6 +56,7 @@ function mkLevel(rows: string[], over: Partial<LevelData> = {}): LevelData {
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
     ...over,
   };
@@ -140,7 +142,7 @@ test('the reveal is full strength underfoot and gone by the edge', () => {
   }
 });
 
-test('the light is lit inside a passage and on its doorstep, never down the corridor', () => {
+test('the light is lit inside a passage and within MOUTH_SIGHT of its mouth, never further down the corridor', () => {
   const level = passageLevel();
   const hero = newHero();
   hero.lens = { depth: 1, set: 0 };
@@ -149,8 +151,13 @@ test('the light is lit inside a passage and on its doorstep, never down the corr
   assert.equal(lensLit(level, hero, 1), true, 'standing in the passage');
   hero.pos = { x: 1, y: 1 };
   assert.equal(lensLit(level, hero, 1), true, 'standing on the mouth of one');
+  // The mouth at (1, 2): three tiles off down the corridor still lights it...
+  hero.pos = { x: 3, y: 1 };
+  assert.equal(manhattan(hero.pos, { x: 1, y: 2 }), MOUTH_SIGHT);
+  assert.equal(lensLit(level, hero, 1), true, `within ${MOUTH_SIGHT} tiles of the mouth`);
+  // ...one tile further and it goes dark again.
   hero.pos = { x: 4, y: 1 };
-  assert.equal(lensLit(level, hero, 1), false, 'walking the corridor above it');
+  assert.equal(lensLit(level, hero, 1), false, 'walking the corridor well past it');
 
   // ...and never at all without the lens.
   hero.lens = null;

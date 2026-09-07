@@ -128,6 +128,7 @@ export function generateShopLevel(depth: number, runSeed: number, hero: Hero): L
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
     passages: [bench],
   };

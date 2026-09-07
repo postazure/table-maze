@@ -18,6 +18,7 @@ import type {
   LevelData,
   MagicItem,
   Monster,
+  Orb,
   Relic,
   Rng,
   Rune,
@@ -53,6 +54,7 @@ import {
   dropOrb,
   exitAt,
   gameOver,
+  goldPileAt,
   heroAttack,
   keyAt,
   liveMonsterAt,
@@ -133,12 +135,25 @@ const DESCEND_MS = 700;
 const MAX_PATH = 40;
 /** how far a single drag jump may be auto-pathed. */
 const DRAG_PATH_MAX = 8;
-const REGEN_DELAY = 3000;
-const REGEN_MS = 600;
-/** How long the hero must stand still (not knocked out) before regen speeds up. */
-const STILL_REGEN_DELAY = 3000;
-/** Regen rate multiplier while the hero has been standing still long enough. */
-const STILL_REGEN_MULT = 1.25;
+/**
+ * Standing-still regen. Nothing heals for the first `STILL_REGEN_DELAY_MS` of
+ * holding still (a breather, not a reward for pausing mid-step); past that
+ * the rate ramps up over `STILL_REGEN_RAMP_MS` to a peak that is a *fraction
+ * of the hero's own max hp per second*, not a fixed hp number — so a hero
+ * with four hearts and a hero with forty heal on the same clock instead of
+ * the small one finishing in seconds and the large one taking minutes.
+ * `STILL_REGEN_PEAK_FRAC_PER_S` is derived, not hand-picked: it is whatever
+ * makes standing still for `STILL_REGEN_TARGET_S` total (delay + ramp +
+ * however long at full rate) heal from empty to `STILL_REGEN_TARGET_FRACTION`
+ * of max hp, so retuning the target retunes the rate instead of going stale.
+ */
+const STILL_REGEN_DELAY_MS = 3000;
+const STILL_REGEN_RAMP_MS = 12000;
+const STILL_REGEN_TARGET_S = 30;
+const STILL_REGEN_TARGET_FRACTION = 0.8;
+const STILL_REGEN_PEAK_FRAC_PER_S =
+  STILL_REGEN_TARGET_FRACTION /
+  (STILL_REGEN_RAMP_MS / 1000 / 2 + (STILL_REGEN_TARGET_S - STILL_REGEN_DELAY_MS / 1000 - STILL_REGEN_RAMP_MS / 1000));
 /** salt so the per-level rng differs from the generator's stream. */
 const RNG_SALT = 7919;
 /** Red blink for "you cannot do that" (locked door / chest). */
@@ -185,9 +200,10 @@ export class Game {
   private angelTimer = 0;
   /** Monster the hero last swung at; auto-attacked while it stays in reach. */
   private engagedId: string | null = null;
-  private regenTimer = 0;
+  /** Fractional hp banked toward the still-regen's next whole point. */
+  private regenBank = 0;
   private sleepTimer = 0;
-  /** ms the hero has been standing still (not knocked out); drives the still-regen bonus. */
+  /** ms the hero has been standing still, out of combat, not knocked out; drives regen. */
   private stillTimer = 0;
   private berserkTimer = 0;
   /** ms toward the next time-bubble ripple (see tickBuffs). */
@@ -248,6 +264,14 @@ export class Game {
     const hero = st.hero;
     if (eq(tile, hero.pos)) {
       st.path.length = 0;
+      // A knockdown with nowhere safe to retreat to can leave the hero
+      // asleep standing right on the orb it just dropped — a tile walking
+      // never carries them onto, so the ordinary onEnter pickup never fires.
+      // Tapping your own feet picks it up directly instead.
+      if (!hero.carrying) {
+        const orb = orbAt(st.level, tile);
+        if (orb) this.pickUpOrb(orb, tile);
+      }
       return;
     }
 
@@ -359,8 +383,6 @@ export class Game {
 
     this.checkLevelUp();
     this.lerpHero(dt);
-    const stoodStill = !hero.sleeping && st.path.length === 0 && eq(hero.pos, posBeforeStep);
-    this.stillTimer = stoodStill ? this.stillTimer + dt : 0;
     this.updateCompass(stats, dt, !eq(hero.pos, posBeforeStep));
 
     // --- monsters ----------------------------------------------------------
@@ -391,21 +413,27 @@ export class Game {
       return;
     }
 
-    // --- out of combat regen ------------------------------------------------
-    // The regen ring and standing still both shorten the wait and the gap between hearts.
-    const stillBonus = this.stillTimer >= STILL_REGEN_DELAY ? STILL_REGEN_MULT : 1;
-    const regenMult = Math.max(1, stats.regenMult) * stillBonus;
-    const regenDelay = REGEN_DELAY / regenMult;
-    const regenMs = REGEN_MS / regenMult;
-    if (!hero.sleeping && hero.sinceCombat > regenDelay && hero.hp < hero.maxHp) {
-      this.regenTimer += dt;
-      while (this.regenTimer >= regenMs && hero.hp < hero.maxHp) {
-        this.regenTimer -= regenMs;
+    // --- standing-still regen ------------------------------------------------
+    // Truly passive: no queued path, the tile hasn't changed, and neither
+    // direction of combat landed this tick — a hero trading blows with a
+    // monster it never budges from should not be quietly healing through the
+    // fight. `sinceCombat < dt` catches a reset earlier this same tick
+    // (hero.sinceCombat was reset to exactly 0 by damageMonster/monsterAttack
+    // after starting the tick at `previous + dt`).
+    const stoodStill =
+      !hero.sleeping && st.path.length === 0 && eq(hero.pos, posBeforeStep) && hero.sinceCombat >= dt;
+    this.stillTimer = stoodStill ? this.stillTimer + dt : 0;
+    if (!hero.sleeping && this.stillTimer >= STILL_REGEN_DELAY_MS && hero.hp < hero.maxHp) {
+      const ramp = Math.min(1, (this.stillTimer - STILL_REGEN_DELAY_MS) / STILL_REGEN_RAMP_MS);
+      const peakHpPerMs = (STILL_REGEN_PEAK_FRAC_PER_S * hero.maxHp * Math.max(1, stats.regenMult)) / 1000;
+      this.regenBank += peakHpPerMs * ramp * dt;
+      while (this.regenBank >= 1 && hero.hp < hero.maxHp) {
+        this.regenBank -= 1;
         hero.hp += 1;
         this.dirty = true;
       }
     } else {
-      this.regenTimer = 0;
+      this.regenBank = 0;
     }
 
     if (this.dirty) this.emit();
@@ -464,7 +492,8 @@ export class Game {
     this.moveTimer = 0;
     this.holdTimer = 0;
     this.engagedId = null;
-    this.regenTimer = 0;
+    this.regenBank = 0;
+    this.stillTimer = 0;
     pushLog(this.state, 'Drag your finger to guide the hero');
     for (const b of spent.active) {
       pushLog(this.state, `${boonName(b.kind)} holds${b.runsLeft > 0 ? ` (${b.runsLeft} more run${b.runsLeft === 1 ? '' : 's'})` : ' — its last run'}`);
@@ -634,7 +663,8 @@ export class Game {
     this.moveTimer = 0;
     this.holdTimer = 0;
     this.engagedId = null;
-    this.regenTimer = 0;
+    this.regenBank = 0;
+    this.stillTimer = 0;
     this.compassTimer = COMPASS_MS;
     this.minionSeq = level.monsters.length;
     pushLog(st, 'Back through the portal');
@@ -721,7 +751,8 @@ export class Game {
     this.moveTimer = 0;
     this.holdTimer = 0;
     this.engagedId = null;
-    this.regenTimer = 0;
+    this.regenBank = 0;
+    this.stillTimer = 0;
     this.compassTimer = COMPASS_MS;
     this.minionSeq = level.monsters.length;
   }
@@ -1582,6 +1613,17 @@ export class Game {
     return far;
   }
 
+  /** An orb on the floor goes into the hero's hands. Shared by walking onto it and tapping it underfoot. */
+  private pickUpOrb(orb: Orb, tile: Vec): void {
+    const st = this.state;
+    orb.state = 'carried';
+    st.hero.carrying = orb.id;
+    pushText(st, tile, 'ORB', ORB, 1000);
+    pushLog(st, 'Picked up the orb. Hands full: you set it down to fight');
+    pushSfx(st, 'orbLift');
+    this.dirty = true;
+  }
+
   private onEnter(tile: Vec): void {
     const st = this.state;
     const hero = st.hero;
@@ -1594,6 +1636,22 @@ export class Game {
       pushText(st, tile, k.kind === 'door' ? 'DOOR KEY' : 'CHEST KEY', GOLD, 1000);
       pushLog(st, k.kind === 'door' ? 'Picked up a door key' : 'Picked up a chest key');
       pushSfx(st, k.kind === 'door' ? 'keyDoor' : 'keyChest');
+      this.dirty = true;
+    }
+
+    // A gold-only chest never was one: it lies out as a pile, picked up on
+    // sight like a key, gold and xp mult applied the same as a chest's would.
+    const pile = goldPileAt(level, tile);
+    if (pile) {
+      pile.taken = true;
+      const stats = heroStats(hero);
+      const gold = Math.round(pile.gold * stats.goldMult);
+      const xp = Math.round(pile.xp * stats.xpMult);
+      hero.gold += gold;
+      hero.xp += xp;
+      pushText(st, tile, `+${gold}`, GOLD, 900);
+      pushLog(st, `Found ${gold} gold`);
+      pushSfx(st, 'gold');
       this.dirty = true;
     }
 
@@ -1635,14 +1693,7 @@ export class Game {
       }
     } else {
       const orb = orbAt(level, tile);
-      if (orb) {
-        orb.state = 'carried';
-        hero.carrying = orb.id;
-        pushText(st, tile, 'ORB', ORB, 1000);
-        pushLog(st, 'Picked up the orb. Hands full: you set it down to fight');
-        pushSfx(st, 'orbLift');
-        this.dirty = true;
-      }
+      if (orb) this.pickUpOrb(orb, tile);
     }
 
     // A world's own carriable furniture: picked up by walking onto it, hands

@@ -12,6 +12,7 @@ import {
   type Effect,
   type Door,
   type Chest,
+  type GoldPile,
   type KeyItem,
   type ItemKind,
   type ItemSlot,
@@ -258,6 +259,31 @@ const CHEST_KEY_ROWS = [
   '.......DD.......',
 ];
 const CHEST_KEY_PALETTE: Record<string, string> = { P: CHEST_KEY_GOLD, D: CHEST_KEY_GOLD_DARK, W: CHEST_KEY_HILITE };
+
+// A gold pile: what a gold-only chest becomes instead of a lock. Three coins
+// stacked edge-on, same gold/dark-gold/highlight family as the chest key so
+// the two read as kin — a chest key opens a chest, a gold pile needed no key
+// to begin with.
+// prettier-ignore
+const GOLD_PILE_ROWS = [
+  '................',
+  '................',
+  '................',
+  '....DDDDDDDD....',
+  '...DPPPPPPPPD...',
+  '...DWWPPPPPPD...',
+  '....DDDDDDDD....',
+  '...DPPPPPPPPD...',
+  '...DWWPPPPPPD...',
+  '....DDDDDDDD....',
+  '...DPPPPPPPPD...',
+  '...DWWPPPPPPD...',
+  '....DDDDDDDD....',
+  '................',
+  '................',
+  '................',
+];
+const GOLD_PILE_PALETTE: Record<string, string> = { P: CHEST_KEY_GOLD, D: CHEST_KEY_GOLD_DARK, W: '#ffe28a' };
 
 // Door key: the same bold 16x16 bow-and-shaft silhouette as the chest key,
 // recolored purple/magenta, with the ring (bow) itself shaped into a
@@ -632,6 +658,7 @@ export class Renderer implements TileMapper {
   private heroSprites: Record<'N' | 'S' | 'E', HTMLCanvasElement>;
   private doorKeySprite: HTMLCanvasElement;
   private chestKeySprite: HTMLCanvasElement;
+  private goldPileSprite: HTMLCanvasElement;
   private chestClosedSprite: HTMLCanvasElement;
   private chestOpenSprite: HTMLCanvasElement;
   private chestSecretClosedSprite: HTMLCanvasElement;
@@ -687,6 +714,7 @@ export class Renderer implements TileMapper {
     };
     this.doorKeySprite = buildIcon(DOOR_KEY_ROWS, DOOR_KEY_PALETTE);
     this.chestKeySprite = buildIcon(CHEST_KEY_ROWS, CHEST_KEY_PALETTE);
+    this.goldPileSprite = buildIcon(GOLD_PILE_ROWS, GOLD_PILE_PALETTE);
     this.chestClosedSprite = buildIcon(CHEST_CLOSED_ROWS, CHEST_CLOSED_PALETTE);
     this.chestOpenSprite = buildIcon(CHEST_OPEN_ROWS, CHEST_OPEN_PALETTE);
     this.chestSecretClosedSprite = buildIcon(CHEST_CLOSED_ROWS, CHEST_SECRET_CLOSED_PALETTE);
@@ -1319,6 +1347,11 @@ export class Renderer implements TileMapper {
       if (!k.taken && this.inRange(k.pos, startX, endX, startY, endY)) this.drawKey(ctx, k, t);
     }
 
+    // Gold piles (untaken only): what a gold-only chest became instead.
+    for (const g of state.level.goldPiles) {
+      if (!g.taken && this.inRange(g.pos, startX, endX, startY, endY)) this.drawGoldPile(ctx, g, t);
+    }
+
     // Shrine alcoves. Drawn before the chests and monsters because they are
     // ground, not furniture: the hero walks over one to light it.
     for (const sh of state.level.shrines ?? []) {
@@ -1545,6 +1578,20 @@ export class Renderer implements TileMapper {
     const bx = Math.round(k.pos.x * t + (t - size) / 2);
     const by = Math.round(k.pos.y * t + (t - size) / 2);
     ctx.drawImage(isDoor ? this.doorKeySprite : this.chestKeySprite, bx, by, size, size);
+  }
+
+  /** A gold pile: same plain-disk treatment as the chest key, no aura — there is no lock here to speak of. */
+  private drawGoldPile(ctx: CanvasRenderingContext2D, g: GoldPile, t: number): void {
+    const bsize = Math.round(t * 0.78);
+    const bgx = Math.round(g.pos.x * t + (t - bsize) / 2);
+    const bgy = Math.round(g.pos.y * t + (t - bsize) / 2);
+    ctx.fillStyle = 'rgba(245,196,81,0.22)';
+    ctx.fillRect(bgx, bgy, bsize, bsize);
+
+    const size = Math.round(t * 0.6);
+    const bx = Math.round(g.pos.x * t + (t - size) / 2);
+    const by = Math.round(g.pos.y * t + (t - size) / 2);
+    ctx.drawImage(this.goldPileSprite, bx, by, size, size);
   }
 
   /**
@@ -2404,7 +2451,7 @@ export class Renderer implements TileMapper {
 
     const cx = hero.rpos.x * t + t / 2;
     const rowW = pips.length * size + (pips.length - 1) * gap;
-    const bottom = hero.rpos.y * t + t / 2 - t * 1.32;
+    const bottom = hero.rpos.y * t + t / 2 - t * 1.1;
     const y = Math.round((bottom - size) / sub) * sub;
     let x = Math.round((cx - rowW / 2) / sub) * sub;
 
@@ -2475,7 +2522,7 @@ export class Renderer implements TileMapper {
     if (fx.kind === 'text') {
       const progress = Math.max(0, Math.min(1, fx.t / fx.ttl));
       const cx = fx.pos.x * t + t / 2;
-      const cy = fx.pos.y * t + t / 2 - progress * t * 0.8;
+      const cy = fx.pos.y * t + t / 2 - (fx.rise0 ?? 0) * t - progress * t * 0.8;
       ctx.save();
       ctx.globalAlpha = Math.max(0, 1 - progress);
       ctx.font = `${Math.max(6, Math.round(t * 0.32))}px "Press Start 2P", monospace`;

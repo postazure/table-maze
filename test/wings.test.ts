@@ -215,6 +215,7 @@ function mkWing(rows: string[]): LevelData {
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
     passages: [{ id: 'pg1', kind: 'wing', tiles: hidden, mouths, rooms: [{ x: 3, y: 3, w: 4, h: 3 }, { x: 8, y: 3, w: 3, h: 3 }], entry: 0, treasure: 1 }],
     seals: [],
@@ -442,6 +443,32 @@ test('a knockdown drops the orb where the hero fell', () => {
   assert.equal(hero.carrying, null, "the orb is out of the hero's arms");
   assert.equal(st.level.orbs[0].state, 'floor');
   assert.ok(hiddenAtWing(st.level, st.level.orbs[0].pos), 'and lies in the wing where they fell');
+});
+
+test('tapping your own tile picks up an orb stuck underfoot', () => {
+  // A knockdown can drop the orb right where the hero falls and then find
+  // nowhere safer to retreat to, leaving the hero asleep standing on the
+  // very tile the orb landed on. Walking never carries the hero onto a tile
+  // they're already on, so the ordinary onEnter pickup would never fire —
+  // tapping their own feet has to work instead.
+  const seal: Seal = { id: 'seal1', pos: SEAL_POS, open: false, lock: { kind: 'orb', socket: SOCKET_POS, placed: false } };
+  const g = wingGame(seal, { x: 4, y: 4 });
+  const st = g.state;
+  const hero = st.hero;
+  st.level.orbs = [{ id: 'orb1', pos: { x: 4, y: 4 }, home: { x: 4, y: 4 }, sealId: 'seal1', state: 'floor' }];
+  const orb = st.level.orbs[0];
+
+  g.pointerAt(hero.pos);
+  assert.equal(hero.carrying, 'orb1', 'tapping your own feet picks it up');
+  assert.equal(orb.state, 'carried');
+  assert.ok(st.sfx.includes('orbLift'));
+
+  // Already carrying: tapping your own tile again is just a no-op, same as
+  // ever tapping the tile you stand on.
+  st.sfx.length = 0;
+  g.pointerAt(hero.pos);
+  assert.equal(hero.carrying, 'orb1');
+  assert.equal(st.sfx.length, 0);
 });
 
 function hiddenAtWing(level: LevelData, p: Vec): boolean {

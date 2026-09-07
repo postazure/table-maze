@@ -139,6 +139,7 @@ function customLevel(rows: string[], stage: number, data: Record<string, unknown
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
   };
 }

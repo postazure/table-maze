@@ -57,6 +57,7 @@ function mkWorldLevel(kind: WorldKind, stage: number, runSeed: number, data: Wor
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
     props,
   };
@@ -148,6 +149,7 @@ function mkMazeLevel(rows: string[], over: Partial<LevelData> = {}): LevelData {
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
     ...over,
   };

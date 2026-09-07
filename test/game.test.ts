@@ -16,7 +16,7 @@ import type {
 } from '../src/engine/types';
 import { makeRng } from '../src/engine/rng';
 import { Game } from '../src/engine/game';
-import { LOG_MAX, damageMonster, gameOver, heroAttack, heroAttackValue, monsterAttack, pushLog, pushSfx } from '../src/engine/combat';
+import { DAMAGE_TEXT_RISE0, LOG_MAX, damageMonster, gameOver, heroAttack, heroAttackValue, monsterAttack, pushLog, pushSfx } from '../src/engine/combat';
 import { updateMonsters } from '../src/engine/monsters';
 import { clearSave, loadGame, saveGame } from '../src/engine/save';
 import { equip, heroMoveMs, upgradeRandomItem } from '../src/engine/items';
@@ -70,6 +70,7 @@ function mkLevel(rows: string[], over: Partial<LevelData> = {}): LevelData {
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
     ...over,
   };
@@ -215,6 +216,22 @@ test('walking onto a key picks it up', () => {
   assert.equal(g.state.level.keys[0].taken, true);
 });
 
+test('walking onto a gold pile picks it up at once, no key, no modal', () => {
+  const g = corridorGame({
+    goldPiles: [{ id: 'g1', pos: { x: 2, y: 1 }, gold: 10, xp: 4, taken: false }],
+  });
+  const gold0 = g.state.hero.gold;
+  const xp0 = g.state.hero.xp;
+  g.pointerAt({ x: 2, y: 1 });
+  assert.equal(g.state.path.length, 1, 'a gold pile is walkable, not a solid target');
+  g.tick(150);
+  assert.equal(g.state.hero.gold, gold0 + 10);
+  assert.equal(g.state.hero.xp, xp0 + 4);
+  assert.equal(g.state.level.goldPiles[0].taken, true);
+  assert.equal(g.state.modal, null, 'no popup, unlike a chest');
+  assert.ok(g.state.sfx.includes('gold'));
+});
+
 test('chests are solid: the hero bumps them, opens with a key, and the game freezes', () => {
   const g = corridorGame({
     chests: [
@@ -343,6 +360,26 @@ test('walking into a monster attacks it and clears the queued path', () => {
   assert.equal(g.state.path.length, 0);
 });
 
+test('a combat damage number starts above the hp bar it just caused, not on top of it', () => {
+  const g = Game.forTest(1234);
+  install(g, mkLevel(LONG_CORRIDOR), { x: 1, y: 1 });
+  const st = g.state;
+  st.hero.hp = 20;
+  st.hero.maxHp = 20;
+  const m = mkMonster({ pos: { x: 2, y: 1 }, atk: 3, hp: 20, maxHp: 20 });
+  st.level.monsters.push(m);
+
+  damageMonster(st, m, 5, makeRng(1));
+  const monsterHit = st.fx.find((f) => f.kind === 'text' && f.text === '-5');
+  assert.ok(monsterHit, 'the damage number is pushed');
+  assert.equal(monsterHit?.kind === 'text' ? monsterHit.rise0 : undefined, DAMAGE_TEXT_RISE0);
+
+  monsterAttack(st, m, makeRng(3));
+  const heroHit = st.fx.find((f) => f.kind === 'text' && f.text.startsWith('-') && f.pos.x === st.hero.pos.x);
+  assert.ok(heroHit, "the hero's own damage number is pushed");
+  assert.equal(heroHit?.kind === 'text' ? heroHit.rise0 : undefined, DAMAGE_TEXT_RISE0);
+});
+
 test('monsterAttack knocks the hero down without ever killing them', () => {
   const g = Game.forTest(1234);
   install(g, mkLevel(LONG_CORRIDOR), { x: 10, y: 1 });
@@ -446,51 +483,70 @@ test('the world holds still while the hero sleeps off a knockdown', () => {
   assert.ok(hero.hp > 1, 'hearts are refilling meanwhile');
 });
 
-test('out-of-combat regen ticks 1hp every 600ms', () => {
+test('standing-still regen heals nothing for the first 3s', () => {
   const g = corridorGame();
-  g.state.hero.hp = 5;
-  g.state.hero.maxHp = 20;
-  g.state.hero.sinceCombat = 5000;
-  g.tick(600);
-  assert.equal(g.state.hero.hp, 6);
-  g.tick(600);
-  assert.equal(g.state.hero.hp, 7);
-});
-
-test('standing still for 3s speeds up regen from 600ms/hp to 480ms/hp', () => {
-  const g = corridorGame();
-  g.state.hero.maxHp = 20;
-  g.state.hero.hp = 20; // full: regen is a no-op while we prime the still timer
-  g.state.hero.sinceCombat = 5000;
-  g.state.path.length = 0;
-
-  g.tick(3000); // stand still for exactly the 3s threshold
-  assert.equal(g.state.hero.hp, 20, 'still full, nothing to regen yet');
-
+  g.state.hero.maxHp = 40;
   g.state.hero.hp = 10;
-  g.tick(480);
-  assert.equal(g.state.hero.hp, 11, '480ms is enough once the still bonus is active');
-  g.tick(480);
-  assert.equal(g.state.hero.hp, 12);
+  g.state.path.length = 0;
+  g.tick(2999);
+  assert.equal(g.state.hero.hp, 10, 'not quite 3s of standing still yet');
 });
 
-test('moving resets the standing-still regen bonus', () => {
+test('30s standing still heals to about 80% max hp, whether the hero has few hearts or many', () => {
+  for (const maxHp of [20, 400]) {
+    const g = corridorGame();
+    g.state.hero.maxHp = maxHp;
+    g.state.hero.hp = 1;
+    g.state.path.length = 0;
+    // Small ticks, like a real frame loop, so the fractional bank behaves as
+    // it would in play rather than in one giant jump.
+    for (let elapsed = 0; elapsed < 30000; elapsed += 50) g.tick(50);
+    const frac = g.state.hero.hp / maxHp;
+    assert.ok(Math.abs(frac - 0.8) < 0.05, `maxHp=${maxHp}: healed to ${g.state.hero.hp}/${maxHp} (${frac}), expected close to 0.8`);
+  }
+});
+
+test('moving resets the standing-still timer: regen has to wait 3s again', () => {
   const g = corridorGame();
-  g.state.hero.maxHp = 20;
-  g.state.hero.hp = 20;
-  g.state.hero.sinceCombat = 5000;
+  g.state.hero.maxHp = 40;
+  g.state.hero.hp = 10;
   g.state.path.length = 0;
 
-  g.tick(3000); // stand still long enough to earn the bonus
+  g.tick(3000);
+  g.tick(3000); // well past the delay, mid-ramp
+  assert.ok(g.state.hero.hp > 10, 'ramping up before the interruption');
+
   g.pointerAt({ x: 2, y: 1 }); // queue a single step
   g.tick(heroMoveMs(g.state.hero));
   assert.deepEqual(g.state.hero.pos, { x: 2, y: 1 }, 'the hero actually moved');
 
-  g.state.hero.hp = 10;
-  g.tick(480);
-  assert.equal(g.state.hero.hp, 10, 'the step reset the still timer: 480ms is not enough at the normal rate');
-  g.tick(120);
-  assert.equal(g.state.hero.hp, 11, 'normal rate resumes: 600ms after the step');
+  const healedAfterMove = g.state.hero.hp;
+  g.tick(2999);
+  assert.equal(g.state.hero.hp, healedAfterMove, 'the step reset the still timer: not 3s yet');
+});
+
+test('a monster that keeps landing hits keeps the still timer from ever building, even standing in place', () => {
+  const g = corridorGame();
+  const hero = g.state.hero;
+  hero.maxHp = 200;
+  hero.hp = 200;
+  g.state.path.length = 0;
+  // A patrol always fights back once adjacent (no guard-style engage window)
+  // and is the one kind a hit from never knocks back (combat.ts), so it
+  // stays adjacent and hits often enough that the hero's tile never goes 3s
+  // without a hit landing either way. Give it hp the hero's own auto-attack
+  // cannot burn through during the test: a dead monster stops fighting back,
+  // which would end combat and let regen resume legitimately — not what
+  // this test is checking.
+  const m = mkMonster({ pos: { x: 2, y: 1 }, kind: 'patrol', atk: 1, hp: 100000, maxHp: 100000, attackInterval: 1000, attackCooldown: 0 });
+  g.state.level.monsters = [m];
+
+  let prevHp = hero.hp;
+  for (let i = 0; i < 20; i++) {
+    g.tick(500); // 10s total, well past the standing-still delay
+    assert.ok(hero.hp <= prevHp, `hp rose from ${prevHp} to ${hero.hp} at step ${i}: regen ran during combat`);
+    prevHp = hero.hp;
+  }
 });
 
 test('a lurker starts chasing when the hero comes within sightRange', () => {
@@ -530,6 +586,28 @@ test('a lurker starts chasing when the hero comes within sightRange', () => {
   updateMonsters(g.state, 16, rng);
   assert.equal(lurk.state, 'returning');
   assert.deepEqual(lurk.pos, { x: 4, y: 2 }, 'stays put instead of walking home');
+});
+
+test('a hit that lands from outside sight range still aggroes a lurker, like the fire staff or the long sword', () => {
+  const g = Game.forTest(1234);
+  const st = g.state;
+  const lurk = mkMonster({ id: 'l1', kind: 'lurker', pos: { x: 10, y: 1 }, home: { x: 10, y: 1 }, sightRange: 3, leash: 6 });
+  st.level.monsters = [lurk];
+  const rng = makeRng(1);
+
+  // Fire staff: a hero nowhere near sightRange still burns it from range.
+  damageMonster(st, lurk, 1, rng, { source: 'fire' });
+  assert.equal(lurk.state, 'chasing', 'the burn wakes it up');
+  assert.deepEqual(lurk.chaseFrom, lurk.pos);
+
+  // Poison ticking after the hero walked away is not "the hero found me".
+  lurk.state = 'idle';
+  damageMonster(st, lurk, 1, rng, { source: 'poison' });
+  assert.equal(lurk.state, 'idle', 'a poison tick does not aggro it');
+
+  // A long sword's reach swing is an ordinary hero hit (default source).
+  damageMonster(st, lurk, 1, rng);
+  assert.equal(lurk.state, 'chasing', "the hero's own hit wakes it up too");
 });
 
 test('lurker aggro range shrinks with the level gap, capped both ways', () => {
@@ -2667,7 +2745,8 @@ test('a mending shrine refills hearts mid-fight', () => {
   stepEast(g);
   const hero = g.state.hero;
   hero.hp = 1;
-  hero.sinceCombat = 0; // out-of-combat regen is nowhere near, so this is mending
+  // Standing-still regen needs 3s of not moving; this ticks 600ms, so the
+  // heal here can only be the mending shrine, never that.
   g.tick(600);
   assert.ok(hero.hp > 1, 'mending should have pulsed');
 });

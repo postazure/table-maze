@@ -196,6 +196,7 @@ test('generateShopLevel builds the podium room', () => {
   assert.deepEqual(level.keys, []);
   assert.deepEqual(level.doors, []);
   assert.deepEqual(level.chests, []);
+  assert.deepEqual(level.goldPiles, []);
   assert.deepEqual(level.monsters, [], 'a shop is a safe room');
 
   // Outer walls all round a 14 x 13 floor, plus the margin the bench alcove

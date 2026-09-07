@@ -11,6 +11,7 @@ import type {
   Door,
   Effect,
   GameState,
+  GoldPile,
   KeyItem,
   LevelData,
   Monster,
@@ -52,15 +53,23 @@ export const GREY = '#c9c6d6';
 export const SPARK = '#bfe3ff';
 export const ICE = '#bfe3ff';
 
-/** Push a floating text effect at `pos`. */
+/**
+ * Where a combat hit's floating number starts, in tiles above the target's
+ * center — clear of even the tallest hp bar (a boss's, `sizeScale` 1.05) so
+ * it never opens on top of the bar it just caused to appear.
+ */
+export const DAMAGE_TEXT_RISE0 = 0.75;
+
+/** Push a floating text effect at `pos`. `rise0` (tiles above center) shifts where it starts; see `Effect`. */
 export function pushText(
   state: GameState,
   pos: Vec,
   text: string,
   color: string,
   ttl = 900,
+  rise0?: number,
 ): void {
-  const e: Effect = { kind: 'text', pos: { x: pos.x, y: pos.y }, text, color, t: 0, ttl };
+  const e: Effect = { kind: 'text', pos: { x: pos.x, y: pos.y }, text, color, t: 0, ttl, rise0 };
   state.fx.push(e);
 }
 
@@ -129,6 +138,12 @@ export function exitAt(level: LevelData, p: Vec): boolean {
 /** An un-picked-up key on `p`. */
 export function keyAt(level: LevelData, p: Vec): KeyItem | null {
   for (const k of level.keys) if (!k.taken && k.pos.x === p.x && k.pos.y === p.y) return k;
+  return null;
+}
+
+/** An un-picked-up gold pile on `p`. Walkable, like a key: nothing blocks it. */
+export function goldPileAt(level: LevelData, p: Vec): GoldPile | null {
+  for (const g of level.goldPiles) if (!g.taken && g.pos.x === p.x && g.pos.y === p.y) return g;
   return null;
 }
 
@@ -270,7 +285,7 @@ export function damageMonster(
   // Bosses, angels and the necromancer cannot be hurt at all: no hit flash, no
   // combat clocks, no on-hit procs. Just a word so the player stops trying.
   if (m.invulnerable) {
-    pushText(state, m.pos, 'Immune', GREY);
+    pushText(state, m.pos, 'Immune', GREY, 900, DAMAGE_TEXT_RISE0);
     pushSfx(state, 'immune');
     return;
   }
@@ -284,7 +299,19 @@ export function damageMonster(
   // Poison keeps ticking after the hero has walked away: it must not hold the
   // hero's out-of-combat regen hostage.
   if (source !== 'poison') hero.sinceCombat = 0;
-  pushText(state, m.pos, opts.text ?? `-${amount}`, opts.color ?? WHITE);
+  // A lurker (or a sprung mimic, which hunts the same way) only ever notices
+  // the hero by sight, so a hit that lands from outside its sight range — a
+  // long sword's reach, a fire staff's burn, chain lightning hopping to it —
+  // used to leave it standing there taking it without ever waking up. Any
+  // hero-caused hit aggroes it exactly as spotting the hero would. Poison
+  // still ticking after the hero has walked away, and a monster's own blow
+  // bouncing back off thorn mail, are not "the hero found me" moments, so
+  // neither one aggroes.
+  if ((m.kind === 'lurker' || m.kind === 'mimic') && m.state !== 'chasing' && (source === 'hero' || source === 'fire' || source === 'chain')) {
+    m.state = 'chasing';
+    m.chaseFrom = { x: m.pos.x, y: m.pos.y };
+  }
+  pushText(state, m.pos, opts.text ?? `-${amount}`, opts.color ?? WHITE, 900, DAMAGE_TEXT_RISE0);
   // The hero's own swing is the one that gets a "connected" sound; fireballs,
   // lightning, poison and thorns already announce themselves.
   if (source === 'hero') pushSfx(state, 'hit');
@@ -430,7 +457,7 @@ export function monsterAttack(state: GameState, m: Monster, rng: Rng): boolean {
   hero.hp -= dmg - soaked;
   hero.hitFlash = 150;
 
-  pushText(state, hero.pos, `-${dmg}`, soaked > 0 ? WARD : RED);
+  pushText(state, hero.pos, `-${dmg}`, soaked > 0 ? WARD : RED, 900, DAMAGE_TEXT_RISE0);
   pushShake(state, bossHit ? BOSS_SHAKE : 4, bossHit ? 380 : 180);
   pushSfx(state, 'hurt');
   if (m.kind === 'angel') {
