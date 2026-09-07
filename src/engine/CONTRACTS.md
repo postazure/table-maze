@@ -206,6 +206,7 @@ export function passageAt(level: LevelData, p: Vec): Passage | null;
 export const LENS_CORE: number;    // tiles revealed at full strength
 export const LENS_RADIUS: number;  // ...and where the reveal has faded to nothing
 export const LENS_ALPHA: number;   // how see-through the brick ever gets (< 1)
+export const MOUTH_SIGHT: number;  // 3: tiles from a mouth before the lamp lights on its own
 export function lensRevealAt(dist: number): number;
 export function lensLit(level: LevelData, hero: Hero, depth: number): boolean;
 ```
@@ -221,13 +222,15 @@ Requirements:
 - A lens is bound to the three-floor themed set it was found in
   (`Hero.lens.set`), works nowhere else, and is dropped by `dismissModal` when
   the `lensShatter` popup closes on the way out of that set's shop.
-- `lensLit` is true only while the hero stands on hidden ground or one tile
-  from a mouth, and it is the *only* thing that ever shows a passage. Nothing
-  marks one from further off — no seam, no glow, no map marker — so a passage
-  is found by walking past its mouth and watching the wall open. Walking a
-  corridor that merely runs alongside one shows nothing. Never add an
-  indicator here: the reward for covering ground is the point, and a floor is
-  meant to keep its passages from a player who took the direct route down.
+- `lensLit` is true only while the hero stands on hidden ground or within
+  `MOUTH_SIGHT` (3) tiles of a mouth, and it is the *only* thing that ever
+  shows a passage — no seam, no glow, no map marker, no distinct sprite for
+  the mouth itself. Beyond that reach a passage is found by walking within it
+  and watching the wall open. Walking a corridor that merely runs alongside
+  one, out past `MOUTH_SIGHT`, still shows nothing. Don't add a marker beyond
+  this reveal radius: the reward for covering ground is the point, and a
+  floor is meant to keep its passages from a player who took the direct route
+  down.
 - `passageTiles`/`passageMouths` cache per `LevelData` in a `WeakMap`: they are
   asked once per BFS node while monsters path.
 

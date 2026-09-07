@@ -10,16 +10,16 @@
  * The **lens** is found in a chest on the first or second floor of a themed
  * set (see `themeForDepth`). It comes out of the chest already cracked, which
  * is where its name comes from and why nobody is surprised when it finally
- * gives out. Carrying it does exactly one thing: standing on
- * the doorstep of a passage, or inside one, lights a radius around the hero,
- * the brick fading back to solid at the edge.
+ * gives out. Carrying it does exactly one thing: getting within a few tiles
+ * of a passage's mouth, or standing inside one, lights a radius around the
+ * hero, the brick fading back to solid at the edge.
  *
- * Nothing marks a passage from further off — no seam, no glow, nothing on the
- * map. You find one by walking past its mouth and seeing the wall open, which
- * means the lens rewards covering ground rather than reading an indicator, and
- * a floor still keeps most of its passages from a player who took the direct
- * route. It is a lamp, not a map: even inside one you only ever see the next
- * few tiles.
+ * Nothing marks a passage beyond that — no seam, no glow, nothing on the map,
+ * and no distinct sprite for the mouth itself. You still find one by walking
+ * within reach of it and watching the wall open, which means the lens rewards
+ * covering ground rather than reading an indicator, and a floor still keeps
+ * most of its passages from a player who took the direct route. It is a lamp,
+ * not a map: even inside one you only ever see the next few tiles.
  *
  * It is bound to the three-floor set it was found in and shatters as the hero
  * leaves that set's shop, so a lens is something you go looking for again
@@ -157,17 +157,20 @@ export function lensRevealAt(dist: number): number {
   return LENS_ALPHA * (1 - (dist - LENS_CORE) / (LENS_RADIUS - LENS_CORE));
 }
 
+/** How close (in tiles) the hero must walk to a mouth before the lamp lights on its own. */
+export const MOUTH_SIGHT = 3;
+
 /**
- * Is the lamp lit? Only while the hero is actually in a passage, or standing
- * next to a mouth about to step in — walking a corridor that happens to run
- * alongside one shows nothing.
+ * Is the lamp lit? Only while the hero is actually in a passage, or within
+ * `MOUTH_SIGHT` tiles of a mouth — walking a corridor that merely runs
+ * alongside one, well out of that reach, still shows nothing.
  */
 export function lensLit(level: LevelData, hero: Hero, depth: number): boolean {
   if (!level.passages?.length || !lensActive(hero, depth)) return false;
   if (hiddenAt(level, hero.pos)) return true;
   for (const m of passageMouths(level)) {
     const [x, y] = m.split(',').map(Number);
-    if (manhattan({ x, y }, hero.pos) <= 1) return true;
+    if (manhattan({ x, y }, hero.pos) <= MOUTH_SIGHT) return true;
   }
   return false;
 }
