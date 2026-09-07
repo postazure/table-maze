@@ -1416,10 +1416,14 @@ export class Renderer implements TileMapper {
     }
 
     // A boss world's solid props, drawn in the same pass as the chests: a
-    // statue, a symbol, a crypt door, the portal home.
+    // statue, a symbol, a crypt front, the portal home. A crypt's sprite is
+    // taller than its tile (see drawProp), so — like doors — the range is
+    // extended one tile upward: one sitting on the viewport's top margin
+    // must still get its overdraw drawn.
+    const propStartY = Math.max(0, startY - 1);
     for (const p of state.level.props ?? []) {
       if (p.hidden || !p.solid) continue;
-      if (this.inRange(p.pos, startX, endX, startY, endY)) this.drawProp(ctx, p, t, 0.8);
+      if (this.inRange(p.pos, startX, endX, propStartY, endY)) this.drawProp(ctx, p, t, 0.8);
     }
 
     // Exit. Hidden while the necromancer still stands on it (his tile IS the
@@ -1768,10 +1772,24 @@ export class Renderer implements TileMapper {
     return sprite;
   }
 
-  /** A prop standing on the floor: solid ones a touch bigger than ground ones. */
+  /**
+   * A prop standing on the floor: solid ones a touch bigger than ground
+   * ones. A sprite taller than it is wide (a crypt's mausoleum front, say)
+   * is anchored to the BOTTOM of the prop's own tile instead of squeezed
+   * into a square, exactly like the dungeon door, so it stands above its
+   * tile rather than being flattened into it.
+   */
   private drawProp(ctx: CanvasRenderingContext2D, p: Prop, t: number, scale: number): void {
     const sprite = this.getPropSprite(p.art, p.state);
     if (!sprite) return;
+    if (sprite.height > sprite.width) {
+      const w = Math.round(t * scale);
+      const h = Math.round(w * (sprite.height / sprite.width));
+      const x = Math.round(p.pos.x * t + (t - w) / 2);
+      const y = Math.round((p.pos.y + 1) * t) - h;
+      ctx.drawImage(sprite, x, y, w, h);
+      return;
+    }
     this.drawTileSprite(ctx, sprite, p.pos, t, scale);
   }
 
