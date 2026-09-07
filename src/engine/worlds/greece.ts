@@ -771,8 +771,8 @@ export const GREECE: WorldModule = {
           lines: [
             'A beach, a ship at its pier, and open sea beyond.',
             'The sirens sing down straight lines. Linger in one and the song takes hold and drags you to the rocks.',
-            'Beeswax in your ears stops it cold, but it fills both hands. The trident, once you hold it, quiets them too.',
-            'Bump the helm to sail; the trident waits on the far island, at the end of a siren\'s line.',
+            'Beeswax in your ears stops it cold, but it fills both hands.',
+            'Bump the helm to sail.',
             'The gate on the beach always leads back to the gate.',
           ],
         };
@@ -781,9 +781,9 @@ export const GREECE: WorldModule = {
           title: 'The Underworld',
           lines: [
             'Flagstone caverns, and the black water of the Styx.',
-            'Charon takes an obol to cross; a shade in the side cavern is holding one.',
-            "Cerberus guards the corridor beyond, wide awake and very strong. A honey-cake set at his feet puts him to sleep.",
-            'Three braziers open the seal to the cake\'s niche. Walk onto them in the order of the pips on their rims: one, two, three.',
+            'Charon poles the ferry across the Styx — but he wants payment first.',
+            'Cerberus guards the corridor beyond, wide awake and very strong.',
+            'Three braziers stand behind a sealed door, rims carved with something.',
             'Charon poles you back across for nothing; nobody stays on that shore.',
           ],
         };

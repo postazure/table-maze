@@ -735,10 +735,10 @@ export const CEMETERY: WorldModule = {
         title: 'The Cemetery',
         lines: [
           'Weeping angels stand watch over these grounds. Never blink first.',
-          'They keep their distance until five of them share your screen — then they close in, and a touch turns you to stone.',
+          'They keep their distance while few. Let enough of them into sight at once and they close in — a touch turns you to stone.',
           'Five crypts wait in these grounds. Bump a shut one to open it, and the open door leads down.',
-          'Four of them hold a piece of the contraption in the yard. It wants all four before it will open the way.',
-          'Lose them in the hedges: one left far enough behind goes back to sleep where it stands.',
+          'Something in the yard is missing its pieces. The crypts might hold what it wants.',
+          'The hedges break their line of sight, if you need to lose them.',
         ],
       };
     }
