@@ -8,7 +8,6 @@ import { LENS_NAME } from '../engine/lens';
 import { relicName } from '../engine/puzzles';
 import { boonDescription, boonName, trophyName } from '../engine/boons';
 import { WORLDS } from '../engine/worlds';
-import { PixelIcon, type IconName } from './icons';
 import { BRASS_DESCRIPTION, BRASS_NAME, crystalName } from '../engine/crafting';
 import { PixelIcon, crystalIcon, type IconName } from './icons';
 

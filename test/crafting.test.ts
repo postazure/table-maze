@@ -278,7 +278,7 @@ test('bumping the portal with no crystal says so and blinks; with one it opens t
   assert.deepEqual((st.modal as Extract<Modal, { kind: 'portal' }>).crystals, ['minotaur']);
 });
 
-test('usePortal spends the crystal, persists it, and calls into the world runtime placeholder', () => {
+test('usePortal spends the crystal, persists it, and steps into the world', () => {
   useMemStorage();
   const g = Game.forTest(1);
   const st = g.state;
@@ -291,10 +291,13 @@ test('usePortal spends the crystal, persists it, and calls into the world runtim
   assert.deepEqual(st.hero.crystals, []);
   assert.deepEqual(loadCrystals(), []);
   assert.ok(st.sfx.includes('portal'));
-  assert.equal(st.modal, null);
-  // enterWorld is a placeholder until the world runtime lands; this is the
-  // one thing it does, and usePortal must still be the one calling it.
-  assert.ok(st.log.some((l) => l.text === 'The portal opens'), 'usePortal called into enterWorld');
+  // The world runtime took over: the main floor is stashed, the hero stands
+  // on stage 0 of the Minotaur's world, and its briefing is up.
+  assert.ok(st.stash, 'the main floor is stashed');
+  assert.equal(st.level.kind, 'world');
+  assert.equal(st.level.world?.kind, 'minotaur');
+  assert.equal(st.level.world?.stage, 0);
+  assert.equal(st.modal?.kind, 'worldIntro');
 });
 
 // ---------------------------------------------------------------------------

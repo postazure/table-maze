@@ -1391,9 +1391,11 @@ export class Game {
     if (i < 0) return;
     hero.crystals.splice(i, 1);
     saveCrystals(hero.crystals);
-    pushSfx(st, 'portal');
     st.modal = null;
     this.enterWorld(boss);
+    // After the trip, not before: arriving on a fresh floor clears the sound
+    // queue, and the portal is the one sound that has to survive it.
+    pushSfx(st, 'portal');
     this.dirty = true;
     this.emit();
   }
@@ -2322,13 +2324,6 @@ export class Game {
 
   private emit(): void {
     this.onChange?.(this.state);
-  }
-
-  // placeholder: replaced by the world runtime — stashes the main floor,
-  // generates the world's stage 0 and shows the worldIntro modal. For now it
-  // only logs the moment, so usePortal has somewhere real to call into.
-  enterWorld(kind: WorldKind): void {
-    pushLog(this.state, 'The portal opens');
   }
 }
 

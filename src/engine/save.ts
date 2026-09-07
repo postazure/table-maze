@@ -18,6 +18,7 @@ const BOONS_KEY = 'table-maze:boons';
  * collectible ever won, by id. Outlives the run exactly like the boons do.
  */
 const COLLECTION_KEY = 'table-maze:collection';
+/**
  * The heirloom flag: set at the jeweller's bench the moment the lens goes
  * unbreakable, cleared the instant the next run reads it. Beside the save
  * for the same reason the boons are — a save dies with its run, and this is
