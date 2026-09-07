@@ -656,6 +656,7 @@ function furnishWing(level: LevelData, laid: Laid, depth: number, runSeed: numbe
       pos: claim(chestSpot),
       opened: false,
       loot: { gold: rng.int(10, 20) * depth, xp: 5 * depth, magic },
+      secret: true,
     };
     level.chests.push(chest);
   }
@@ -739,6 +740,7 @@ function furnishWing(level: LevelData, laid: Laid, depth: number, runSeed: numbe
       pos: claim(spot),
       opened: false,
       loot: mimic ? { gold: 0, xp: 0 } : rollChestLoot(depth, rng),
+      secret: true,
     };
     if (mimic) chest.mimic = true;
     level.chests.push(chest);

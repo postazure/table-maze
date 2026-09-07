@@ -144,7 +144,8 @@ test('generateLevel: structure, entities and solvability', () => {
       const doorKeys = lv.keys.filter((k) => k.kind === 'door');
       const chestKeys = lv.keys.filter((k) => k.kind === 'chest');
       assert.equal(doorKeys.length, lv.doors.length, `${where}: one key per door`);
-      assert.equal(chestKeys.length, lv.chests.length, `${where}: one key per chest`);
+      const lockedChests = lv.chests.filter((c) => !c.secret);
+      assert.equal(chestKeys.length, lockedChests.length, `${where}: one key per chest, wing chests need none`);
       for (const k of lv.keys) assert.equal(k.taken, false, where);
 
       // chests: solid tiles, so out in the maze only ever in dead ends. Eight

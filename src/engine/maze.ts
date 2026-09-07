@@ -318,25 +318,29 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
       level.chests.push(chest);
       used.add(key(pos));
     }
-    // One chest key per chest, anywhere free (all doors eventually open).
-    // The wing's chests are counted here too: a gold key opens any chest, and
-    // a wing would be a cruel place to learn otherwise. One shuffled pool of
+    // One chest key per ordinary chest, anywhere free (all doors eventually
+    // open). A wing's own chests (`secret: true`) need none — the wing itself
+    // was the lock — so they sit outside this count. One shuffled pool of
     // tiles serves every key, rather than a fresh scan of the floor per key.
+    let lockedChests = level.chests.filter((c) => !c.secret).length;
     const keyPool: Vec[] = [];
     for (const [k, d] of distFromStart) if (d >= 2) keyPool.push(parseKey(k));
     rng.shuffle(keyPool);
     let poolAt = 0;
-    for (let n = 0; n < level.chests.length; n++) {
+    for (let n = 0; n < lockedChests; n++) {
       while (poolAt < keyPool.length && used.has(key(keyPool[poolAt]))) poolAt++;
       if (poolAt >= keyPool.length) break;
       const spot = keyPool[poolAt++];
       level.keys.push({ id: `k${++keyCount}`, pos: spot, kind: 'chest', taken: false });
       used.add(key(spot));
     }
-    // Keep key counts consistent if we ran out of room.
-    while (level.chests.length > level.keys.filter((k) => k.kind === 'chest').length) {
+    // Keep key counts consistent if we ran out of room. Ordinary chests were
+    // just pushed onto the end of the array, after any wing chests, so
+    // popping from the end never drops one of those.
+    while (lockedChests > level.keys.filter((k) => k.kind === 'chest').length) {
       const dropped = level.chests.pop();
       if (dropped) used.delete(key(dropped.pos));
+      lockedChests--;
     }
     if (!opts.noLens) placeLens(level, depth, hidden, rng);
     placeBrass(level, depth, opts.runSeed, hidden, rng);
@@ -1178,7 +1182,7 @@ function validate(level: LevelData): boolean {
 
   // Key bookkeeping.
   if (level.keys.filter((k) => k.kind === 'door').length !== level.doors.length) return false;
-  if (level.keys.filter((k) => k.kind === 'chest').length !== level.chests.length) return false;
+  if (level.keys.filter((k) => k.kind === 'chest').length !== level.chests.filter((c) => !c.secret).length) return false;
 
   // Doors sit in corridors.
   for (const d of level.doors) if (!isCorridor(level, d.pos)) return false;

@@ -160,7 +160,9 @@ Requirements:
   some shallower floor of this run offered (`relicsBefore`, puzzles.ts;
   `build` takes the run seed for this). Plus, when the floor rolls them, a
   relic (`relicOffered`), an altar (from the second set, carved for a boss
-  already fought), a side chest per few rooms that may be a mimic, and — in
+  already fought), a side chest per few rooms that may be a mimic (every wing
+  chest, treasure and side alike, is `Chest.secret`: no chest key needed, and
+  drawn with the wing's own blue rather than gold), and — in
   a wing of `WING_STAIRS_FROM_ROOMS` rooms or more — its own stairs down
   (`LevelData.wingExit`) in the treasure room, so a long wing is a way down
   and never a walk back out. `trimToUsed` shifts all of it along with the
@@ -447,7 +449,8 @@ key), not a monster (walking into a live monster = attack, and the path is
 cleared).
 Hero walks the path at ~7 tiles/s (moveInterval ≈ 140ms), lerping `rpos`.
 Stepping on a key picks it up; on a chest with a chest key opens it (consumes
-the key, applies loot, item bonuses); on the exit starts the descend: after
+the key, applies loot, item bonuses) — except a `Chest.secret` chest (a wing's
+own), which opens with no key and consumes none; on the exit starts the descend: after
 ~700ms generate `depth+1`, reset trail/path, place hero at start, keep hero
 stats but NOT keys (keys are per-level), heal 50% of missing hp.
 `trail` gets every tile the hero stands on.
@@ -502,10 +505,13 @@ blue wash, plus a row of dots for their place when the seal's hint is
 floor, in the cradle, or held at the hero's shoulder), the seal (a slab with
 the lock carved into its niche — the rune order for a `seal` hint, the relic
 for a keystone, a circle for an orb — or its bare frame once open) and the
-altar (the trophy's art sunk into its face, faint once spent). A mimic chest
-is drawn as the chest it claims to be, with a sub-pixel shiver every few
-seconds for a player who stops to look. The shop's forge is a 2x2 block like
-a podium, dimmed with the podiums once anything is bought.
+altar (the trophy's art sunk into its face, faint once spent). Every chest in
+a wing (`Chest.secret`), the treasure chest and its side chests alike, is drawn
+with the lens' own blue where an ordinary chest wears gold — the same tell as
+every rune and seal in the wing — since none of them need a chest key. A mimic
+chest is drawn as the (secret) chest it claims to be, with a sub-pixel shiver
+every few seconds for a player who stops to look. The shop's forge is a 2x2
+block like a podium, dimmed with the podiums once anything is bought.
 
 Anything standing on hidden ground (a wing's monsters, chests and furniture) is
 drawn through `drawBehindWall`, which clips it to the hidden tiles around it
