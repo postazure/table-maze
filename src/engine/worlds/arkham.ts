@@ -405,9 +405,8 @@ export const ARKHAM: WorldModule = {
     title: 'Boston, after dark',
     lines: [
       'Somewhere below, the cultists chant toward a ritual, and the clock is already running.',
-      'The tablet that stops it is hidden in one house on these streets.',
-      'Force a wrong door and you find a note. Three notes name the house.',
-      'Bring the tablet to the chalk circle, in the square by the church. Every cultist killed buys time.',
+      'A tablet stops it, hidden behind one door on these streets. Force what you must.',
+      'Bring it to the chalk circle, in the square by the church.',
     ],
   }),
 
