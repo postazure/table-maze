@@ -5,7 +5,7 @@ import { Tile, eq, key } from '../src/engine/types';
 import type { GameState, Hero, LevelData, Monster, Prop, Vec, WorldData } from '../src/engine/types';
 import type { ItemStats } from '../src/engine/items';
 import { newHero } from '../src/engine/balance';
-import { bfsDistances } from '../src/engine/pathfind';
+import { bfsDistances, bfsPath } from '../src/engine/pathfind';
 import { GREECE, __internal } from '../src/engine/worlds/greece';
 import type { WorldCtx } from '../src/engine/worlds/world';
 
@@ -38,7 +38,7 @@ function fakeCtx(level: LevelData, h: Hero): { ctx: WorldCtx; calls: Record<stri
     shake: [],
   };
   const ctx: WorldCtx = {
-    state: {} as GameState,
+    state: { path: [] } as unknown as GameState,
     level,
     world: level.world as WorldData,
     hero: h,
@@ -558,4 +558,115 @@ test('a shade guards the obol and hunts the hero within its sight, otherwise hol
 
   shade.sightRange = 1;
   assert.equal(GREECE.step?.(ctx, shade), null, 'out of its (now short) sight: holds still');
+});
+
+// ---------------------------------------------------------------------------
+// The quality pass: what the first cut got wrong
+// ---------------------------------------------------------------------------
+
+test('the underworld niche is only ever reached through the seal', () => {
+  for (const seed of SEEDS) {
+    const lv = GREECE.generate(3, seed, hero(), null);
+    const seal = (lv.props ?? []).find((p) => p.kind === 'seal') as Prop;
+    const cake = (lv.props ?? []).find((p) => p.kind === 'cake') as Prop;
+    const farBank = { x: 10, y: 14 };
+    const solid = new Set((lv.props ?? []).filter((p) => p.solid && !p.hidden).map((p) => key(p.pos)));
+    const blocked = (p: Vec): boolean => solid.has(key(p));
+    assert.equal(bfsPath(lv, farBank, cake.pos, { blocked }), null, `seed ${seed}: the cake is behind the seal`);
+    solid.delete(key(seal.pos));
+    assert.ok(bfsPath(lv, farBank, cake.pos, { blocked }) !== null, `seed ${seed}: and reachable once it opens`);
+  }
+});
+
+test('braziers wear their order as pips in their art, lit or not', () => {
+  const lv = GREECE.generate(3, 7, hero(), null);
+  const braziers = (lv.props ?? []).filter((p) => p.kind === 'brazier');
+  assert.equal(braziers.length, 3);
+  const orders = braziers.map((b) => (b.data as { order: number }).order).sort();
+  assert.deepEqual(orders, [1, 2, 3]);
+  for (const b of braziers) assert.equal(b.art, `brazier:${(b.data as { order: number }).order}`);
+});
+
+test('the hazards are immune, so the hero never auto-turns to face them', () => {
+  const sky = GREECE.generate(1, 3, hero(), null);
+  const sea = GREECE.generate(2, 3, hero(), null);
+  const under = GREECE.generate(3, 3, hero(), null);
+  assert.ok(sky.monsters.find((m) => m.kind === 'medusa')!.invulnerable);
+  assert.ok(sea.monsters.filter((m) => m.kind === 'siren').every((m) => m.invulnerable));
+  assert.ok(under.monsters.find((m) => m.kind === 'cerberus')!.invulnerable);
+  assert.ok(!under.monsters.find((m) => m.kind === 'shade')!.invulnerable, 'the shade is an ordinary fight');
+});
+
+test('a symbol set down and left behind is back where it lay next time; only a statue takes it for good', () => {
+  const h = hero();
+  const sky = GREECE.generate(1, 5, h, null);
+  const bolt = (sky.props ?? []).find((p) => p.kind === 'symbol:bolt') as Prop;
+  const { ctx } = fakeCtx(sky, h);
+  ctx.pickUp(bolt);
+  GREECE.tick?.(ctx, 100);
+  // Dropped (a knockdown), then the stage regenerated with the same data: the bolt is back.
+  ctx.setDown(h.pos);
+  const again = GREECE.generate(1, 5, h, sky.world!.data);
+  const back = (again.props ?? []).find((p) => p.kind === 'symbol:bolt');
+  assert.ok(back && !back.hidden, 'the bolt is on the floor of the sky again');
+
+  // Carried into the hub and placed on Zeus: gone from the sky for good.
+  const hub = GREECE.generate(0, 5, h, sky.world!.data);
+  const hubBolt: Prop = { id: 'symbol:bolt', pos: h.pos, kind: 'symbol:bolt', solid: false, art: 'symbol:bolt', carriable: true, hidden: true };
+  hub.props = [...(hub.props ?? []), hubBolt];
+  h.carrying = 'symbol:bolt';
+  const hubCtx = fakeCtx(hub, h).ctx;
+  GREECE.onBump?.(hubCtx, (hub.props ?? []).find((p) => p.kind === 'statue:zeus') as Prop);
+  const after = GREECE.generate(1, 5, h, hub.world!.data);
+  assert.equal((after.props ?? []).find((p) => p.kind === 'symbol:bolt'), undefined, 'placed: never regenerated');
+});
+
+test("the song holds the hero's feet, and the trident quiets it as the wax does", () => {
+  const rows = ['#########', '#.......#', '#.......#', '#.......#', '#########'];
+  const data = freshGreeceData();
+  const lv = customLevel(rows, 2, data);
+  lv.monsters.push(dummyMonster('siren', { x: 7, y: 2 }));
+  const h = hero({ pos: { x: 1, y: 2 }, rpos: { x: 1, y: 2 } });
+  const { ctx, calls } = fakeCtx(lv, h);
+  ctx.state.path.push({ x: 1, y: 1 });
+
+  GREECE.tick?.(ctx, 100);
+  assert.equal(h.stun, 0, 'crossing a line between beats: not caught');
+  assert.equal(ctx.state.path.length, 1, 'and still walking');
+  GREECE.tick?.(ctx, 1400);
+  assert.ok(h.stun > 0, 'lingering to the beat: caught');
+  assert.equal(ctx.state.path.length, 0, 'the queued walk is dropped');
+  assert.ok(calls.ring.length > 0 && calls.sfx.includes('song'), 'the catch is announced');
+  const stunMid = h.stun;
+  GREECE.tick?.(ctx, 100);
+  assert.ok(h.stun >= stunMid - 100 && h.stun > 0, 'and renewed while the line holds');
+
+  const trident: Prop = { id: 'symbol:trident', pos: h.pos, kind: 'symbol:trident', solid: false, art: 'symbol:trident', carriable: true, hidden: true };
+  lv.props = [trident];
+  h.carrying = 'symbol:trident';
+  h.stun = 0;
+  const before = { ...h.pos };
+  GREECE.tick?.(ctx, 1500);
+  assert.equal(h.stun, 0, 'the trident: no hold');
+  assert.deepEqual(h.pos, before, 'and no pull');
+});
+
+test('a siren across open water does not reach the hero', () => {
+  const rows = ['#########', '#..###..#', '#..###..#', '#..###..#', '#########'];
+  const data = freshGreeceData();
+  const lv = customLevel(rows, 2, data);
+  lv.monsters.push(dummyMonster('siren', { x: 7, y: 2 }));
+  const h = hero({ pos: { x: 1, y: 2 }, rpos: { x: 1, y: 2 } });
+  const { ctx } = fakeCtx(lv, h);
+  GREECE.tick?.(ctx, 1500);
+  assert.equal(h.stun, 0);
+  assert.deepEqual(h.pos, { x: 1, y: 2 });
+});
+
+test("the trident lies at the island end of a siren's line, on shallows that reach the rock", () => {
+  const lv = GREECE.generate(2, 9, hero(), null);
+  const trident = (lv.props ?? []).find((p) => p.kind === 'symbol:trident') as Prop;
+  const siren = lv.monsters.find((m) => m.kind === 'siren' && m.pos.y === trident.pos.y);
+  assert.ok(siren, 'a siren sings down the trident\'s row');
+  for (let x = siren!.pos.x; x <= trident.pos.x; x++) assert.equal(lv.tiles[trident.pos.y][x], Tile.Floor, `open line at x=${x}`);
 });

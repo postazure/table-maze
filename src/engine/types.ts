@@ -459,6 +459,12 @@ export interface WorldData {
   data: Record<string, unknown>;
   /** Set once the world's collectible has been won; the stairs/portal home is live. */
   won: boolean;
+  /**
+   * A countdown the HUD shows beside the world's name, in ms; the module
+   * keeps it current from its own `tick` and clears it when nothing is
+   * running out. Never read by the engine.
+   */
+  clockMs?: number | null;
 }
 
 export interface LevelData {

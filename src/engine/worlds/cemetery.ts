@@ -31,6 +31,13 @@ import type { WorldCtx, WorldModule } from './world';
 type PieceKind = 'gear' | 'lens' | 'bell' | 'key';
 const PIECE_KINDS: readonly PieceKind[] = ['gear', 'lens', 'bell', 'key'];
 
+/**
+ * shut: an overgrown mound. open: bumped once, the door leads down. done: its
+ * piece has been fed to the contraption (or its chest opened) — nothing left
+ * below. A piece picked up but not yet delivered leaves the crypt 'open': set
+ * down and left, or dropped on a knockdown, it is back at the far end the
+ * next time the crypt is generated, unless the hero is carrying it.
+ */
 type CryptState = 'shut' | 'open' | 'done';
 
 interface CemeteryData extends Record<string, unknown> {
@@ -42,6 +49,8 @@ interface CemeteryData extends Record<string, unknown> {
   cryptState: CryptState[];
   /** Pieces the contraption has been fed, 0-4. */
   pieces: number;
+  /** Which crypts' pieces have been picked up at least once (for the one-time pickup line). */
+  pieceTaken?: Record<number, boolean>;
   /** Set once, the moment the fourth piece lands — `ctx.finish()` is one-shot. */
   finished: boolean;
   /** Surface only: the angels' own step clock, ms banked toward the next step. */
@@ -210,9 +219,16 @@ const PATCH_B: Rect = { x: 19, y: 3, w: 9, h: 9 };
 const PATCH_C: Rect = { x: 11, y: 27, w: 9, h: 9 };
 const PATCHES: readonly Rect[] = [PATCH_A, PATCH_B, PATCH_C];
 
-/** The walled plaza around the contraption, one door on its south face. */
+/**
+ * The walled plaza around the contraption, a door on its south face and one
+ * on its north: a yard with one way out is a yard an angel holding its
+ * distance in the doorway would shut for good.
+ */
 const PLAZA_RING: Rect = { x: 12, y: 17, w: 7, h: 7 };
-const PLAZA_DOOR: Vec = { x: 15, y: 23 };
+const PLAZA_DOORS: readonly Vec[] = [
+  { x: 15, y: 23 },
+  { x: 15, y: 17 },
+];
 const CONTRAPTION_POS: Vec = { x: 15, y: 20 };
 
 const CRYPT_POS: readonly Vec[] = [
@@ -262,7 +278,7 @@ function carvePlaza(tiles: TileType[][]): void {
   for (const p of rectTiles(PLAZA_RING)) tiles[p.y][p.x] = Tile.Wall;
   const inner: Rect = { x: PLAZA_RING.x + 1, y: PLAZA_RING.y + 1, w: PLAZA_RING.w - 2, h: PLAZA_RING.h - 2 };
   fillRect(tiles, inner);
-  tiles[PLAZA_DOOR.y][PLAZA_DOOR.x] = Tile.Floor;
+  for (const d of PLAZA_DOORS) tiles[d.y][d.x] = Tile.Floor;
 }
 
 /** Every tile a decoration must stay clear of: the patches, the plaza ring,
@@ -270,8 +286,24 @@ function carvePlaza(tiles: TileType[][]): void {
 function decorationExcluded(p: Vec): boolean {
   if (PATCHES.some((r) => inRect(r, p))) return true;
   if (inRect(PLAZA_RING, p)) return true;
-  const points = [...CRYPT_POS, CONTRAPTION_POS, PORTAL_POS, START_POS];
+  const points = [...CRYPT_POS, ...PLAZA_DOORS, CONTRAPTION_POS, PORTAL_POS, START_POS];
   return points.some((q) => manhattan(q, p) <= 1);
+}
+
+/**
+ * The prop a carried piece becomes when a stage is generated under it:
+ * hidden, in the hero's arms, so `ctx.carried()` still finds it on the
+ * surface and in every other crypt. Without this a piece would vanish on
+ * the stairs up.
+ */
+function carriedPiece(hero: Hero, data: CemeteryData): Prop | null {
+  const id = hero.carrying;
+  if (!id) return null;
+  const idx = PIECE_IDS.indexOf(id);
+  if (idx < 0) return null;
+  const kind = data.pieceKind[idx];
+  if (!kind) return null;
+  return { id, pos: { ...hero.pos }, kind: `piece:${kind}`, solid: false, art: `piece:${kind}`, carriable: true, hidden: true };
 }
 
 function buildSurface(runSeed: number, hero: Hero, data: CemeteryData): LevelData {
@@ -302,6 +334,8 @@ function buildSurface(runSeed: number, hero: Hero, data: CemeteryData): LevelDat
     state: contraptionState(data.pieces),
   });
   props.push({ id: 'home', pos: { ...PORTAL_POS }, kind: 'portal-home', solid: true, art: 'portal-home' });
+  const carried = carriedPiece(hero, data);
+  if (carried) props.push(carried);
   for (let i = 0; i < FENCE_POS.length; i++) {
     props.push({ id: `fence-${i}`, pos: { ...FENCE_POS[i] }, kind: 'fence', solid: true, art: 'fence' });
   }
@@ -389,6 +423,7 @@ const GHOUL_CHASE_RANGE = 6;
 function pieceId(idx: number): string {
   return `piece-${idx}`;
 }
+const PIECE_IDS: readonly string[] = [0, 1, 2, 3, 4].map(pieceId);
 
 /** One of the BFS-farthest floor tiles from `from`, ties broken by seed. */
 function pickFarTile(level: LevelData, dist: Map<string, number>, rng: Rng): Vec {
@@ -436,22 +471,9 @@ function buildCrypt(stage: number, runSeed: number, hero: Hero, data: CemeteryDa
   const far = pickFarTile(level, dist, rng);
   level.exit = { ...far };
 
-  if (data.cryptState[idx] !== 'done') {
-    const kind = data.pieceKind[idx];
-    if (kind) {
-      level.props!.push({
-        id: pieceId(idx),
-        pos: { ...far },
-        kind: `piece:${kind}`,
-        solid: false,
-        art: `piece:${kind}`,
-        carriable: true,
-      });
-    } else {
-      const chest: Chest = { id: `chest-${idx}`, pos: { ...far }, opened: false, loot: rollChestLoot(hero.level, rng) };
-      level.chests.push(chest);
-    }
-  }
+  // Whatever the hero walked in with rides along, hidden in their arms.
+  const carried = carriedPiece(hero, data);
+  if (carried) level.props!.push(carried);
 
   const reachable: Vec[] = [];
   for (const [k, d] of dist) {
@@ -462,6 +484,30 @@ function buildCrypt(stage: number, runSeed: number, hero: Hero, data: CemeteryDa
   }
   rng.shuffle(reachable);
   let next = 0;
+
+  if (data.cryptState[idx] !== 'done') {
+    const kind = data.pieceKind[idx];
+    if (kind) {
+      // This crypt's own piece, unless it is the one in the hero's arms.
+      if (hero.carrying !== pieceId(idx)) {
+        level.props!.push({
+          id: pieceId(idx),
+          pos: { ...far },
+          kind: `piece:${kind}`,
+          solid: false,
+          art: `piece:${kind}`,
+          carriable: true,
+        });
+      }
+    } else {
+      // The decoy: a chest of gold at the far end, and the key that opens it
+      // somewhere on the way, since nothing else down here hands one out.
+      const chest: Chest = { id: `chest-${idx}`, pos: { ...far }, opened: false, loot: rollChestLoot(hero.level, rng) };
+      level.chests.push(chest);
+      const keyPos = reachable[next++] ?? level.start;
+      level.keys.push({ id: `key-${idx}`, pos: { ...keyPos }, kind: 'chest', taken: false });
+    }
+  }
   const ghoulCount = rng.int(3, 5);
   for (let i = 0; i < ghoulCount && next < reachable.length; i++) {
     const pos = reachable[next++];
@@ -486,13 +532,16 @@ function buildCrypt(stage: number, runSeed: number, hero: Hero, data: CemeteryDa
   return level;
 }
 
-/** The tile a shift must never cut the hero off from: the piece, the chest,
- *  or (once taken) nothing extra beyond the stairs. */
-function cryptTarget(level: LevelData): Vec | null {
+/** The tiles a shift must never cut the hero off from: the piece, the chest
+ *  and the key that opens it, whichever are still lying about. */
+function cryptTargets(level: LevelData): Vec[] {
+  const out: Vec[] = [];
   const piece = (level.props ?? []).find((p) => p.kind.startsWith('piece:') && !p.hidden);
-  if (piece) return piece.pos;
+  if (piece) out.push(piece.pos);
   const chest = level.chests.find((c) => !c.opened);
-  return chest ? chest.pos : null;
+  if (chest) out.push(chest.pos);
+  for (const k of level.keys) if (!k.taken) out.push(k.pos);
+  return out;
 }
 
 /** The 25s rumble: open a few wall segments, close an equal number of
@@ -506,6 +555,7 @@ function shiftMaze(ctx: WorldCtx): void {
   for (const m of level.monsters) if (m.alive) reserved.add(key(m.pos));
   for (const p of level.props ?? []) if (!p.hidden) reserved.add(key(p.pos));
   for (const c of level.chests) reserved.add(key(c.pos));
+  for (const k of level.keys) if (!k.taken) reserved.add(key(k.pos));
 
   const openCands: Vec[] = [];
   const closeCands: Vec[] = [];
@@ -529,10 +579,9 @@ function shiftMaze(ctx: WorldCtx): void {
   for (const p of toOpen) level.tiles[p.y][p.x] = Tile.Floor;
   for (const p of toClose) level.tiles[p.y][p.x] = Tile.Wall;
 
-  const target = cryptTarget(level);
   const okStairs = bfsPath(level, ctx.hero.pos, level.start) !== null;
-  const okTarget = !target || bfsPath(level, ctx.hero.pos, target) !== null;
-  if (!okStairs || !okTarget) {
+  const okTargets = cryptTargets(level).every((target) => bfsPath(level, ctx.hero.pos, target) !== null);
+  if (!okStairs || !okTargets) {
     const changed = [...toOpen, ...toClose];
     changed.forEach((p, i) => {
       level.tiles[p.y][p.x] = before[i];
@@ -553,6 +602,12 @@ const ANGEL_WAKE_BFS = 10;
 const ANGEL_LOSE_BFS = 12;
 /** Hold this many tiles off, unless the ring has closed. */
 const ANGEL_HOLD = 3;
+/**
+ * Holding is holding in both directions: a hero who walks up to an angel
+ * inside this distance pushes it a step back, so one standing in a doorway
+ * or a hedge corridor is never a wall the hero cannot get past.
+ */
+const ANGEL_BACK_OFF = 2;
 /** "On screen" for the headcount that decides whether they close in. */
 const ANGEL_SCREEN = 7;
 /** That many awake angels on screen at once, and every one of them commits. */
@@ -614,10 +669,32 @@ function angelStep(ctx: WorldCtx): void {
         m.pos = { ...next };
         m.rpos = { ...next };
       }
+    } else if (path.length <= ANGEL_BACK_OFF) {
+      const back = stepAway(level, m, hero, blocked);
+      if (back) {
+        m.pos = { ...back };
+        m.rpos = { ...back };
+      }
     }
   }
 
   if (awake.some((m) => manhattan(m.pos, hero) <= 1)) ctx.gameOver('stone');
+}
+
+/** The neighbouring tile that puts the most walk between `m` and the hero, if any does. */
+function stepAway(level: LevelData, m: Monster, hero: Vec, blocked: (p: Vec) => boolean): Vec | null {
+  const here = bfsPath(level, m.pos, hero)?.length ?? 0;
+  let best: Vec | null = null;
+  let bestLen = here;
+  for (const n of floorNeighbors(level, m.pos)) {
+    if (blocked(n)) continue;
+    const len = bfsPath(level, n, hero)?.length ?? Number.POSITIVE_INFINITY;
+    if (len > bestLen) {
+      bestLen = len;
+      best = n;
+    }
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------
@@ -657,9 +734,9 @@ export const CEMETERY: WorldModule = {
         lines: [
           'Weeping angels stand watch over these grounds. Never blink first.',
           'They keep their distance until five of them share your screen — then they close in, and a touch turns you to stone.',
-          'Five crypts wait behind these walls. Bump a shut one to open it, and the open door leads down.',
-          'The contraption in the yard wants four pieces before it will open the way.',
-          'Lose them in the hedges.',
+          'Five crypts wait in these grounds. Bump a shut one to open it, and the open door leads down.',
+          'Four of them hold a piece of the contraption in the yard. It wants all four before it will open the way.',
+          'Lose them in the hedges: one left far enough behind goes back to sleep where it stands.',
         ],
       };
     }
@@ -693,7 +770,7 @@ export const CEMETERY: WorldModule = {
       return;
     }
     const idx = ctx.world.stage - 1;
-    if (data.cryptState[idx] !== 'done') {
+    if (data.cryptState[idx] !== 'done' && data.pieceKind[idx] === null) {
       const chest = ctx.level.chests[0];
       if (chest?.opened) {
         data.cryptState[idx] = 'done';
@@ -721,9 +798,12 @@ export const CEMETERY: WorldModule = {
     const data = ctx.world.data as CemeteryData;
     if (data.cryptState[idx] === 'done') return;
     const carried = ctx.carried();
-    if (carried && carried.id === pieceId(idx)) {
-      data.cryptState[idx] = 'done';
-      ctx.log('You take the relic piece.');
+    if (carried && carried.id === pieceId(idx) && !data.pieceTaken?.[idx]) {
+      // Said once per piece; the crypt itself stays 'open' until the
+      // contraption has the piece, so a dropped one is never lost.
+      data.pieceTaken = { ...(data.pieceTaken ?? {}), [idx]: true };
+      ctx.log('You take the relic piece. The contraption in the yard wants it.');
+      ctx.text(carried.pos, 'A relic piece', '#f5d76e', 1200);
     }
   },
 
@@ -755,6 +835,8 @@ export const CEMETERY: WorldModule = {
       if (carried && carried.kind.startsWith('piece:')) {
         ctx.consume(carried);
         data.pieces++;
+        const idx = PIECE_IDS.indexOf(carried.id);
+        if (idx >= 0) data.cryptState[idx] = 'done';
         prop.state = contraptionState(data.pieces);
         ctx.ring(prop.pos, 1, '#f5d76e', 500);
         ctx.log('The contraption takes the piece.');

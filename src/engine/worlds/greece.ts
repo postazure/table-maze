@@ -39,15 +39,18 @@ const GOD_COLOR: Record<God, string> = { zeus: '#f5c451', poseidon: '#3a8fe0', h
 const SYMBOL_NOUN: Record<string, string> = { 'symbol:bolt': 'thunderbolt', 'symbol:trident': 'trident', 'symbol:helm': 'helm' };
 const GATE_OF: Record<God, string> = { zeus: 'gate:sky', poseidon: 'gate:sea', hades: 'gate:underworld' };
 
-type TakenKey = 'bolt' | 'trident' | 'helm';
-
 /**
  * Everything that rides from stage to stage (and into the save). Every field
  * is plain JSON — the engine never reads it, only carries it.
  */
 interface GreeceData {
+  /**
+   * Which statues have their symbol. A symbol only ever leaves the world
+   * through its statue: set down in its realm and left there, or dropped on
+   * a knockdown, it is back where it lay the next time the realm is
+   * generated (unless the hero is carrying it, see `carriedGhost`).
+   */
   placed: Record<God, boolean>;
-  taken: Record<TakenKey, boolean>;
   /** Where the sea's ship currently sits (stage 2). */
   ship: 'pier' | 'island';
   /** Stage 3: has the brazier order already been solved (persists once true). */
@@ -60,6 +63,8 @@ interface GreeceData {
   gazeMs: number;
   /** Stage 2 only, reset whenever the stage is (re)generated: the song's beat clock. */
   songMs: number;
+  /** Stage 2 only: a siren had the hero last tick (so the hold's cue fires once per catch). */
+  songHeld?: boolean;
   /** Which alcove/gate slot each god landed in this run (varies the hub a little). */
   godOrder: God[];
 }
@@ -67,7 +72,6 @@ interface GreeceData {
 function freshData(rng: Rng): GreeceData {
   return {
     placed: { zeus: false, poseidon: false, hades: false },
-    taken: { bolt: false, trident: false, helm: false },
     ship: 'pier',
     sealOpen: false,
     brazierProgress: 0,
@@ -88,11 +92,6 @@ function readData(raw: WorldData['data'] | null, rng: Rng): GreeceData {
       zeus: !!d.placed?.zeus,
       poseidon: !!d.placed?.poseidon,
       hades: !!d.placed?.hades,
-    },
-    taken: {
-      bolt: !!d.taken?.bolt,
-      trident: !!d.taken?.trident,
-      helm: !!d.taken?.helm,
     },
     ship: d.ship === 'island' ? 'island' : 'pier',
     sealOpen: !!d.sealOpen,
@@ -273,7 +272,9 @@ function buildHub(rng: Rng, runSeed: number, hero: Hero, data: GreeceData): Leve
   const gateBottomY = plaza.y + plaza.h + 4;
   gateGods.forEach((god, i) => {
     const x = slotsX[i];
-    for (let y = plaza.y + plaza.h; y < gateBottomY; y++) tiles[y][x] = Tile.Floor;
+    // The gate's own tile is floor too: a solid prop on a wall tile is one a
+    // drag can never aim at, and so never bump.
+    for (let y = plaza.y + plaza.h; y <= gateBottomY; y++) tiles[y][x] = Tile.Floor;
     const pos = { x, y: gateBottomY };
     const kind = GATE_OF[god];
     props.push({ id: kind, pos, kind, solid: true, art: kind });
@@ -342,7 +343,7 @@ function buildSky(rng: Rng, runSeed: number, hero: Hero, data: GreeceData): Leve
   const ghost = carriedGhost(hero, 'symbol:bolt');
   if (ghost) {
     props.push(ghost);
-  } else if (!data.taken.bolt) {
+  } else if (!data.placed.zeus) {
     const dist = bfsDistances(level, start);
     let far = start;
     let best = -1;
@@ -394,6 +395,13 @@ const ISLAND_DECK: Rect = { x: 15, y: 13, w: 4, h: 4 };
 const SHIFT: Vec = { x: ISLAND_DECK.x - PIER_DECK.x, y: ISLAND_DECK.y - PIER_DECK.y };
 const SIREN_ROWS = [7, 11, 20];
 const SIREN_SPIT_LEN = 5; // tiles of "shallows" from the beach's edge to the rock
+/**
+ * The southern siren's rock also has shallows running east to the island,
+ * so the trident's row is one long line of song from beach to island: the
+ * trident cannot be reached, or carried off, without either the wax or
+ * Poseidon's own goodwill (see `songImmune`).
+ */
+const TRIDENT_ROW = SIREN_ROWS[2];
 
 function buildSea(rng: Rng, runSeed: number, hero: Hero, data: GreeceData): LevelData {
   const tiles = solidGrid(SEA_W, SEA_H);
@@ -403,6 +411,7 @@ function buildSea(rng: Rng, runSeed: number, hero: Hero, data: GreeceData): Leve
   for (const row of SIREN_ROWS) {
     for (let x = BEACH.x + BEACH.w; x <= BEACH.x + BEACH.w + SIREN_SPIT_LEN; x++) tiles[row][x] = Tile.Floor;
   }
+  for (let x = BEACH.x + BEACH.w + SIREN_SPIT_LEN + 1; x < ISLAND.x; x++) tiles[TRIDENT_ROW][x] = Tile.Floor;
 
   const start: Vec = { x: BEACH.x + 2, y: BEACH.y + BEACH.h - 3 };
   const gatePos: Vec = { x: BEACH.x + 2, y: BEACH.y + BEACH.h - 5 };
@@ -421,10 +430,10 @@ function buildSea(rng: Rng, runSeed: number, hero: Hero, data: GreeceData): Leve
   const islandWaxGhost = carriedGhost(hero, 'wax:island');
   props.push(islandWaxGhost ?? { id: 'wax:island', pos: islandWaxPos, kind: 'wax', solid: false, art: 'wax', carriable: true });
 
-  const tridentPos = { x: ISLAND.x + 2, y: ISLAND.y + ISLAND.h - 3 };
+  const tridentPos = { x: ISLAND.x + 2, y: TRIDENT_ROW };
   const tridentGhost = carriedGhost(hero, 'symbol:trident');
   if (tridentGhost) props.push(tridentGhost);
-  else if (!data.taken.trident) {
+  else if (!data.placed.poseidon) {
     props.push({ id: 'symbol:trident', pos: tridentPos, kind: 'symbol:trident', solid: false, art: 'symbol:trident', carriable: true });
   }
 
@@ -483,8 +492,10 @@ const FAR: Rect = { x: 2, y: 14, w: 17, h: 10 };
 const NEAR_LANDING: Vec = { x: 11, y: NEAR.y + NEAR.h - 1 };
 const FAR_LANDING: Vec = { x: 10, y: FAR.y };
 const BRAZIER_ROOM: Rect = { x: 13, y: 16, w: 5, h: 6 };
-const NICHE: Rect = { x: 13, y: 24, w: 5, h: 3 };
-const SEAL_POS: Vec = { x: 15, y: 23 };
+// The niche hangs off the far bank's bottom edge by a single tile of neck,
+// and the seal stands in that neck: nothing reaches the cake around it.
+const NICHE: Rect = { x: 13, y: 25, w: 5, h: 3 };
+const SEAL_POS: Vec = { x: 15, y: 24 };
 const CORRIDOR_X = [9, 10];
 const CORRIDOR_Y0 = 24;
 const CORRIDOR_Y1 = 33;
@@ -537,7 +548,8 @@ function buildUnderworld(rng: Rng, runSeed: number, hero: Hero, data: GreeceData
       pos,
       kind: 'brazier',
       solid: false,
-      art: 'brazier',
+      // The order is carved on the rim: the art carries its own pips.
+      art: `brazier:${orders[i]}`,
       state: data.sealOpen ? 'lit' : undefined,
       data: { order: orders[i] },
     });
@@ -552,7 +564,7 @@ function buildUnderworld(rng: Rng, runSeed: number, hero: Hero, data: GreeceData
 
   const helmGhost = carriedGhost(hero, 'symbol:helm');
   if (helmGhost) props.push(helmGhost);
-  else if (!data.taken.helm) {
+  else if (!data.placed.hades) {
     props.push({
       id: 'symbol:helm',
       pos: { x: HELM_ROOM.x + 2, y: HELM_ROOM.y + 1 },
@@ -613,7 +625,10 @@ function makeMedusa(heroLevel: number, patrolPath: Vec[]): Monster {
   m.atk = 0; // her weapon is the gaze, not the hand — see `fights`
   m.def = 0;
   m.moveInterval = 700;
-  m.xp = 20 + 6 * heroLevel;
+  // A hazard, not a kill: the hero never auto-engages her (which would mean
+  // turning to face her), and a swing at her says "Immune".
+  m.invulnerable = true;
+  m.xp = 0;
   m.gold = 0;
   m.patrolPath = patrolPath;
   m.patrolIndex = 0;
@@ -625,7 +640,8 @@ function makeSiren(heroLevel: number, pos: Vec, id: string): Monster {
   const m = baseMonster('siren', 'Siren', '🧜', heroLevel, pos, id);
   m.hp = m.maxHp = Math.round(levelCurve(HERO_HP_BASE, heroLevel) * 0.8);
   m.atk = 0;
-  m.xp = 10 + 3 * heroLevel;
+  m.invulnerable = true; // her rock is the only place she can be reached, and the song rules there
+  m.xp = 0;
   return m;
 }
 
@@ -646,8 +662,8 @@ function makeCerberus(heroLevel: number, pos: Vec, asleep: boolean): Monster {
   m.hp = m.maxHp = Math.round(levelCurve(HERO_HP_BASE, heroLevel) * 1.6);
   m.atk = Math.round(levelCurve(HERO_ATK_BASE, heroLevel) * 2.5);
   m.def = Math.round(levelCurve(HERO_ATK_BASE, heroLevel) * 0.3);
-  m.state = asleep ? 'idle' : 'idle';
-  m.xp = 0; // he is a gate, not a kill — the cake is the win condition
+  m.invulnerable = true; // a gate, not a kill: the cake is the only way past
+  m.xp = 0;
   return m;
 }
 
@@ -692,8 +708,15 @@ function facingToward(hero: Hero, target: Vec): boolean {
 
 const MEDUSA_RANGE = 6;
 const MEDUSA_GAZE_MS = 900;
-const SIREN_RANGE = 7;
+/** Halfway to stone, the hero gets a word of warning over their head. */
+const MEDUSA_WARN_MS = 450;
+const SIREN_RANGE = 8;
+/** The song's beat: a hero standing in a line is caught on the next one. */
 const SIREN_BEAT_MS = 1500;
+/** Once caught, the pulls come quicker: the rock is a few seconds off, not a slow crawl. */
+const SIREN_CAUGHT_BEAT_MS = 700;
+/** While a siren has the hero, their feet are not their own: renewed every tick. */
+const SIREN_HOLD_MS = 250;
 
 // ---------------------------------------------------------------------------
 // The module
@@ -746,9 +769,9 @@ export const GREECE: WorldModule = {
           title: 'The Wine-Dark Sea',
           lines: [
             'A beach, a ship at its pier, and open sea beyond.',
-            'The sirens sing in a straight line; their song pulls you toward the rocks a step at a time.',
-            'Beeswax in your ears stops it cold, but it fills both hands.',
-            "Bump the helm to sail; the trident waits in a shrine on the far island.",
+            'The sirens sing down straight lines. Linger in one and the song takes hold and drags you to the rocks.',
+            'Beeswax in your ears stops it cold, but it fills both hands. The trident, once you hold it, quiets them too.',
+            'Bump the helm to sail; the trident waits on the far island, at the end of a siren\'s line.',
             'The gate on the beach always leads back to the gate.',
           ],
         };
@@ -759,7 +782,7 @@ export const GREECE: WorldModule = {
             'Flagstone caverns, and the black water of the Styx.',
             'Charon takes an obol to cross; a shade in the side cavern is holding one.',
             "Cerberus guards the corridor beyond, wide awake and very strong. A honey-cake set at his feet puts him to sleep.",
-            'Three braziers open the seal to the cake\'s niche — walk them in the order carved on their rims: 1, 2, 3.',
+            'Three braziers open the seal to the cake\'s niche. Walk onto them in the order of the pips on their rims: one, two, three.',
             'Charon poles you back across for nothing; nobody stays on that shore.',
           ],
         };
@@ -797,15 +820,6 @@ export const GREECE: WorldModule = {
   tick(ctx, dt) {
     const data = stageData(ctx);
     const stage = ctx.world.stage;
-
-    // Keep `taken` in sync with whatever the hero is holding, from any stage:
-    // once a symbol has left its realm it never respawns there again.
-    const carried = ctx.carried();
-    if (carried) {
-      const god = GOD_OF_SYMBOL[carried.kind];
-      if (god) data.taken[symbolKeyOf(god)] = true;
-    }
-
     if (stage === 1) tickMedusa(ctx, dt, data);
     if (stage === 2) tickSirens(ctx, dt, data);
   },
@@ -909,10 +923,6 @@ export const GREECE: WorldModule = {
   },
 };
 
-function symbolKeyOf(god: God): TakenKey {
-  return god === 'zeus' ? 'bolt' : god === 'poseidon' ? 'trident' : 'helm';
-}
-
 function bumpStatue(ctx: WorldCtx, data: GreeceData, prop: Prop): void {
   const god = prop.kind.slice('statue:'.length) as God;
   const held = ctx.carried();
@@ -971,32 +981,61 @@ function tickMedusa(ctx: WorldCtx, dt: number, data: GreeceData): void {
       ctx.ring(ctx.hero.pos, 3, '#e5484d', 500);
       ctx.sfx('gaze');
     }
+    if (data.gazeMs - dt < MEDUSA_WARN_MS && data.gazeMs >= MEDUSA_WARN_MS) {
+      ctx.text(ctx.hero.pos, 'Look away!', '#e5484d', 600);
+      ctx.flash(ctx.hero.pos, '#9a9aa4', 400);
+    }
     if (data.gazeMs >= MEDUSA_GAZE_MS) ctx.gameOver('petrified');
   } else {
     data.gazeMs = 0;
   }
 }
 
-function tickSirens(ctx: WorldCtx, dt: number, data: GreeceData): void {
-  data.songMs += dt;
-  if (data.songMs < SIREN_BEAT_MS) return;
-  data.songMs -= SIREN_BEAT_MS;
-
+/** Wax in the ears, or the sea-god's own trident in hand: the song is nothing. */
+function songImmune(ctx: WorldCtx): boolean {
   const held = ctx.carried();
-  if (held && held.kind === 'wax') return; // ears stopped: no pull this beat
+  return !!held && (held.kind === 'wax' || held.kind === 'symbol:trident');
+}
 
-  const sirens = ctx.level.monsters.filter((m) => m.kind === 'siren');
-  for (const s of sirens) {
-    if (ctx.hero.pos.x !== s.pos.x && ctx.hero.pos.y !== s.pos.y) continue;
+/** The sirens whose song reaches the hero: same row or column, open water or shallows all the way, in range. */
+function singingAt(ctx: WorldCtx): Monster[] {
+  return ctx.level.monsters.filter((s) => {
+    if (s.kind !== 'siren') return false;
     const d = manhattan(ctx.hero.pos, s.pos);
-    if (d === 0 || d > SIREN_RANGE) continue;
+    return d > 0 && d <= SIREN_RANGE && lineClear(ctx.level, ctx.hero.pos, s.pos);
+  });
+}
+
+function tickSirens(ctx: WorldCtx, dt: number, data: GreeceData): void {
+  const sirens = songImmune(ctx) ? [] : singingAt(ctx);
+  if (!sirens.length) data.songHeld = false;
+  // Caught: while a siren has the hero, they cannot walk out of the line
+  // themselves. The pull is the only thing that moves them, and it only
+  // ever moves them toward the rock. A hero merely crossing a line between
+  // beats is not caught; one who lingers is caught on the next beat.
+  if (data.songHeld) {
+    ctx.hero.stun = Math.max(ctx.hero.stun, SIREN_HOLD_MS);
+    if (ctx.state.path) ctx.state.path.length = 0;
+  }
+
+  data.songMs += dt;
+  const beat = data.songHeld ? SIREN_CAUGHT_BEAT_MS : SIREN_BEAT_MS;
+  if (data.songMs < beat) return;
+  data.songMs -= beat;
+  if (sirens.length && !data.songHeld) {
+    data.songHeld = true;
+    ctx.ring(ctx.hero.pos, 2, '#8fd8ff', 500);
+    ctx.text(ctx.hero.pos, 'the song...', '#8fd8ff', 900);
+    ctx.hero.stun = Math.max(ctx.hero.stun, SIREN_HOLD_MS);
+    if (ctx.state.path) ctx.state.path.length = 0;
+  }
+  for (const s of sirens) {
     const dx = Math.sign(s.pos.x - ctx.hero.pos.x);
     const dy = Math.sign(s.pos.y - ctx.hero.pos.y);
     const next = { x: ctx.hero.pos.x + dx, y: ctx.hero.pos.y + dy };
     if (!isFloor(ctx.level, next)) continue;
     ctx.hero.pos = next;
     ctx.hero.rpos = { ...next };
-    ctx.text(next, 'the song...', '#8fd8ff', 700);
     ctx.sfx('song');
     ctx.log('The song pulls you a step toward the rocks.');
     if (manhattan(next, s.pos) <= 1) {

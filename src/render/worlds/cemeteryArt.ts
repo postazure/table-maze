@@ -1,7 +1,7 @@
 /**
- * Art for the Cemetery world: the graveyard's props, its two monsters
- * (ghoul, shade — the angels use monsterArt's own 'angel' sprite), and the
- * game-over scene.
+ * Art for the Cemetery world: the graveyard's props, its ghoul (the angels
+ * use monsterArt's own 'angel' sprite, the skeletons the crypt theme's
+ * guard), and the game-over scene.
  */
 import type { ArtSpec } from '../itemArt';
 import type { CreatureCfg } from '../monsterArt';
@@ -123,17 +123,6 @@ export const MONSTER_CFGS: Record<string, CreatureCfg> = {
     eyePositions: [
       [3, 2],
       [4, 2],
-    ],
-  },
-  // Grey and thin like a wraith, but hollow where a wraith glows: the eyes
-  // are the one thing on it darker than the rest.
-  shade: {
-    widths: [0, 2, 3, 3, 3, 3, 3, 3],
-    body: '#6b6b76',
-    eye: '#141414',
-    eyePositions: [
-      [2, 3],
-      [5, 3],
     ],
   },
 };

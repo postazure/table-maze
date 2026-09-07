@@ -82,6 +82,8 @@ export interface HudModel {
   levelKind: 'maze' | 'shop' | 'boss' | 'world';
   /** The world's own name (`WORLDS[kind].name`) on a world floor; null everywhere else. */
   worldName: string | null;
+  /** A world's running countdown (`WorldData.clockMs`), in whole seconds; null when none is running. */
+  worldClock: number | null;
   /** Current popup, compared by reference. */
   modal: Modal | null;
 }
@@ -138,6 +140,10 @@ export function deriveHudModel(state: GameState): HudModel {
     lensHeirloom: !!hero.lens?.heirloom,
     levelKind: state.level.kind,
     worldName: state.level.kind === 'world' && state.level.world ? WORLDS[state.level.world.kind].name : null,
+    worldClock:
+      state.level.kind === 'world' && typeof state.level.world?.clockMs === 'number'
+        ? Math.max(0, Math.ceil(state.level.world.clockMs / 1000))
+        : null,
     modal: state.modal,
     log: state.log.map((m) => m.text),
   };
@@ -186,6 +192,7 @@ export function hudModelEquals(a: HudModel | null, b: HudModel): boolean {
     a.lensHeirloom !== b.lensHeirloom ||
     a.levelKind !== b.levelKind ||
     a.worldName !== b.worldName ||
+    a.worldClock !== b.worldClock ||
     a.modal !== b.modal ||
     a.log.length !== b.log.length ||
     !gearSlotEquals(a.gear.offense, b.gear.offense) ||

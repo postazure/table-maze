@@ -179,6 +179,14 @@ const THEME_TRACK: Record<string, TrackId> = {
   library: 'nocturne',
   hive: 'ember',
   abyss: 'descent',
+  // The boss worlds: ambience like a maze floor, never the boss chambers'
+  // pulse. Sky and sea take the cold, open pieces; the dead take the fall.
+  olympus: 'frost',
+  aegean: 'undertow',
+  styx: 'descent',
+  arkham: 'nocturne',
+  cemetery: 'nocturne',
+  crypts: 'descent',
 };
 
 /** The track for the level the hero is standing on. */
@@ -186,7 +194,7 @@ export function trackForLevel(kind: 'maze' | 'shop' | 'boss' | 'world', theme: s
   if (kind === 'boss') return 'dread';
   if (kind === 'shop') return 'market';
   // A boss world plays by its theme like a maze floor; a world theme with no
-  // track of its own gets the boss chambers' pulse.
+  // track of its own (there are none today) would get the boss chambers' pulse.
   if (kind === 'world') return THEME_TRACK[theme] ?? 'dread';
   return THEME_TRACK[theme] ?? 'nocturne';
 }

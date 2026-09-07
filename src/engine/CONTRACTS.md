@@ -1165,7 +1165,21 @@ new `SfxId`s `craft carve portal rumble collect gaze song`. See types.ts and
   `prop.hidden = true`); the hero sets it down to swing exactly as an orb
   (`dropOrb` handles both), it drops on a knockdown, and the renderer draws
   the carried prop's art at the hero's shoulder. `carriedProp(state)` in
-  combat.ts beside `carriedOrb`.
+  combat.ts beside `carriedOrb`. A stage change (`goto`, a retry) keeps
+  `hero.carrying` only when the stage the module generated holds a hidden
+  prop with that id — the module's own "ghost" of the carried thing — and
+  sets it down otherwise (`resetToLevel`). So a module that lets a prop
+  travel between stages regenerates it hidden at the hero's feet on every
+  stage it can arrive on, and never marks a prop "gone" until the thing that
+  consumes it has done so: a symbol dropped on a knockdown is back where it
+  lay on the retry.
+- `WorldData.clockMs`: a module with something running out (Boston's ritual)
+  keeps this current from its `tick`; the HUD shows it as m:ss beside the
+  world's name, red and blinking under a minute. Null or absent: no clock.
+- Every prop stands on a floor tile with a floor tile beside it (a solid
+  prop on a wall tile is one a drag can never aim at, so never bump), and a
+  hazard the hero is not meant to fight is `invulnerable` (so the hero never
+  auto-engages it, which would mean turning to face it).
 - `WorldMonsterKind`s are routed by `chooseStep` to `module.step`, and
   `willFight` to `module.fights` (default true). They take the ordinary
   attack rule when adjacent. Roster kinds on a world floor behave as
