@@ -39,15 +39,27 @@ export function floorOfSet(depth: number): 1 | 2 | 3 {
   return n as 1 | 2 | 3;
 }
 
-/** A lens turns up in a chest on the first two floors of a set, never the third. */
+/**
+ * A lens turns up in a chest on the first two floors of a set, never the
+ * third — and never on the run's first floor at all, which is what makes
+ * the heirloom lens (engine/crafting.ts) the one lens floor one ever sees.
+ */
 export function lensFloor(depth: number): boolean {
-  return floorOfSet(depth) < 3;
+  const d = Math.max(1, Math.floor(depth));
+  if (d === 1) return false;
+  return floorOfSet(d) < 3;
 }
 
-/** Does this hero hold a lens that still works at this depth? */
+/**
+ * Does this hero hold a lens that still works at this depth? An unbreakable
+ * lens (crafted at the jeweller's bench, see engine/crafting.ts) works on
+ * every depth for the rest of the run; an ordinary one only on the set it
+ * was found in.
+ */
 export function lensActive(hero: Hero, depth: number): boolean {
   const lens = hero.lens;
-  return !!lens && lens.set === floorSet(depth);
+  if (!lens) return false;
+  return lens.unbreakable ? true : lens.set === floorSet(depth);
 }
 
 /** The lens' display name. One item, one name, everywhere. */

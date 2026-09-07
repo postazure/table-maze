@@ -22,6 +22,7 @@ import { heroStats } from './items';
 import { lurkerSightRange } from './balance';
 import { hiddenAt, sameSide } from './lens';
 import { altarAt, closedSealAt, pickupAt } from './puzzles';
+import { benchAt, portalAt } from './crafting';
 import { timeBubble } from './shrines';
 import type { WorldCtx } from './worlds/world';
 import { WORLDS } from './worlds';
@@ -232,6 +233,8 @@ function moveBlocked(state: GameState, m: Monster): (p: Vec) => boolean {
     if (chestAt(level, p)) return true;
     if (altarAt(level, p)) return true;
     if (solidPropAt(level, p)) return true;
+    if (benchAt(level, p)) return true;
+    if (portalAt(level, p)) return true;
     if (pickupAt(level, p)) return true;
     if (exitAt(level, p)) return true;
     return false;

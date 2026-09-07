@@ -107,8 +107,9 @@ test('a lens belongs to the three-floor set it was found in', () => {
   assert.deepEqual([1, 2, 3].map(floorSet), [0, 0, 0]);
   assert.deepEqual([4, 5, 6].map(floorSet), [1, 1, 1]);
   assert.deepEqual([1, 2, 3, 4].map(floorOfSet), [1, 2, 3, 1]);
-  // The first two floors of a set hold a lens; the third never does.
-  assert.deepEqual([1, 2, 3, 4, 5, 6].map(lensFloor), [true, true, false, true, true, false]);
+  // The first two floors of a set hold a lens; the third never does — and
+  // floor one of the run never does either, no matter its set.
+  assert.deepEqual([1, 2, 3, 4, 5, 6].map(lensFloor), [false, true, false, true, true, false]);
 });
 
 test('a lens works on its own set of floors and nowhere else', () => {

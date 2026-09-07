@@ -577,30 +577,32 @@ test('an altar takes the trophy it is carved for and hands over a boon, now and 
 });
 
 test('a boon carries into the next runs and breaks after its last', () => {
-  let boons: Boon[] = [{ kind: 'vigor', runsLeft: 2 }, { kind: 'sight', runsLeft: 1 }];
+  let boons: Boon[] = [{ kind: 'vigor', runsLeft: 2 }, { kind: 'grace', runsLeft: 1 }];
+  const base = newHero();
   // Run one: both apply.
   let g = Game.forTest(5, boons);
-  assert.equal(g.state.hero.atk, newHero().atk + VIGOR_ATK);
-  assert.ok(g.state.hero.lens, 'second sight hands over a lens');
-  assert.equal(g.state.hero.lens?.set, 0);
-  assert.deepEqual(g.state.boons, [{ kind: 'vigor', runsLeft: 1 }, { kind: 'sight', runsLeft: 0 }]);
+  assert.equal(g.state.hero.atk, base.atk + VIGOR_ATK);
+  assert.equal(g.state.hero.spirit, base.spirit + 2, "angel's grace adds spirit");
+  assert.equal(g.state.hero.potionCapacity, base.potionCapacity + 1, "angel's grace hands over a potion");
+  assert.equal(g.state.hero.potions, base.potions + 1);
+  assert.deepEqual(g.state.boons, [{ kind: 'vigor', runsLeft: 1 }, { kind: 'grace', runsLeft: 0 }]);
   // What spendBoons keeps for the run after is what Game wrote back.
   const spent = spendBoons(boons, newHero());
   assert.deepEqual(spent.keep, [{ kind: 'vigor', runsLeft: 1 }]);
   boons = spent.keep;
   g = Game.forTest(6, boons);
-  assert.ok(!g.state.hero.lens, 'second sight has broken');
-  assert.equal(g.state.hero.atk, newHero().atk + VIGOR_ATK);
+  assert.equal(g.state.hero.spirit, base.spirit, "angel's grace has broken");
+  assert.equal(g.state.hero.atk, base.atk + VIGOR_ATK);
   assert.deepEqual(spendBoons(boons, newHero()).keep, [], 'and vigor after this one');
   // A boon with no runs left is ignored, and duplicates apply once.
   const h = newHero();
   const { active } = spendBoons([{ kind: 'vigor', runsLeft: 0 }, { kind: 'deathless', runsLeft: 3 }, { kind: 'deathless', runsLeft: 1 }], h);
   assert.deepEqual(active, [{ kind: 'deathless', runsLeft: 2 }]);
   assert.equal(h.maxHp, newHero().maxHp + DEATHLESS_HEARTS * HEART);
-  // applyBoon on its own never stacks a second lens over a first.
-  applyBoon(h, 'sight', 4);
-  applyBoon(h, 'sight', 7);
-  assert.equal(h.lens?.set, 1);
+  // applyBoon hands the hero the numbers directly.
+  const beforeSpirit = h.spirit;
+  applyBoon(h, 'grace', 4);
+  assert.equal(h.spirit, beforeSpirit + 2);
 });
 
 class MemStorage {

@@ -12,6 +12,9 @@ import { ShopOfferModal } from './ShopOfferModal';
 import { ShopForgeModal } from './ShopForgeModal';
 import { AltarModal } from './AltarModal';
 import { BoonModal } from './BoonModal';
+import { CraftModal } from './CraftModal';
+import { CarveModal } from './CarveModal';
+import { PortalModal } from './PortalModal';
 import { VolumeModal } from './VolumeModal';
 import { WorldIntroModal } from './WorldIntroModal';
 import { WorldWonModal } from './WorldWonModal';
@@ -19,8 +22,22 @@ import { useAudio } from './useAudio';
 import { useGame } from './useGame';
 
 export function App() {
-  const { game, hud, newGame, dismissModal, openHelp, buyOffer, retryBoss, buyUpgrade, takeMagic, sellMagic, offerTrophy } =
-    useGame();
+  const {
+    game,
+    hud,
+    newGame,
+    dismissModal,
+    openHelp,
+    buyOffer,
+    retryBoss,
+    buyUpgrade,
+    takeMagic,
+    sellMagic,
+    offerTrophy,
+    craftLens,
+    carveTrophy,
+    usePortal,
+  } = useGame();
   const { audio, soundOn, toggleSound, sfxVolume, setSfxVolume, musicVolume, setMusicVolume } = useAudio();
   const [volumeOpen, setVolumeOpen] = useState(false);
   return (
@@ -57,6 +74,15 @@ export function App() {
         <AltarModal trophy={hud.modal.trophy} boon={hud.modal.boon} onOffer={offerTrophy} onClose={dismissModal} />
       )}
       {hud.modal?.kind === 'boon' && <BoonModal boon={hud.modal.boon} runsLeft={hud.modal.runsLeft} onClose={dismissModal} />}
+      {hud.modal?.kind === 'craft' && (
+        <CraftModal canCraft={hud.modal.canCraft} reason={hud.modal.reason} onCraft={craftLens} onClose={dismissModal} />
+      )}
+      {hud.modal?.kind === 'carve' && (
+        <CarveModal trophies={hud.modal.trophies} onCarve={carveTrophy} onClose={dismissModal} />
+      )}
+      {hud.modal?.kind === 'portal' && (
+        <PortalModal crystals={hud.modal.crystals} onEnter={usePortal} onClose={dismissModal} />
+      )}
       {hud.modal?.kind === 'help' && <HelpModal model={hud} onClose={dismissModal} />}
       {hud.modal?.kind === 'lensShatter' && <LensShatterModal onClose={dismissModal} />}
       {hud.modal?.kind === 'bossIntro' && <BossIntroModal boss={hud.modal.boss} onClose={dismissModal} />}

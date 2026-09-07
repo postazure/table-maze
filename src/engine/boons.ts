@@ -14,7 +14,6 @@
  */
 import type { Boon, BoonKind, BossKind, Hero } from './types';
 import { HEART } from './types';
-import { floorSet } from './lens';
 
 /** How many runs a fresh boon lasts, the one it is earned in included. */
 export const BOON_RUNS = 3;
@@ -33,7 +32,7 @@ export function trophyName(boss: BossKind): string {
 const BOON_FOR_TROPHY: Record<BossKind, BoonKind> = {
   necromancer: 'deathless',
   minotaur: 'vigor',
-  angels: 'sight',
+  angels: 'grace',
 };
 
 export function boonForTrophy(boss: BossKind): BoonKind {
@@ -43,7 +42,7 @@ export function boonForTrophy(boss: BossKind): BoonKind {
 const BOON_NAMES: Record<BoonKind, string> = {
   deathless: 'Deathless Pact',
   vigor: "Bull's Vigor",
-  sight: 'Second Sight',
+  grace: "Angel's Grace",
 };
 
 export function boonName(kind: BoonKind): string {
@@ -55,6 +54,10 @@ export const DEATHLESS_HEARTS = 2;
 /** Attack and defense Bull's Vigor adds. */
 export const VIGOR_ATK = 1;
 export const VIGOR_DEF = 1;
+/** Spirit Angel's Grace adds. */
+export const GRACE_SPIRIT = 2;
+/** Potion capacity (and potions in hand) Angel's Grace adds. */
+export const GRACE_POTIONS = 1;
 
 export function boonDescription(kind: BoonKind): string {
   switch (kind) {
@@ -62,8 +65,8 @@ export function boonDescription(kind: BoonKind): string {
       return `+${DEATHLESS_HEARTS} hearts, from the first floor.`;
     case 'vigor':
       return `+${VIGOR_ATK} attack and +${VIGOR_DEF} defense, from the first floor.`;
-    case 'sight':
-      return 'You start each run carrying a Cracked Lens for the first three floors.';
+    case 'grace':
+      return `+${GRACE_SPIRIT} spirit, and a health potion from the first floor.`;
   }
 }
 
@@ -82,10 +85,10 @@ export function applyBoon(hero: Hero, kind: BoonKind, depth: number): void {
       hero.atk += VIGOR_ATK;
       hero.def += VIGOR_DEF;
       break;
-    case 'sight':
-      // A lens for the set the hero is standing in: at the start of a run
-      // that is the first three floors; at an altar it is this set's.
-      if (!hero.lens) hero.lens = { depth, set: floorSet(depth) };
+    case 'grace':
+      hero.spirit += GRACE_SPIRIT;
+      hero.potionCapacity += GRACE_POTIONS;
+      hero.potions += GRACE_POTIONS;
       break;
   }
 }

@@ -8,6 +8,7 @@ import type {
   Altar,
   Boon,
   BossData,
+  BossKind,
   Buff,
   Chest,
   Dir,
@@ -91,7 +92,8 @@ import {
   socketAt,
 } from './puzzles';
 import { BOON_RUNS, addBoon, applyBoon, boonForTrophy, boonName, spendBoons, trophyName } from './boons';
-import { loadBoons, saveBoons } from './save';
+import { loadBoons, loadCrystals, loadHeirloom, saveBoons, saveCrystals, saveHeirloom } from './save';
+import { BRASS_NAME, benchAt, canCraft, carverAt, crystalName, portalAt } from './crafting';
 import {
   FREEZE_MS,
   FROST_RANGE,
@@ -153,6 +155,10 @@ const COMPASS_MS = 500;
 const PURPLE = '#b98cff';
 /** The lens' own colour, used for its pickup text and its last moments. */
 const LENS_COLOR = '#8fe3ff';
+/** Brass: dull gold, never mistaken for the coin it is not. */
+const BRASS_COLOR = '#a8873a';
+/** A carved crystal's own colour, for the ring when it is cut. */
+const CRYSTAL_COLOR = '#c13fe0';
 /** ms between the ripples a time-bubble shrine sends out. */
 const TIME_PULSE_MS = 900;
 /** Runes and seals light in the lens' own blue; a wrong rune goes red. */
@@ -416,7 +422,19 @@ export class Game {
     // off; the ones with runs still to come are written back.
     const spent = spendBoons(boons, hero);
     saveBoons(spent.keep);
-    const level = generateLevel(depth, seed, hero.level);
+    // Crystals outlive the run entirely: they ride in their own storage slot,
+    // never the save, so a game over or a fresh run never loses one.
+    hero.crystals = loadCrystals();
+    // The heirloom: the run after the lens went unbreakable at the bench
+    // starts with an ordinary lens for the first set anyway — floor one's
+    // only lens, and the one the portal is for. The flag is cleared the
+    // instant it is read: it is a one-run inheritance, not a standing perk.
+    const heirloom = loadHeirloom();
+    if (heirloom) {
+      saveHeirloom(false);
+      hero.lens = { depth, set: 0, heirloom: true };
+    }
+    const level = generateLevel(depth, seed, hero.level, hero.lens?.unbreakable ? { noLens: true } : undefined);
     hero.pos = { x: level.start.x, y: level.start.y };
     hero.rpos = { x: level.start.x, y: level.start.y };
     this.state = {
@@ -451,6 +469,9 @@ export class Game {
     for (const b of spent.active) {
       pushLog(this.state, `${boonName(b.kind)} holds${b.runsLeft > 0 ? ` (${b.runsLeft} more run${b.runsLeft === 1 ? '' : 's'})` : ' — its last run'}`);
     }
+    if (heirloom) {
+      pushLog(this.state, "The lens' brass housing has cracked. The glass holds, for now.");
+    }
     this.emit();
   }
 
@@ -475,7 +496,7 @@ export class Game {
     } else {
       st.depth += 1;
       st.stats.deepest = Math.max(st.stats.deepest, st.depth);
-      level = generateLevel(st.depth, st.seed, hero.level);
+      level = generateLevel(st.depth, st.seed, hero.level, hero.lens?.unbreakable ? { noLens: true } : undefined);
     }
     this.resetToLevel(level, salt, 0.5);
     const boss = st.level.boss;
@@ -720,6 +741,8 @@ export class Game {
     if (liveMonsterAt(st.level, p)) return false;
     if (chestAt(st.level, p)) return false;
     if (altarAt(st.level, p)) return false;
+    if (benchAt(st.level, p)) return false;
+    if (portalAt(st.level, p)) return false;
     if (offerAt(st.level, p) || forgeAt(st.level, p)) return false; // pedestals are solid
     if (solidPropAt(st.level, p)) return false; // a world's own furniture is solid too
     if (closedDoorAt(st.level, p) && st.hero.keys.door <= 0) return false;
@@ -796,6 +819,12 @@ export class Game {
       return;
     }
 
+    const bench = benchAt(st.level, next);
+    if (bench) {
+      this.bumpBench(bench);
+      return;
+    }
+
     const chest = chestAt(st.level, next);
     if (chest) {
       this.bumpChest(chest);
@@ -805,6 +834,12 @@ export class Game {
     const altar = altarAt(st.level, next);
     if (altar) {
       this.bumpAltar(altar);
+      return;
+    }
+
+    const portal = portalAt(st.level, next);
+    if (portal) {
+      this.bumpPortal(portal);
       return;
     }
 
@@ -909,6 +944,11 @@ export class Game {
       pushText(st, chest.pos, LENS_NAME.toUpperCase(), LENS_COLOR, 1400);
       pushLog(st, `Found the ${LENS_NAME}`);
       pushSfx(st, 'lens');
+    }
+    if (chest.loot.brass) {
+      hero.brass = (hero.brass ?? 0) + 1;
+      pushText(st, chest.pos, BRASS_NAME.toUpperCase(), BRASS_COLOR, 1200);
+      pushLog(st, `Found a ${BRASS_NAME}`);
     }
     // A treasure chest: a magic item. Into an empty slot it goes at once. Into
     // a full one it does not: the popup asks whether to wear it in place of
@@ -1133,6 +1173,51 @@ export class Game {
   }
 
   /**
+   * The hero stepped on the carving shrine. With a trophy in hand the popup
+   * asks which to carve; with none, the shrine says so and blinks — the same
+   * shape as an altar's "you have nothing for me", except the shrine is
+   * ground the hero was already standing on rather than something bumped.
+   */
+  private stepCarver(carver: { pos: Vec; used: boolean }): void {
+    const st = this.state;
+    const hero = st.hero;
+    if (hero.trophies.length > 0) {
+      st.modal = { kind: 'carve', trophies: [...hero.trophies] };
+      this.dirty = true;
+      return;
+    }
+    st.fx.push({ kind: 'flash', pos: { x: carver.pos.x, y: carver.pos.y }, color: BLINK_RED, t: 0, ttl: 320 });
+    pushLog(st, 'A carving shrine. It wants a trophy.');
+  }
+
+  /**
+   * Carve the trophy the carve popup is showing into a crystal of that boss.
+   * Crystals outlive the run: written to their own storage slot at once, not
+   * just at the run's end, so a game over never loses one.
+   */
+  carveTrophy(boss: BossKind): void {
+    const st = this.state;
+    const hero = st.hero;
+    const modal = st.modal;
+    if (!modal || modal.kind !== 'carve') return;
+    const carver = st.level.carver;
+    if (!carver || carver.used) return;
+    const i = hero.trophies.indexOf(boss);
+    if (i < 0) return;
+    hero.trophies.splice(i, 1);
+    hero.crystals.push(boss);
+    saveCrystals(hero.crystals);
+    carver.used = true;
+    st.fx.push({ kind: 'ring', pos: { x: carver.pos.x, y: carver.pos.y }, radius: 2.2, color: CRYSTAL_COLOR, t: 0, ttl: 700 });
+    st.fx.push({ kind: 'flash', pos: { x: carver.pos.x, y: carver.pos.y }, color: CRYSTAL_COLOR, t: 0, ttl: 360 });
+    pushLog(st, `Carved the ${trophyName(boss)} into a ${crystalName(boss)}`);
+    pushSfx(st, 'carve');
+    st.modal = null;
+    this.dirty = true;
+    this.emit();
+  }
+
+  /**
    * The hero walked into a shop pedestal. Pedestals are solid, so the hero
    * stays put and the offer popup opens instead: what the item is, what it
    * does, what it costs. Buying happens from there, via `buyOffer`.
@@ -1184,6 +1269,47 @@ export class Game {
     this.emit();
   }
 
+  /**
+   * The hero walked into the jeweller's bench. Solid, like the forge; only
+   * ever reachable with a lens active on this depth, since it stands on
+   * hidden ground. The popup shows whether the housing can be filled and,
+   * when it cannot, why not — `canCraft`'s own words.
+   */
+  private bumpBench(bench: { pos: Vec }): void {
+    const st = this.state;
+    const hero = st.hero;
+    st.path.length = 0;
+    this.holdTimer = 0;
+    const face = dirFromVec(unitToward(hero.pos, bench.pos));
+    if (face) hero.facing = face;
+    const { ok, reason } = canCraft(hero, st.depth);
+    st.modal = { kind: 'craft', canCraft: ok, reason };
+    this.dirty = true;
+  }
+
+  /**
+   * Fill the lens' housing with brass at the bench: it never shatters again,
+   * on any floor, for the rest of the run — and no chest from here on needs
+   * to carry another (`generateLevel`'s `noLens`, read off this the next
+   * time a floor is generated). The heirloom flag means the run after this
+   * one starts with an ordinary lens for its first set anyway.
+   */
+  craftLens(): void {
+    const st = this.state;
+    const hero = st.hero;
+    const modal = st.modal;
+    if (!modal || modal.kind !== 'craft' || !modal.canCraft) return;
+    if (!canCraft(hero, st.depth).ok || !hero.lens) return;
+    hero.lens.unbreakable = true;
+    hero.brass -= 1;
+    saveHeirloom(true);
+    pushLog(st, 'The lens is whole');
+    pushSfx(st, 'craft');
+    st.modal = null;
+    this.dirty = true;
+    this.emit();
+  }
+
   private bumpOffer(offer: ShopOffer): void {
     const st = this.state;
     const hero = st.hero;
@@ -1226,6 +1352,48 @@ export class Game {
     st.modal = { kind: 'item', item: offer.item, replaced };
     pushLog(st, `Bought the ${itemName(offer.item.kind)}`);
     pushSfx(st, 'buy');
+    this.dirty = true;
+    this.emit();
+  }
+
+  /**
+   * The hero walked into the portal. With no carved crystal in the pack it
+   * has nothing to answer with; with one or more, the popup lists them —
+   * each is a different world, and spending it is `usePortal`'s to do.
+   */
+  private bumpPortal(portal: { pos: Vec }): void {
+    const st = this.state;
+    const hero = st.hero;
+    st.path.length = 0;
+    this.holdTimer = 0;
+    const face = dirFromVec(unitToward(hero.pos, portal.pos));
+    if (face) hero.facing = face;
+    if (!hero.crystals.length) {
+      st.fx.push({ kind: 'flash', pos: { x: portal.pos.x, y: portal.pos.y }, color: BLINK_RED, t: 0, ttl: 320 });
+      pushLog(st, 'A portal, dark. It wants a carved crystal.');
+      pushSfx(st, 'locked');
+      return;
+    }
+    st.modal = { kind: 'portal', crystals: [...hero.crystals] };
+    this.dirty = true;
+  }
+
+  /**
+   * Spend one crystal of `boss`'s kind to step through the portal: the main
+   * floor is stashed and the world's own stage takes over (`enterWorld`).
+   */
+  usePortal(boss: BossKind): void {
+    const st = this.state;
+    const hero = st.hero;
+    const modal = st.modal;
+    if (!modal || modal.kind !== 'portal') return;
+    const i = hero.crystals.indexOf(boss);
+    if (i < 0) return;
+    hero.crystals.splice(i, 1);
+    saveCrystals(hero.crystals);
+    pushSfx(st, 'portal');
+    st.modal = null;
+    this.enterWorld(boss);
     this.dirty = true;
     this.emit();
   }
@@ -1423,6 +1591,9 @@ export class Game {
     const shrine = shrineAt(level, tile);
     if (shrine) this.lightShrine(shrine);
 
+    const carver = carverAt(level, tile);
+    if (carver && !carver.used) this.stepCarver(carver);
+
     const rune = runeAt(level, tile);
     if (rune) this.stepRune(rune);
 
@@ -1498,8 +1669,10 @@ export class Game {
       // Walking out of the shop is walking out of this set of floors, and a
       // lens does not survive the trip. Everything stops while it goes: the
       // descend clock is already running but a popup freezes the whole world
-      // (see `tick`), so the stairs wait until the last shard has fallen.
-      if (level.kind === 'shop' && hero.lens) {
+      // (see `tick`), so the stairs wait until the last shard has fallen. An
+      // unbreakable lens (crafted at the bench) is done with breaking: it
+      // rides the stairs down like anything else the hero carries.
+      if (level.kind === 'shop' && hero.lens && !hero.lens.unbreakable) {
         st.modal = { kind: 'lensShatter' };
         pushSfx(st, 'lensBreak');
       }
@@ -2149,6 +2322,13 @@ export class Game {
 
   private emit(): void {
     this.onChange?.(this.state);
+  }
+
+  // placeholder: replaced by the world runtime — stashes the main floor,
+  // generates the world's stage 0 and shows the worldIntro modal. For now it
+  // only logs the moment, so usePortal has somewhere real to call into.
+  enterWorld(kind: WorldKind): void {
+    pushLog(this.state, 'The portal opens');
   }
 }
 

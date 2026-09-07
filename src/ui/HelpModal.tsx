@@ -9,6 +9,8 @@ import { relicName } from '../engine/puzzles';
 import { boonDescription, boonName, trophyName } from '../engine/boons';
 import { WORLDS } from '../engine/worlds';
 import { PixelIcon, type IconName } from './icons';
+import { BRASS_DESCRIPTION, BRASS_NAME, crystalName } from '../engine/crafting';
+import { PixelIcon, crystalIcon, type IconName } from './icons';
 
 /** Every world's collectible, looked up by id. An id nothing offered is skipped. */
 function collectibleById(id: string): { name: string; description: string } | null {
@@ -112,7 +114,14 @@ function CarriedRow({ icon, name, desc }: { icon: IconName; name: string; desc: 
 }
 
 function HeroTab({ model }: { model: HudModel }) {
-  const carried = model.lens || model.carrying || model.relics.length > 0 || model.trophies.length > 0;
+  const carried =
+    model.lens ||
+    model.carrying ||
+    model.relics.length > 0 ||
+    model.trophies.length > 0 ||
+    model.brass > 0 ||
+    model.crystals.length > 0;
+  const lensDesc = model.lensWhole ? 'Whole.' : model.lensHeirloom ? 'The housing is cracked.' : 'See the unseen.';
   return (
     <>
       <div className="help-section">
@@ -124,13 +133,24 @@ function HeroTab({ model }: { model: HudModel }) {
       {carried && (
         <div className="help-section">
           <span className="help-title">Carried</span>
-          {model.lens && <CarriedRow icon="lens" name={LENS_NAME} desc="See the unseen." />}
+          {model.lens && <CarriedRow icon="lens" name={LENS_NAME} desc={lensDesc} />}
           {model.carrying && <CarriedRow icon="orb" name="Orb" desc="Both hands full. You set it down to fight; it goes home if it leaves the wing." />}
+          {model.brass > 0 && (
+            <CarriedRow icon="brass" name={model.brass > 1 ? `${BRASS_NAME} x${model.brass}` : BRASS_NAME} desc={BRASS_DESCRIPTION} />
+          )}
           {model.relics.map((kind, i) => (
             <CarriedRow key={`${kind}-${i}`} icon={kind} name={relicName(kind)} desc="A keystone. Somewhere deeper, a sealed door is carved with this shape." />
           ))}
           {model.trophies.map((boss, i) => (
             <CarriedRow key={`${boss}-${i}`} icon={boss} name={trophyName(boss)} desc="Proof of a boss beaten. Some altar, somewhere, is carved for it." />
+          ))}
+          {model.crystals.map((boss, i) => (
+            <CarriedRow
+              key={`${boss}-${i}`}
+              icon={crystalIcon(boss)}
+              name={crystalName(boss)}
+              desc="Carved from a trophy. Spend it at the portal to open its world."
+            />
           ))}
         </div>
       )}
@@ -217,6 +237,9 @@ function GuideTab() {
       <li>Seals open three ways: step on the runes in the right order (a wrong one puts them all out), carry the orb to the cradle before the door, or bring the relic the door is carved with from an earlier floor.</li>
       <li>You set the orb down to fight. Step back onto it to pick it up again.</li>
       <li>Beat a boss and you keep its trophy. An altar carved for it trades it for a boon that lasts three runs.</li>
+      <li>A chest may hold a Brass Lump. Crafting material.</li>
+      <li>A carving shrine cuts a trophy into a crystal that outlives the run, if an altar hasn't taken it first.</li>
+      <li>A portal hides in the first floor's wing. Spend a crystal there to step into its boss's world and back.</li>
       <li>Glowing alcoves are shrines. Step on one for a gift that runs out; a dark one is already spent. The pips above your head are what you have running.</li>
       <li>Spirit makes every shrine go further: the timed ones last longer, the ward hands out more hearts. It creeps up as you level, and anything in your spirit slot adds to it.</li>
       <li>Every third floor has a shop. Walk into a podium to see what the item does, then buy it or walk away.</li>

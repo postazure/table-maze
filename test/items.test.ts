@@ -21,7 +21,7 @@ import {
   spiritSlotBonus,
   upgradeRandomItem,
 } from '../src/engine/items';
-import { PEDESTAL_SIZE, PEDESTAL_TILES, generateShopLevel, offerAt, offerTiles } from '../src/engine/shop';
+import { PEDESTAL_SIZE, PEDESTAL_TILES, SHOP_MARGIN, generateShopLevel, offerAt, offerTiles } from '../src/engine/shop';
 
 function item(kind: MagicItem['kind'], level = 1): MagicItem {
   return { kind, level };
@@ -189,16 +189,17 @@ test('generateShopLevel builds the podium room', () => {
 
   assert.equal(level.kind, 'shop');
   assert.equal(level.depth, 6);
-  assert.equal(level.width, 16);
+  assert.equal(level.width, 16 + SHOP_MARGIN);
   assert.equal(level.height, 15);
-  assert.deepEqual(level.start, { x: 7, y: 13 });
-  assert.deepEqual(level.exit, { x: 7, y: 1 });
+  assert.deepEqual(level.start, { x: 7 + SHOP_MARGIN, y: 13 });
+  assert.deepEqual(level.exit, { x: 7 + SHOP_MARGIN, y: 1 });
   assert.deepEqual(level.keys, []);
   assert.deepEqual(level.doors, []);
   assert.deepEqual(level.chests, []);
   assert.deepEqual(level.monsters, [], 'a shop is a safe room');
 
-  // Outer walls all round a 14 x 13 floor.
+  // Outer walls all round a 14 x 13 floor, plus the margin the bench alcove
+  // is dug from on the left.
   for (let x = 0; x < level.width; x++) {
     assert.equal(level.tiles[0][x], Tile.Wall);
     assert.equal(level.tiles[level.height - 1][x], Tile.Wall);
@@ -211,7 +212,8 @@ test('generateShopLevel builds the podium room', () => {
   for (let y = 0; y < level.height; y++) {
     for (let x = 0; x < level.width; x++) if (level.tiles[y][x] === Tile.Floor) floors += 1;
   }
-  assert.equal(floors, 14 * 13);
+  // The room's own floor, plus the bench alcove's two hidden tiles.
+  assert.equal(floors, 14 * 13 + 2);
 
   // Three podiums, one per slot, left to right.
   const shop = level.shop;
@@ -235,12 +237,12 @@ test('generateShopLevel builds the podium room', () => {
     const gap: number = shop.offers[i].pos.x - (shop.offers[i - 1].pos.x + PEDESTAL_SIZE);
     assert.equal(gap, 2, 'podiums stand two tiles apart');
   }
-  for (const x of [5, 6, 9, 10]) {
+  for (const x of [5, 6, 9, 10].map((x) => x + SHOP_MARGIN)) {
     assert.equal(offerAt(level, { x, y: 5 }), null, 'the aisles between podiums stay walkable');
     assert.equal(offerAt(level, { x, y: 6 }), null);
   }
-  assert.equal(offerAt(level, { x: 3, y: 4 }), null, 'nothing above the blocks');
-  assert.equal(offerAt(level, { x: 3, y: 7 }), null, 'nothing below the blocks');
+  assert.equal(offerAt(level, { x: 3 + SHOP_MARGIN, y: 4 }), null, 'nothing above the blocks');
+  assert.equal(offerAt(level, { x: 3 + SHOP_MARGIN, y: 7 }), null, 'nothing below the blocks');
 
   // Deterministic for a (depth, seed, hero) triple.
   const again = generateShopLevel(6, 1234, newHero());

@@ -495,9 +495,103 @@ export const BOON_ART: Record<BoonKind, ArtSpec> = {
     rows: ['R......R', 'R......R', 'RR....RR', '.RR..RR.', '..RRRR..', '...DD...', '........', '........'],
     palette: { R: '#e5484d', D: '#7a1f1c' },
   },
-  sight: {
+  grace: {
     rows: ['........', '..EEEE..', '.EWWWWE.', 'EWWIIWWE', 'EWWIIWWE', '.EWWWWE.', '..EEEE..', '........'],
     palette: { E: '#5aa9ff', W: '#eafcff', I: '#141414' },
+  },
+};
+
+// ---------------------------------------------------------------------------
+// The crafting chain: brass, the bench, the carving shrine, the portal.
+// (see engine/crafting.ts)
+// ---------------------------------------------------------------------------
+
+/** A dull-gold lump. Never a coin: no shine, no round rim, just a nugget. */
+export const BRASS_ART: ArtSpec = {
+  rows: ['........', '..GGGG..', '.GGGGGG.', 'GGGYYGGG', 'GYYYYYGG', 'GGGGGGG.', '.GGGGG..', '........'],
+  palette: { G: '#a8873a', Y: '#c9a94f' },
+};
+
+/**
+ * The jeweller's bench: 16x16, one tile, in the alcove the lens opens off
+ * every shop. A plain wooden top with a jeweller's loupe (the lens' own
+ * blue) waiting on it, over four squat legs.
+ */
+export const BENCH_ART: ArtSpec = {
+  rows: [
+    '................',
+    '................',
+    '.......RR.......',
+    '......RRRR......',
+    '.......RR.......',
+    '...LLLLLLLLLLL..',
+    '...LWWWWWWWWWL..',
+    '...LWWWWWWWWWL..',
+    '...LLLLLLLLLLL..',
+    '.....BB...BB....',
+    '.....BB...BB....',
+    '.....BB...BB....',
+    '....DDD...DDD...',
+    '................',
+    '................',
+    '................',
+  ],
+  palette: { L: '#8b5a2b', W: '#a8763f', B: '#5a3a1c', D: '#2f1d0e', R: '#8fe3ff' },
+};
+
+/**
+ * The carving shrine's own glyph, for the niche in `ALCOVE_ART` — the shrine
+ * before anything is cut, so it is one shape rather than one per boss (the
+ * crystal it makes is `CRYSTAL_ART`, drawn on the hero and in the popups).
+ */
+export const CARVER_ART: ArtSpec = {
+  rows: ['...C....', '..CCC...', '.CCCCC..', 'CCCDCCC.', '.CCCCC..', '..CCC...', '...C....', '........'],
+  palette: { C: '#c13fe0', D: '#6f1f80' },
+};
+
+/**
+ * The portal: a 16x16 stone ring. Dark and still while the hero carries no
+ * crystal; the renderer glows and swirls it once they do (see
+ * `drawPortal`) — the art itself only ever draws the stonework.
+ */
+export const PORTAL_ART: ArtSpec = {
+  rows: [
+    '................',
+    '.....SSSSSS.....',
+    '...SSDDDDDDSS...',
+    '..SDDNNNNNNDDS..',
+    '.SDNNNNNNNNNNDS.',
+    '.SDNNNNNNNNNNDS.',
+    'SDNNNNNNNNNNNNDS',
+    'SDNNNNNNNNNNNNDS',
+    'SDNNNNNNNNNNNNDS',
+    'SDNNNNNNNNNNNNDS',
+    '.SDNNNNNNNNNNDS.',
+    '.SDNNNNNNNNNNDS.',
+    '..SDDNNNNNNDDS..',
+    '...SSDDDDDDSS...',
+    '.....SSSSSS.....',
+    '................',
+  ],
+  palette: { S: '#6b6b7a', D: '#3f3f4d', N: '#0d0d16' },
+};
+
+/**
+ * A carved crystal, one shape and colour per boss — cut from that boss's
+ * trophy at the carving shrine, spent at the portal to enter its world.
+ */
+export const CRYSTAL_ART: Record<BossKind, ArtSpec> = {
+  necromancer: {
+    rows: ['...C....', '...C....', '..CCC...', '..CDC...', '.CCDCC..', '.CDDDC..', '..CDC...', '...C....'],
+    palette: { C: '#b98cff', D: '#5c3a99' },
+  },
+  minotaur: {
+    rows: ['..CCCC..', '.CCCCCC.', 'CCCDDCCC', 'CCCDDCCC', 'CCCDDCCC', '.CCCCCC.', '..CCCC..', '........'],
+    palette: { C: '#e8b23a', D: '#8a5a10' },
+  },
+  angels: {
+    rows: ['...C....', '..CWC...', '.CWWWC..', '.CWWWC..', '..CWC...', '...C....', '........', '........'],
+    palette: { C: '#bfe3ff', W: '#ffffff' },
   },
 };
 

@@ -20,7 +20,7 @@ import { LOG_MAX, damageMonster, gameOver, heroAttack, heroAttackValue, monsterA
 import { updateMonsters } from '../src/engine/monsters';
 import { clearSave, loadGame, saveGame } from '../src/engine/save';
 import { equip, heroMoveMs, upgradeRandomItem } from '../src/engine/items';
-import { generateShopLevel, offerAt } from '../src/engine/shop';
+import { SHOP_MARGIN, generateShopLevel, offerAt } from '../src/engine/shop';
 import { makeBossMonster } from '../src/engine/boss';
 import { bossRetryCost, lurkerSightRange, newHero } from '../src/engine/balance';
 import { generateLevel } from '../src/engine/maze';
@@ -788,7 +788,7 @@ test('monsters carry a level and combat resets their regen clock', () => {
  * A game standing in a shop, `at` tiles, with `gold` in the purse. The default
  * spot is the floor tile just under the first podium's bottom-left corner.
  */
-function shopGame(gold: number, at: Vec = { x: 3, y: 7 }): Game {
+function shopGame(gold: number, at: Vec = { x: 3 + SHOP_MARGIN, y: 7 }): Game {
   const g = Game.forTest(2024);
   g.state.depth = 3;
   install(g, generateShopLevel(3, g.state.seed, g.state.hero), at);
@@ -872,7 +872,7 @@ test('a podium fills four tiles and any of them opens the offer', () => {
   assert.equal(st.path.length, 1, 'a podium is a legal drag target');
   g.tick(150);
 
-  assert.deepEqual(st.hero.pos, { x: 3, y: 7 }, 'podiums are solid');
+  assert.deepEqual(st.hero.pos, { x: 3 + SHOP_MARGIN, y: 7 }, 'podiums are solid');
   const modal = st.modal as { kind: string; offerId: string; price: number; gold: number; soldOut: boolean } | null;
   assert.ok(modal, 'the offer popup is up');
   assert.equal(modal.kind, 'shopOffer');

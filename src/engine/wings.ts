@@ -753,6 +753,21 @@ function furnishWing(level: LevelData, laid: Laid, depth: number, runSeed: numbe
     const spot = nicheOf(plan.treasure) ?? freeIn(plan.treasure);
     if (spot) level.wingExit = claim(spot);
   }
+
+  // 7. Floor one's wing, and floor one's alone, hides the portal to the boss
+  //    worlds: a free tile of any room but the treasure room, a niche
+  //    preferred over open floor for the same reason a chest or an altar
+  //    gets one. Claimed here so nothing else — a rune, an altar, a monster
+  //    — ever lands on the same tile.
+  if (depth === 1) {
+    for (const room of rng.shuffle(side.slice())) {
+      const spot = nicheOf(room) ?? freeIn(room);
+      if (spot) {
+        level.portal = { pos: claim(spot) };
+        break;
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -817,6 +832,7 @@ export function stockWings(
     ...(level.relics ?? []).map((r) => key(r.pos)),
     ...(level.seals ?? []).flatMap((s) => (s.lock.kind === 'orb' ? [key(s.pos), key(s.lock.socket)] : [key(s.pos)])),
     ...(level.wingExit ? [key(level.wingExit)] : []),
+    ...(level.portal ? [key(level.portal.pos)] : []),
   ]);
   for (const wing of level.passages ?? []) {
     let made = 0;
@@ -913,4 +929,5 @@ export function shiftWingContent(level: LevelData, shift: (p: Vec) => void): voi
   for (const a of level.altars ?? []) shift(a.pos);
   for (const c of level.chests) shift(c.pos);
   if (level.wingExit) shift(level.wingExit);
+  if (level.portal) shift(level.portal.pos);
 }

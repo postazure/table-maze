@@ -85,6 +85,11 @@ export interface Loot {
    * looking with the lens and worked the lock.
    */
   magic?: MagicItem;
+  /**
+   * A Brass Lump (see engine/crafting.ts). One chest per themed set, on its
+   * second or third floor, never the first floor of the run.
+   */
+  brass?: boolean;
 }
 
 export interface Chest {
@@ -856,8 +861,8 @@ export interface Hero {
  * localStorage slot beside the save (see save.ts), because a save is wiped
  * when a run ends and a boon is the one thing meant to survive that.
  */
-export type BoonKind = 'deathless' | 'vigor' | 'sight';
-export const BOON_KINDS: readonly BoonKind[] = ['deathless', 'vigor', 'sight'];
+export type BoonKind = 'deathless' | 'vigor' | 'grace';
+export const BOON_KINDS: readonly BoonKind[] = ['deathless', 'vigor', 'grace'];
 
 export interface Boon {
   kind: BoonKind;

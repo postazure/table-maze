@@ -50,6 +50,10 @@ import {
   SEAL_OPEN_ART,
   SOCKET_ART,
   TROPHY_ART,
+  BENCH_ART,
+  CARVER_ART,
+  PORTAL_ART,
+  CRYSTAL_ART,
   runeArt,
 } from './itemArt';
 import { carriedOrb, carriedProp } from '../engine/combat';
@@ -655,6 +659,11 @@ export class Renderer implements TileMapper {
    * world's level exists, not at construction time.
    */
   private propSprites: Map<string, HTMLCanvasElement> = new Map();
+  /** The crafting chain: the bench, the carving shrine's glyph, the portal. */
+  private benchSprite: HTMLCanvasElement;
+  private carverSprite: HTMLCanvasElement;
+  private portalSprite: HTMLCanvasElement;
+  private crystalSprites: Map<BossKind, HTMLCanvasElement> = new Map();
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -699,6 +708,13 @@ export class Renderer implements TileMapper {
     for (const kind of BOSS_KINDS) {
       const art = TROPHY_ART[kind];
       this.trophySprites.set(kind, buildIcon(art.rows, art.palette));
+    }
+    this.benchSprite = buildIcon(BENCH_ART.rows, BENCH_ART.palette);
+    this.carverSprite = buildIcon(CARVER_ART.rows, CARVER_ART.palette);
+    this.portalSprite = buildIcon(PORTAL_ART.rows, PORTAL_ART.palette);
+    for (const kind of BOSS_KINDS) {
+      const art = CRYSTAL_ART[kind];
+      this.crystalSprites.set(kind, buildIcon(art.rows, art.palette));
     }
 
     for (const [kind, cfg] of Object.entries(MONSTER_CFGS)) {
@@ -1297,6 +1313,11 @@ export class Renderer implements TileMapper {
     for (const sh of state.level.shrines ?? []) {
       if (this.inRange(sh.pos, startX, endX, startY, endY)) this.drawShrine(ctx, sh, t);
     }
+    // The carving shrine: an alcove out in the maze proper, never hidden.
+    const carver = state.level.carver;
+    if (carver && this.inRange(carver.pos, startX, endX, startY, endY)) {
+      this.drawCarver(ctx, carver, t);
+    }
 
     // The wings' floor furniture: runes, cradles, relics and orbs are ground
     // or pickups, drawn before anything solid. All of it is hidden ground, so
@@ -1323,6 +1344,16 @@ export class Renderer implements TileMapper {
     }
     for (const a of state.level.altars ?? []) {
       if (this.inRange(a.pos, startX, endX, startY, endY)) this.drawBehindWall(ctx, state, a.pos, t, () => this.drawAltar(ctx, a, t));
+    }
+    // The bench (a shop's own hidden ground) and the portal (a wing's,
+    // floor one only) are both solid, hidden furniture, drawn the same way.
+    const bench = state.level.bench;
+    if (bench && this.inRange(bench.pos, startX, endX, startY, endY)) {
+      this.drawBehindWall(ctx, state, bench.pos, t, () => this.drawBench(ctx, bench, t));
+    }
+    const portal = state.level.portal;
+    if (portal && this.inRange(portal.pos, startX, endX, startY, endY)) {
+      this.drawBehindWall(ctx, state, portal.pos, t, () => this.drawPortal(ctx, state, portal, t));
     }
 
     // A boss world's own ground props (see engine/worlds): floor, not
@@ -1775,6 +1806,85 @@ export class Renderer implements TileMapper {
       const size = Math.round(t * ALTAR_NICHE.size);
       ctx.globalAlpha = 0.55 + 0.2 * (0.5 + 0.5 * Math.sin(performance.now() / 900));
       ctx.drawImage(sprite, Math.round(bx + t * ALTAR_NICHE.x), Math.round(by + t * ALTAR_NICHE.y), size, size);
+    }
+    ctx.restore();
+  }
+
+  /**
+   * The jeweller's bench: one tile, hidden ground like anything else off a
+   * lens (`drawBehindWall` handles the clipping). A plain workbench with the
+   * loupe waiting on it — nothing animates here, the popup is the event.
+   */
+  private drawBench(ctx: CanvasRenderingContext2D, bench: { pos: Vec }, t: number): void {
+    const bx = Math.round(bench.pos.x * t);
+    const by = Math.round(bench.pos.y * t);
+    ctx.drawImage(this.benchSprite, bx, by, t, t);
+  }
+
+  /**
+   * The carving shrine: an alcove exactly like any other, breathing while it
+   * still has something to give, left as faint stonework with no glow once
+   * it has been used — same rules as `drawShrine`, but the glyph is always
+   * the shrine's own crystal (what it makes), never a colour per boss.
+   */
+  private drawCarver(ctx: CanvasRenderingContext2D, carver: { pos: Vec; used: boolean }, t: number): void {
+    const now = performance.now();
+    if (!carver.used) {
+      const glow = 0.18 + 0.14 * (0.5 + 0.5 * Math.sin(now / 700));
+      ctx.save();
+      ctx.globalAlpha = glow;
+      ctx.fillStyle = CRYSTAL_GLOW_COLOR;
+      ctx.fillRect(Math.round(carver.pos.x * t), Math.round(carver.pos.y * t), t, t);
+      ctx.restore();
+    }
+
+    const box = Math.round(t * ALCOVE_SCALE);
+    const bx = Math.round(carver.pos.x * t + (t - box) / 2);
+    const by = Math.round(carver.pos.y * t + (t - box) / 2);
+    ctx.save();
+    if (carver.used) ctx.globalAlpha = SHRINE_SPENT_ALPHA;
+    ctx.drawImage(this.alcoveSprite, bx, by, box, box);
+    const size = Math.round(box * ALCOVE_NICHE.size);
+    const gx = Math.round(bx + box * ALCOVE_NICHE.x);
+    const gy = Math.round(by + box * ALCOVE_NICHE.y);
+    if (!carver.used) ctx.globalAlpha = 0.75 + 0.25 * (0.5 + 0.5 * Math.sin(now / 520));
+    ctx.drawImage(this.carverSprite, gx, gy, size, size);
+    ctx.restore();
+  }
+
+  /**
+   * The portal: dark stone while the hero carries no crystal, a slow glow
+   * and swirl once they do — the one visible sign, before the popup, that
+   * there is somewhere this thing can send them.
+   */
+  private drawPortal(ctx: CanvasRenderingContext2D, state: GameState, portal: { pos: Vec }, t: number): void {
+    const bx = Math.round(portal.pos.x * t);
+    const by = Math.round(portal.pos.y * t);
+    ctx.drawImage(this.portalSprite, bx, by, t, t);
+    if (!state.hero.crystals?.length) return;
+    const now = performance.now();
+    const cx = portal.pos.x * t + t / 2;
+    const cy = portal.pos.y * t + t / 2;
+    ctx.save();
+    ctx.globalAlpha = 0.35 + 0.25 * (0.5 + 0.5 * Math.sin(now / 500));
+    ctx.fillStyle = CRYSTAL_GLOW_COLOR;
+    const core = t * 0.4;
+    ctx.beginPath();
+    ctx.arc(cx, cy, core, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    // A slow swirl of three sparks around the ring, the same "something is
+    // alive in here" cue the door key's aura uses.
+    ctx.save();
+    for (let i = 0; i < 3; i++) {
+      const phase = (((now / 1400 + i / 3) % 1) + 1) % 1;
+      const ang = phase * Math.PI * 2;
+      const r = t * 0.55;
+      const sx = cx + Math.cos(ang) * r;
+      const sy = cy + Math.sin(ang) * r;
+      ctx.globalAlpha = 0.5 + 0.4 * (0.5 + 0.5 * Math.sin(phase * Math.PI * 2 + i));
+      ctx.fillStyle = CRYSTAL_GLOW_COLOR;
+      ctx.fillRect(Math.round(sx - 1), Math.round(sy - 1), 2, 2);
     }
     ctx.restore();
   }
