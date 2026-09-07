@@ -123,13 +123,75 @@ Play it at **https://postazure.github.io/table-maze/**
   From the second theme on, some wings hold an **altar**, carved with a skull,
   a pair of horns or a single tear. Beat a boss and you keep its **trophy**;
   an altar carved for that trophy trades it for a **boon**: a Deathless Pact
-  (two extra hearts), Bull's Vigor (attack and defense) or Second Sight (a
-  lens for the first three floors). A boon is yours at once, and it is the one
-  thing in the game that outlives a run: it holds for the next two runs as
-  well, and then it breaks.
+  (two extra hearts), Bull's Vigor (attack and defense) or Angel's Grace (a
+  point of spirit and a health potion). A boon is yours at once, and it holds
+  for the next two runs as well before it breaks. It is not the only thing that
+  outlives a run any more, but it was the first.
   Nothing on a floor ever needs a wing: the stairs, every key and every shrine
   are reachable without one, so the lens buys you loot and a harder fight,
   never the way out.
+- Once a theme, on its second or third floor, a chest holds a **brass lump**.
+  Nothing in the game says more about it than "Crafting material", and nothing
+  on the floor uses it. What uses it is the **jeweller's bench**, and the bench
+  is hidden: every shop has a two-tile alcove off its side wall, dug out and
+  bricked over like a wing, so you only find it if you walk into the shop
+  still carrying a lens. Bump the bench with a lens and a lump and it sets the
+  glass in brass. That lens is **unbreakable**: it does not shatter on the
+  shop's stairs, it works on every floor after, and no chest offers another
+  one for the rest of the run. It does not outlast the run in one piece,
+  though. Start your next run and you set out with an **heirloom**: the same
+  glass, its brass housing cracked, good for the first three floors and no
+  further. That matters because no chest on floor one ever holds a lens. The
+  heirloom is the only way to see floor one's wing at all, and floor one's wing
+  is the only one with a **portal** in it.
+- The portal wants a **crystal**, and a crystal is carved from a boss's trophy.
+  From the fourth floor down, about half of maze floors have a **carving
+  shrine** in a dead end — out in the open, no lens needed. Step onto it
+  holding a trophy and it cuts a crystal for that boss, unique to it: a
+  Necromancer Crystal, a Minotaur Crystal, an Angel Crystal. That is the same
+  trophy an altar would take for a boon, so every trophy is a choice between
+  the two. Crystals are the second thing that outlives a run: they ride with
+  you into every run after, until you spend one. Bump floor one's portal with
+  a crystal in your pack and it opens onto that boss's **world**.
+- Each world is a place of its own, with its own ground, its own monsters, its
+  own puzzles, and its own ways to die — the game-over screen says what
+  happened in the world's own words. Every one of them has a portal home; win
+  or walk away, the run picks up where you left it. Win and you keep a
+  **collectible**, for good, listed on the help screen's Hero tab under
+  Collection.
+  - The **Minotaur** opens the **Gate of Olympus**: three gods' statues, three
+    archways, and three realms. Each realm holds that god's symbol of power;
+    carry it back to the right statue. In the sky, Medusa paces the cloud
+    meadows, and her gaze along an open line turns you to stone if you hold
+    it — break the line or turn your back. On the wine-dark sea, sirens sing
+    from the rocks and pull you a tile at a time toward them unless you carry
+    beeswax, and a ship's helm sails you between the pier and the island. In
+    the underworld, Charon's ferry crosses the Styx for an obol, three
+    braziers lit in the carved order open a sealed way to a honey-cake, and
+    the cake laid down before Cerberus puts him to sleep long enough to take
+    Hades' helm. Place all three symbols and the Olive Crown is yours.
+  - The **Necromancer** opens **Boston, after dark**: streets and blocks,
+    houses with coloured doors, a church on the square, and a chant with a
+    clock on it. Cultists patrol the avenues with knives — each one killed is
+    one fewer voice, and buys you fifteen seconds. Exactly one house hides the
+    tablet. Force a door and you find a note; three of the notes are real
+    clues, about the tablet house's door colour, whether it stands on a
+    corner, and which side of the church it is on, and three real clues always
+    leave exactly one house. Carry the tablet to the chalk circle by the
+    church before the clock runs out and the circle breaks. The Silver Key is
+    yours.
+  - The **Weeping Angels** open the **Cemetery**: grass paths between hedge
+    mazes, iron fences, graves, five crypts and a walled plaza with a brass
+    contraption at its heart. The angels here wake as you pass and follow, but
+    hold three tiles off and never close — until five of them share your
+    screen, when all of them come at once and a touch is stone. Lose them in
+    the hedges; an angel left far enough behind goes back to sleep where it
+    stands. Four crypts hold a piece of a relic and one holds a chest of gold,
+    and which is which is rolled fresh each run. A crypt is a small maze of
+    ghouls and rooted skeletons, and every so often the ground rumbles and the
+    walls slide while the world holds still — never sealing off the piece or
+    the way out, never moving the tile under your feet. Carry all four pieces
+    to the contraption and it opens the way. The Tear in Glass is yours.
 - Four **shrines** stand in alcoves on every maze floor, and no two are worth the
   same walk. One sits in a dead end hanging straight off the route down, where you
   cannot miss it. One or two are at the back of the longer **warrens**, so clearing
