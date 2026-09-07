@@ -241,8 +241,8 @@ test('the lens is in an ordinary chest on the first two floors of a set, never t
       for (const c of lenses) assert.ok(!hidden.has(key(c.pos)), `${where}: the lens is inside a wing`);
       assert.equal(
         lv.keys.filter((k) => k.kind === 'chest').length,
-        lv.chests.length,
-        `${where}: a chest without a key`,
+        lv.chests.filter((c) => !c.secret).length,
+        `${where}: an ordinary chest without a key`,
       );
     }
   }

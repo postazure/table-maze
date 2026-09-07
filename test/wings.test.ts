@@ -507,6 +507,21 @@ test('a mimic springs when bumped: no key spent, the chest gone, a hunter in its
   assert.ok(hero.hp < hp || hero.sleeping, 'a mimic fights back');
 });
 
+test('a wing chest opens with no key: the wing itself was the lock', () => {
+  const g = wingGame(null, { x: 4, y: 4 });
+  const st = g.state;
+  const hero = st.hero;
+  hero.keys.chest = 0;
+  st.level.chests = [
+    { id: 'v1', pos: { x: 5, y: 4 }, opened: false, loot: { gold: 5, xp: 5 }, secret: true },
+  ];
+  g.pointerAt({ x: 5, y: 4 });
+  g.tick(150);
+  assert.equal(st.level.chests[0].opened, true, 'opened despite no chest key');
+  assert.equal(hero.keys.chest, 0, 'no key spent on a wing chest');
+  assert.ok(!st.sfx.includes('locked'), 'no locked cue');
+});
+
 test('a mimic is a monster of the wing: it never follows the hero out', () => {
   const g = wingGame(null, { x: 4, y: 4 });
   const st = g.state;

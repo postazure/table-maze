@@ -304,6 +304,13 @@ const CHEST_CLOSED_PALETTE: Record<string, string> = { W: '#8b5a2b', G: '#f5c451
 const CHEST_OPEN_ROWS = ['.WWWWWW.', '........', 'WWWWWWWW', 'W......W', 'W.g....W', 'W......W', 'WWWWWWWW', '........'];
 const CHEST_OPEN_PALETTE: Record<string, string> = { W: '#8b5a2b', g: '#f5c451' };
 
+// A wing's own chest: same shape, but its band is the lens' own blue instead
+// of gold — the same colour every rune and seal in the wing wears — since it
+// asks for no chest key and, some of the time, is not a chest at all.
+const WING_BLUE = '#8fe3ff';
+const CHEST_SECRET_CLOSED_PALETTE: Record<string, string> = { W: '#8b5a2b', G: WING_BLUE, L: '#173040' };
+const CHEST_SECRET_OPEN_PALETTE: Record<string, string> = { W: '#8b5a2b', g: WING_BLUE };
+
 const EXIT_ROWS = ['WWWWWWWW', 'W......W', 'W.dddd.W', 'W.dddd.W', 'W.dddd.W', 'W.ssss.W', 'W......W', 'WWWWWWWW'];
 const EXIT_PALETTE: Record<string, string> = { W: '#4a4863', d: '#08070d', s: '#3a3852' };
 
@@ -627,6 +634,8 @@ export class Renderer implements TileMapper {
   private chestKeySprite: HTMLCanvasElement;
   private chestClosedSprite: HTMLCanvasElement;
   private chestOpenSprite: HTMLCanvasElement;
+  private chestSecretClosedSprite: HTMLCanvasElement;
+  private chestSecretOpenSprite: HTMLCanvasElement;
   private doorClosedSprite: HTMLCanvasElement;
   private doorOpenSprite: HTMLCanvasElement;
   private exitSprite: HTMLCanvasElement;
@@ -680,6 +689,8 @@ export class Renderer implements TileMapper {
     this.chestKeySprite = buildIcon(CHEST_KEY_ROWS, CHEST_KEY_PALETTE);
     this.chestClosedSprite = buildIcon(CHEST_CLOSED_ROWS, CHEST_CLOSED_PALETTE);
     this.chestOpenSprite = buildIcon(CHEST_OPEN_ROWS, CHEST_OPEN_PALETTE);
+    this.chestSecretClosedSprite = buildIcon(CHEST_CLOSED_ROWS, CHEST_SECRET_CLOSED_PALETTE);
+    this.chestSecretOpenSprite = buildIcon(CHEST_OPEN_ROWS, CHEST_SECRET_OPEN_PALETTE);
     this.doorClosedSprite = buildIcon(DOOR_CLOSED_ROWS, DOOR_CLOSED_PALETTE);
     this.doorOpenSprite = buildIcon(DOOR_OPEN_ROWS, DOOR_OPEN_PALETTE);
     this.exitSprite = buildIcon(EXIT_ROWS, EXIT_PALETTE);
@@ -1573,6 +1584,8 @@ export class Renderer implements TileMapper {
   }
 
   private drawChest(ctx: CanvasRenderingContext2D, c: Chest, t: number): void {
+    const closed = c.secret ? this.chestSecretClosedSprite : this.chestClosedSprite;
+    const open = c.secret ? this.chestSecretOpenSprite : this.chestOpenSprite;
     if (c.mimic && !c.opened) {
       // The tell: a shiver, now and then, of a sub-pixel or two. Phased off
       // the chest's own tile so two mimics never twitch in step.
@@ -1582,12 +1595,12 @@ export class Renderer implements TileMapper {
         const jog = Math.round(Math.sin((phase / MIMIC_TELL_MS) * Math.PI * 4) * sub);
         ctx.save();
         ctx.translate(jog, 0);
-        this.drawTileSprite(ctx, this.chestClosedSprite, c.pos, t, 0.8);
+        this.drawTileSprite(ctx, closed, c.pos, t, 0.8);
         ctx.restore();
         return;
       }
     }
-    this.drawTileSprite(ctx, c.opened ? this.chestOpenSprite : this.chestClosedSprite, c.pos, t, 0.8);
+    this.drawTileSprite(ctx, c.opened ? open : closed, c.pos, t, 0.8);
   }
 
   /**

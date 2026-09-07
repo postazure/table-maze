@@ -913,13 +913,14 @@ export class Game {
       this.springMimic(chest);
       return;
     }
-    if (hero.keys.chest <= 0) {
+    // A wing's own chest asks for no key: the wing itself was the lock.
+    if (!chest.secret && hero.keys.chest <= 0) {
       // No words: a red blink on the chest says "locked".
       st.fx.push({ kind: 'flash', pos: { x: chest.pos.x, y: chest.pos.y }, color: BLINK_RED, t: 0, ttl: 320 });
       pushSfx(st, 'locked');
       return;
     }
-    hero.keys.chest -= 1;
+    if (!chest.secret) hero.keys.chest -= 1;
     chest.opened = true;
     // A second lens is no more use than a second Rusty Sword: one is all the
     // hero can look through, and the one they have already covers this set of

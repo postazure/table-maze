@@ -105,6 +105,13 @@ export interface Chest {
    * a chest; the monster carries the gold instead.
    */
   mimic?: boolean;
+  /**
+   * Found in a hidden wing: reaching it already took a lens and a walk past
+   * whatever the wing's own puzzle was, so it asks for no chest key on top of
+   * that. Drawn with the wing's own blue trim instead of gold, both to mark
+   * it as key-free and to warn that any chest wearing it might be a mimic.
+   */
+  secret?: boolean;
 }
 
 // ---------------------------------------------------------------------------
