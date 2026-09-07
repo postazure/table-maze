@@ -18,6 +18,7 @@ import type {
   LevelData,
   MagicItem,
   Monster,
+  Orb,
   Relic,
   Rng,
   Rune,
@@ -248,6 +249,14 @@ export class Game {
     const hero = st.hero;
     if (eq(tile, hero.pos)) {
       st.path.length = 0;
+      // A knockdown with nowhere safe to retreat to can leave the hero
+      // asleep standing right on the orb it just dropped — a tile walking
+      // never carries them onto, so the ordinary onEnter pickup never fires.
+      // Tapping your own feet picks it up directly instead.
+      if (!hero.carrying) {
+        const orb = orbAt(st.level, tile);
+        if (orb) this.pickUpOrb(orb, tile);
+      }
       return;
     }
 
@@ -1582,6 +1591,17 @@ export class Game {
     return far;
   }
 
+  /** An orb on the floor goes into the hero's hands. Shared by walking onto it and tapping it underfoot. */
+  private pickUpOrb(orb: Orb, tile: Vec): void {
+    const st = this.state;
+    orb.state = 'carried';
+    st.hero.carrying = orb.id;
+    pushText(st, tile, 'ORB', ORB, 1000);
+    pushLog(st, 'Picked up the orb. Hands full: you set it down to fight');
+    pushSfx(st, 'orbLift');
+    this.dirty = true;
+  }
+
   private onEnter(tile: Vec): void {
     const st = this.state;
     const hero = st.hero;
@@ -1635,14 +1655,7 @@ export class Game {
       }
     } else {
       const orb = orbAt(level, tile);
-      if (orb) {
-        orb.state = 'carried';
-        hero.carrying = orb.id;
-        pushText(st, tile, 'ORB', ORB, 1000);
-        pushLog(st, 'Picked up the orb. Hands full: you set it down to fight');
-        pushSfx(st, 'orbLift');
-        this.dirty = true;
-      }
+      if (orb) this.pickUpOrb(orb, tile);
     }
 
     // A world's own carriable furniture: picked up by walking onto it, hands

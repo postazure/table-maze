@@ -429,6 +429,13 @@ cosmetic timers keep running.
   `hero.relics`; an orb on the floor is picked up (`hero.carrying`); the
   cradle of the carried orb's seal takes it and opens the seal; stepping off
   hidden ground with an orb sends it back to `orb.home`.
+- `pickUpOrb` factors that floor-orb pickup out so `pointerAt` can call it too:
+  a knockdown with nowhere `retreatTile` calls safe to retreat to can leave
+  the hero asleep standing exactly on the orb `dropOrb` just set down —
+  walking never carries the hero onto a tile they're already on, so the
+  ordinary `onEnter` pickup would never fire. Tapping the hero's own tile
+  (`pointerAt`'s `eq(tile, hero.pos)` branch) picks up a floor orb there
+  directly instead of only clearing the path.
 - `openSeal` sets `open = true` with a ring, a shake, a log line and the
   `seal` sound. Fire, ice and the long sword never reach through a shut one.
 - `winBoss` pushes the boss's kind onto `hero.trophies`. `offerTrophy`
