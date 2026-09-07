@@ -70,6 +70,7 @@ function mkLevel(rows: string[], over: Partial<LevelData> = {}): LevelData {
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
     ...over,
   };
@@ -213,6 +214,22 @@ test('walking onto a key picks it up', () => {
   g.tick(150);
   assert.equal(g.state.hero.keys.door, 1);
   assert.equal(g.state.level.keys[0].taken, true);
+});
+
+test('walking onto a gold pile picks it up at once, no key, no modal', () => {
+  const g = corridorGame({
+    goldPiles: [{ id: 'g1', pos: { x: 2, y: 1 }, gold: 10, xp: 4, taken: false }],
+  });
+  const gold0 = g.state.hero.gold;
+  const xp0 = g.state.hero.xp;
+  g.pointerAt({ x: 2, y: 1 });
+  assert.equal(g.state.path.length, 1, 'a gold pile is walkable, not a solid target');
+  g.tick(150);
+  assert.equal(g.state.hero.gold, gold0 + 10);
+  assert.equal(g.state.hero.xp, xp0 + 4);
+  assert.equal(g.state.level.goldPiles[0].taken, true);
+  assert.equal(g.state.modal, null, 'no popup, unlike a chest');
+  assert.ok(g.state.sfx.includes('gold'));
 });
 
 test('chests are solid: the hero bumps them, opens with a key, and the game freezes', () => {

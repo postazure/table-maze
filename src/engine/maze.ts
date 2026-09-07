@@ -7,7 +7,8 @@
  * 3. start in the top-left region, exit among the BFS-farthest tiles.
  * 4. Doors on corridor tiles of the start->exit path, each with a key that is
  *    reachable before that door (and before every later door) is opened.
- * 5. Chests in dead ends, one chest key each.
+ * 5. Chests in dead ends, one chest key each — except a chest that turns up
+ *    gold and nothing else, which becomes an unlocked gold pile instead.
  * 6. Shrines in dead-end alcoves, the ones hanging off the route first.
  * 7. Monsters: guards on chokepoints, patrols on corridor runs, lurkers on
  *    side branches next to the main path.
@@ -233,6 +234,7 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
   };
 
@@ -318,10 +320,27 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
       level.chests.push(chest);
       used.add(key(pos));
     }
-    // One chest key per ordinary chest, anywhere free (all doors eventually
-    // open). A wing's own chests (`secret: true`) need none — the wing itself
-    // was the lock — so they sit outside this count. One shuffled pool of
-    // tiles serves every key, rather than a fresh scan of the floor per key.
+    if (!opts.noLens) placeLens(level, depth, hidden, rng);
+    placeBrass(level, depth, opts.runSeed, hidden, rng);
+
+    // An ordinary chest that turned up nothing but gold and xp was never
+    // worth a lock: it becomes a pile lying in the open on the same tile,
+    // picked up on sight like a key, and asks no chest key of the floor's
+    // budget. A wing chest (`secret`) or a mimic never converts — checked
+    // after lens/brass placement, since either can still land on a chest
+    // that would otherwise have qualified.
+    for (const chest of level.chests.filter((c) => !c.secret && !c.mimic)) {
+      const loot = chest.loot;
+      if (loot.item || loot.lens || loot.magic || loot.brass) continue;
+      level.chests.splice(level.chests.indexOf(chest), 1);
+      level.goldPiles.push({ id: `g${level.goldPiles.length + 1}`, pos: chest.pos, gold: loot.gold, xp: loot.xp, taken: false });
+    }
+
+    // One chest key per remaining (locked) ordinary chest, anywhere free (all
+    // doors eventually open). A wing's own chests (`secret: true`) need none
+    // — the wing itself was the lock — and a gold pile needs none either, so
+    // both sit outside this count. One shuffled pool of tiles serves every
+    // key, rather than a fresh scan of the floor per key.
     let lockedChests = level.chests.filter((c) => !c.secret).length;
     const keyPool: Vec[] = [];
     for (const [k, d] of distFromStart) if (d >= 2) keyPool.push(parseKey(k));
@@ -335,15 +354,15 @@ function build(depth: number, seed: number, opts: GenOpts): LevelData {
       used.add(key(spot));
     }
     // Keep key counts consistent if we ran out of room. Ordinary chests were
-    // just pushed onto the end of the array, after any wing chests, so
-    // popping from the end never drops one of those.
+    // pushed onto the end of the array, after any wing chests, and the
+    // gold-pile sweep above only ever removes ordinary chests too, so the
+    // tail of the array is still all ordinary (locked) chests: popping from
+    // the end never drops a wing chest.
     while (lockedChests > level.keys.filter((k) => k.kind === 'chest').length) {
       const dropped = level.chests.pop();
       if (dropped) used.delete(key(dropped.pos));
       lockedChests--;
     }
-    if (!opts.noLens) placeLens(level, depth, hidden, rng);
-    placeBrass(level, depth, opts.runSeed, hidden, rng);
   }
 
   placeMonsters(level, depth, fullPath, onMain, used, distFromStart, warrens, rng, spawnOpts(opts));
@@ -1176,6 +1195,7 @@ function validate(level: LevelData): boolean {
   for (const d of level.doors) if (!claim(d.pos) || d.open) return false;
   for (const k of level.keys) if (!claim(k.pos) || k.taken) return false;
   for (const c of level.chests) if (!claim(c.pos) || c.opened) return false;
+  for (const g of level.goldPiles) if (!claim(g.pos) || g.taken) return false;
   for (const sh of level.shrines ?? []) if (!claim(sh.pos) || sh.used) return false;
   if (level.carver && (!claim(level.carver.pos) || level.carver.used)) return false;
   for (const m of level.monsters) if (!claim(m.pos)) return false;
@@ -1226,6 +1246,9 @@ function validate(level: LevelData): boolean {
   // out in the maze where a hero with no lens can reach it. The carving
   // shrine is the same: a nice-to-have, never a requirement.
   for (const k of level.keys) if (!open.has(key(k.pos))) return false;
+  // A gold pile is floor, not furniture, exactly like a key: walkable, never
+  // hidden, the hero has to be able to stand on it.
+  for (const g of level.goldPiles) if (!open.has(key(g.pos))) return false;
   // Shrines are floor, not furniture: the hero has to be able to stand on one.
   for (const sh of level.shrines ?? []) if (!open.has(key(sh.pos))) return false;
   if (level.carver && (!open.has(key(level.carver.pos)) || hidden.has(key(level.carver.pos)))) return false;

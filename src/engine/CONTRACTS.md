@@ -91,9 +91,13 @@ Requirements:
   door key placed somewhere reachable WITHOUT passing through that door (or
   any later door). Verify with BFS using `blocked` = closed doors.
 - Chests: 3 + floor(depth / 2) chests (cap 8) in dead ends / off-path branches,
-  some may sit behind doors. One chest key per chest, placed reachable
-  (respecting the door ordering above). Chest keys and door keys are distinct
-  kinds.
+  some may sit behind doors. After `rollChestLoot` and the floor's lens/brass
+  placement run, any of these that turned up nothing but gold and xp — no
+  item, lens, magic or brass — becomes a `GoldPile` instead (same tile,
+  `level.goldPiles`, walkable, no key): a chest is only ever locked if it has
+  something worth a lock. One chest key per *remaining* chest, placed
+  reachable (respecting the door ordering above). Chest keys and door keys
+  are distinct kinds.
 - Monsters: count scales with depth (≈ 5 + 1.5·depth, cap 18). Mix:
   guards on chokepoints near chests/doors/exit, patrols along straight-ish
   corridor runs (give them a `patrolPath` of 4-10 tiles walked via BFS),
@@ -460,7 +464,10 @@ cleared).
 Hero walks the path at ~7 tiles/s (moveInterval ≈ 140ms), lerping `rpos`.
 Stepping on a key picks it up; on a chest with a chest key opens it (consumes
 the key, applies loot, item bonuses) — except a `Chest.secret` chest (a wing's
-own), which opens with no key and consumes none; on the exit starts the descend: after
+own), which opens with no key and consumes none; on a gold pile picks it up
+the same instant way a key does (`goldPileAt`, `combat.ts`), no modal, gold
+and xp scaled by `stats.goldMult`/`xpMult` same as a chest's would be; on the
+exit starts the descend: after
 ~700ms generate `depth+1`, reset trail/path, place hero at start, keep hero
 stats but NOT keys (keys are per-level), heal 50% of missing hp.
 `trail` gets every tile the hero stands on.

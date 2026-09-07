@@ -46,6 +46,7 @@ function mkLevel(rows: string[], over: Partial<LevelData> = {}): LevelData {
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
     ...over,
   };

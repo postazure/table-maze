@@ -259,6 +259,7 @@ function makeLevel(depth: number, seed: number, width: number, height: number, t
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
   };
 }
@@ -1072,7 +1073,7 @@ function validateBossLevel(level: LevelData): boolean {
   const { width, height, start, exit, boss } = level;
   if (!boss || level.kind !== 'boss') return false;
   if (width % 2 === 0 || height % 2 === 0) return false;
-  if (level.keys.length || level.doors.length || level.chests.length) return false;
+  if (level.keys.length || level.doors.length || level.chests.length || level.goldPiles.length) return false;
   for (let x = 0; x < width; x++) {
     if (level.tiles[0][x] !== Tile.Wall || level.tiles[height - 1][x] !== Tile.Wall) return false;
   }

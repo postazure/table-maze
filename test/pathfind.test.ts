@@ -20,6 +20,7 @@ function lvl(rows: string[]): LevelData {
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
   };
 }

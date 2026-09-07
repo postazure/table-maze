@@ -337,6 +337,7 @@ function openHall(w = 41, h = 21): LevelData {
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
     props: [],
   };

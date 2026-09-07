@@ -215,6 +215,7 @@ function minimalLevel(
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
   };
 }

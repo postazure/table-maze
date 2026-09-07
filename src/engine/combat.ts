@@ -11,6 +11,7 @@ import type {
   Door,
   Effect,
   GameState,
+  GoldPile,
   KeyItem,
   LevelData,
   Monster,
@@ -129,6 +130,12 @@ export function exitAt(level: LevelData, p: Vec): boolean {
 /** An un-picked-up key on `p`. */
 export function keyAt(level: LevelData, p: Vec): KeyItem | null {
   for (const k of level.keys) if (!k.taken && k.pos.x === p.x && k.pos.y === p.y) return k;
+  return null;
+}
+
+/** An un-picked-up gold pile on `p`. Walkable, like a key: nothing blocks it. */
+export function goldPileAt(level: LevelData, p: Vec): GoldPile | null {
+  for (const g of level.goldPiles) if (!g.taken && g.pos.x === p.x && g.pos.y === p.y) return g;
   return null;
 }
 

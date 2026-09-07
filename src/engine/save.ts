@@ -106,6 +106,9 @@ export function loadGame(): GameState | null {
     if (!Array.isArray(level.keys) || !Array.isArray(level.doors) || !Array.isArray(level.chests)) {
       return null;
     }
+    // A save from before gold piles existed has no such array at all: an
+    // empty one, not a rejected save.
+    if (!Array.isArray(level.goldPiles)) level.goldPiles = [];
 
     if (!hero.rpos) hero.rpos = { x: hero.pos.x, y: hero.pos.y };
     if (!hero.keys) hero.keys = { door: 0, chest: 0 };

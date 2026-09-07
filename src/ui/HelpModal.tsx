@@ -218,6 +218,7 @@ function GuideTab() {
       <li>Drag your finger to walk. The hero follows your line.</li>
       <li>Walk into a monster to fight it. The hero keeps swinging on their own until it's beaten or you walk away.</li>
       <li>Purple eye keys open eye doors. Gold keys open chests. Keys stay on their floor.</li>
+      <li>A chest with nothing but gold in it was never worth a lock: it lies out as a pile instead, yours the moment you walk over it.</li>
       <li>Monsters are solid. Nobody walks through one.</li>
       <li>Roaming monsters are weak. Cut them down and move on.</li>
       <li>Guards stand still and only fight back if you hit them. Beating one costs real hearts.</li>
@@ -240,7 +241,7 @@ function GuideTab() {
       <li>Spirit makes every shrine go further: the timed ones last longer, the ward hands out more hearts. It creeps up as you level, and anything in your spirit slot adds to it.</li>
       <li>Every third floor has a shop. Walk into a podium to see what the item does, then buy it or walk away.</li>
       <li>The emblem on a podium says what the item is for: sword = offense, shield = defense, star = spirit.</li>
-      <li>You can buy one thing per shop, and each slot holds one item. The forge is the other choice: a level on something you already wear.</li>
+      <li>You can buy one item and use the forge once, each shop — buying isn't the only thing that sells out. The forge raises a level on something you already wear.</li>
       <li>After every third floor you face a boss. Beat it and one of your magic items gains a level.</li>
       <li>Lose in a boss chamber and the run is over.</li>
       <li>A carved crystal, spent at the portal on floor one, opens the way into a boss's own world.</li>

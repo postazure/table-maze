@@ -114,6 +114,19 @@ export interface Chest {
   secret?: boolean;
 }
 
+/**
+ * What a gold-only chest becomes instead: nothing worth a lock. Picked up by
+ * walking over it, like a key — no key of its own, no popup, gone the instant
+ * the hero's feet cross it.
+ */
+export interface GoldPile {
+  id: string;
+  pos: Vec;
+  gold: number;
+  xp: number;
+  taken: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Puzzles: what stands between a wing's rooms and its treasure
 // ---------------------------------------------------------------------------
@@ -521,6 +534,8 @@ export interface LevelData {
   keys: KeyItem[];
   doors: Door[];
   chests: Chest[];
+  /** A gold-only chest becomes one of these instead — see `GoldPile`. */
+  goldPiles: GoldPile[];
   monsters: Monster[];
   /**
    * Side loops off the route (see maze.ts). Optional: absent on boss and shop
@@ -932,6 +947,7 @@ export type SfxId =
   // One meaning each: always the same sound.
   | 'keyDoor'
   | 'keyChest'
+  | 'gold'
   | 'doorOpen'
   | 'locked'
   | 'chestOpen'

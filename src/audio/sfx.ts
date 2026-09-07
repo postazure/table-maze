@@ -133,6 +133,11 @@ const SFX: Record<SfxId, Voice> = {
     });
   },
 
+  /** A gold pile: two quick bright square notes, a coin-flip "cha-ching" — no lock to speak of. */
+  gold(ctx, dest) {
+    arpeggio(ctx, dest, [hz(88), hz(92)], { step: 0.045, dur: 0.12, gain: 0.12, type: 'square' });
+  },
+
   /** A lock giving and a heavy door swinging. */
   doorOpen(ctx, dest) {
     tone(ctx, dest, { type: 'square', freq: 700, to: 900, dur: 0.05, gain: 0.11 });

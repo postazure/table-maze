@@ -382,6 +382,7 @@ function generate(stage: number, runSeed: number, hero: Hero, data: WorldData['d
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters,
     props,
   };

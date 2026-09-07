@@ -54,6 +54,7 @@ import {
   dropOrb,
   exitAt,
   gameOver,
+  goldPileAt,
   heroAttack,
   keyAt,
   liveMonsterAt,
@@ -1614,6 +1615,22 @@ export class Game {
       pushText(st, tile, k.kind === 'door' ? 'DOOR KEY' : 'CHEST KEY', GOLD, 1000);
       pushLog(st, k.kind === 'door' ? 'Picked up a door key' : 'Picked up a chest key');
       pushSfx(st, k.kind === 'door' ? 'keyDoor' : 'keyChest');
+      this.dirty = true;
+    }
+
+    // A gold-only chest never was one: it lies out as a pile, picked up on
+    // sight like a key, gold and xp mult applied the same as a chest's would.
+    const pile = goldPileAt(level, tile);
+    if (pile) {
+      pile.taken = true;
+      const stats = heroStats(hero);
+      const gold = Math.round(pile.gold * stats.goldMult);
+      const xp = Math.round(pile.xp * stats.xpMult);
+      hero.gold += gold;
+      hero.xp += xp;
+      pushText(st, tile, `+${gold}`, GOLD, 900);
+      pushLog(st, `Found ${gold} gold`);
+      pushSfx(st, 'gold');
       this.dirty = true;
     }
 

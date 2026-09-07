@@ -389,6 +389,7 @@ function buildSurface(runSeed: number, hero: Hero, data: CemeteryData): LevelDat
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters,
     props,
   };
@@ -463,6 +464,7 @@ function buildCrypt(stage: number, runSeed: number, hero: Hero, data: CemeteryDa
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
     props: [{ id: 'stairs-up', pos: { x: 1, y: 1 }, kind: 'stairs-up', solid: true, art: 'stairs-up' }],
   };

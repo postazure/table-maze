@@ -215,6 +215,7 @@ function mkWing(rows: string[]): LevelData {
     keys: [],
     doors: [],
     chests: [],
+    goldPiles: [],
     monsters: [],
     passages: [{ id: 'pg1', kind: 'wing', tiles: hidden, mouths, rooms: [{ x: 3, y: 3, w: 4, h: 3 }, { x: 8, y: 3, w: 3, h: 3 }], entry: 0, treasure: 1 }],
     seals: [],
