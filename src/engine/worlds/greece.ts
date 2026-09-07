@@ -247,7 +247,14 @@ function buildHub(rng: Rng, runSeed: number, hero: Hero, data: GreeceData): Leve
   const home: Vec = { x: cx - 1, y: cy };
 
   const props: Prop[] = [
-    { id: 'portal-home', pos: home, kind: 'portal-home', solid: true, art: 'portal-home' },
+    {
+      id: 'portal-home',
+      pos: home,
+      kind: 'portal-home',
+      solid: true,
+      art: 'portal-home',
+      hidden: !allPlaced(data),
+    },
   ];
 
   // Three alcove branches off the plaza's north wall, one statue apiece —

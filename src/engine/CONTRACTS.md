@@ -1199,7 +1199,11 @@ new `SfxId`s `craft carve portal rumble collect gaze song`. See types.ts and
    mirrored in `state.collection`, listed on the help screen's Hero tab
    under "Collection") and plays `collect`. The way home is the module's
    `portal-home` prop → `ctx.returnHome()`: the stash is restored, the hero
-   stands beside the portal, the run carries on.
+   stands beside the portal, the run carries on. The prop stays `hidden`
+   (unwalkable, undrawn) until the world is won: a module sets its initial
+   `hidden` from the same won condition it hands `generate`'s `WorldData.won`,
+   and `worldRuntime.ts`'s `finish()` reveals it the moment `ctx.finish()`
+   fires — so a hero can never wander home before the world is done.
 
 ## Worlds: the engine's side (game.ts, monsters.ts, renderer, UI)
 - `enterWorld`, `goto`, `returnHome`, `finish` and world game overs all go

@@ -314,6 +314,21 @@ test('finish persists the collectible, sets won, and shows worldWon', () => {
   });
 });
 
+test('finish reveals a portal-home prop hidden until the world is won', () => {
+  withFakeWorld(() => {
+    const g = Game.forTest(4);
+    g.enterWorld('minotaur');
+    g.dismissModal();
+    const st = g.state;
+    const home = st.level.props!.find((p) => p.kind === 'portal-home')!;
+    home.hidden = true; // as a real module leaves it before the world is won
+
+    makeWorldCtx(fakeHost(), st, st.level.world!, makeRng(1)).finish();
+
+    assert.equal(home.hidden, false, 'the way home opens the moment the world is won');
+  });
+});
+
 test('a solid prop blocks the hero and bumps to onBump', () => {
   withFakeWorld(() => {
     let bumped: string | null = null;
